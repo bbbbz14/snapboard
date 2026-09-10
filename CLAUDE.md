@@ -4,9 +4,78 @@ Web app that turns several screenshots into one clear image, fast, with no
 sign-in and nothing uploaded. Layout-first: dropping images already produces a
 sendable result; manual arrangement is the escape hatch, not the main path.
 
-**Status:** Phase 1 complete (paste → auto-arrange → copy). Phase 2 next.
-Read [docs/phases/phase-1.md](docs/phases/phase-1.md) before picking up work —
-it lists what is done, what is deliberately missing, and what is next.
+---
+
+# START HERE — what this session should do next
+
+**Current state:** Phase 1 complete. Paste → auto-arrange → copy works end to
+end. 148 tests pass on Chromium, Firefox and WebKit. Nothing is broken or
+half-finished; the last commit is a clean stopping point.
+
+**⛔ Gate before writing any Phase 2 code:** ask the user whether they have run
+[docs/manual-test-checklist.md](docs/manual-test-checklist.md) yet.
+
+- **If they have results** → start from those results. Real findings outrank the
+  planned order below, especially anything in section A (clipboard). A broken
+  copy path on real Safari or into real Slack changes what Phase 2 should be.
+- **If they have not, and want to proceed anyway** → build Phase 2 in the order
+  below and say plainly that the clipboard path is still unverified on real
+  browsers.
+
+## Phase 2 — Manual control and undo
+
+Objective: give the user an escape hatch when auto-layout is not what they
+wanted. Build in this order; each item is independently shippable.
+
+1. **Zoom, pan, zoom indicator, fit-to-view button.**
+   The clearest gap in Phase 1: a tall board is silently scaled to ~34% and the
+   user has no idea. Do this first — it is small and it affects every other
+   Phase 2 interaction.
+2. **Selection** — click, shift-click, marquee. Draw handles on the interaction
+   layer, not the content layer (ADR-002).
+3. **Move and resize** with snapping and alignment guides. Resize keeps aspect
+   ratio. Keep in-progress geometry in a ref, not React state; commit to the
+   store on pointer-up only.
+4. **Switching to manual must be explicit.** The first drag flips
+   `layout` to `'free'` and shows "Auto layout off · [Turn back on]". Auto-layout
+   must never silently overwrite manual work.
+5. **Drag to reorder** while still in an auto mode (step badges renumber).
+6. **Delete, duplicate, z-order.**
+7. **Undo/redo** by snapshotting `Board`. Board state is a few KB of JSON with
+   no pixels in it, so snapshots are correct and cheap — do not build
+   patch/inverse-op machinery.
+8. **Autosave to IndexedDB** so closing the tab does not lose work. Restore with
+   a dismissible "Recovered your last board · [Start fresh]" bar. Assets are
+   Blobs in IDB, reference-counted.
+9. **Full keyboard shortcut set** — see section 14 of the product plan. Avoid
+   shortcuts the browser owns.
+
+**Phase 2 is done when:** dragging 10 images holds 60fps · undo goes back 50
+steps · closing and reopening the tab preserves the board · every action has a
+shortcut · the Definition of Done in
+[docs/00-product-plan.md](docs/00-product-plan.md) section 16 is fully met.
+
+## After Phase 2
+
+Phase 3 export hardening (1x/2x/3x, JPG, cross-browser fallbacks) · Phase 4
+annotations (arrow, box, text, number, redact, crop) · Phase 5 polish, dark
+mode, Thai UI · Phase 6 persistence and PWA · Phase 7 Chrome extension.
+Full definitions in [docs/00-product-plan.md](docs/00-product-plan.md)
+section 12.
+
+## When a phase finishes
+
+1. Run `npm run verify` and make sure it is green.
+2. Write `docs/phases/phase-N.md`: what shipped, what was learned, what is
+   deliberately still missing, what is next.
+3. **Update this START HERE section** so the next session needs to read nothing
+   else to know where to begin.
+4. Commit, then stop and report — do not roll straight into the next phase.
+
+---
+
+**Background:** [docs/phases/phase-1.md](docs/phases/phase-1.md) records the
+three bugs found during Phase 1 and the measured performance numbers.
 
 ## Commands
 
