@@ -57,6 +57,10 @@ snapshot.
 
 ## Documentation
 
+- [CLAUDE.md](CLAUDE.md) — working guide: commands, invariants, gotchas.
+  Start here before changing code.
+- [Manual test checklist](docs/manual-test-checklist.md) *(Thai)* — the checks
+  automation cannot cover: real clipboard, real Safari, real users
 - [Product plan and analysis](docs/00-product-plan.md) *(Thai)* — problem,
   personas, competitive analysis, roadmap, risks
 - [Architecture decisions](docs/decisions/) *(Thai)* — each backed by
