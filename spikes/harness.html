@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8" /><title>Snapboard spikes</title></head>
+  <body style="font-family: system-ui; padding: 24px">
+    <h1>Phase 0 spike harness</h1>
+    <button id="copy-good">Copy (promise form)</button>
+    <button id="copy-bad">Copy (awaited form)</button>
+    <div id="paste-target" contenteditable="true"
+     style="border:1px dashed #999;min-height:80px;padding:8px;margin:12px 0">paste target</div>
+    <pre id="log"></pre>
+    <script type="module" src="./harness.ts"></script>
+  </body>
+</html>
