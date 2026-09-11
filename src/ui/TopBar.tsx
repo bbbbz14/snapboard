@@ -87,17 +87,29 @@ export function TopBar() {
           </div>
 
           <div className="group" aria-label={t('toolbar.layout')}>
-            {LAYOUTS.map((l) => (
-              <button
-                key={l.mode}
-                className="chip"
-                aria-pressed={board.layout === l.mode}
-                onClick={() => store.setLayout(l.mode)}
-                title={l.mode === 'auto' ? `${l.label} (${board.resolvedLayout})` : l.label}
-              >
-                {l.label}
-              </button>
-            ))}
+            {board.layout === 'free' ? (
+              // The first manual move/resize flips layout to 'free' (see
+              // boardStore.setFrames) - relayout() then refuses to touch the
+              // board (invariant 4), so this is the only way back to auto.
+              <span className="free-banner" role="status">
+                {t('layout.freeNotice')}
+                <button className="link" onClick={() => store.setLayout('auto')}>
+                  {t('layout.turnOn')}
+                </button>
+              </span>
+            ) : (
+              LAYOUTS.map((l) => (
+                <button
+                  key={l.mode}
+                  className="chip"
+                  aria-pressed={board.layout === l.mode}
+                  onClick={() => store.setLayout(l.mode)}
+                  title={l.mode === 'auto' ? `${l.label} (${board.resolvedLayout})` : l.label}
+                >
+                  {l.label}
+                </button>
+              ))
+            )}
           </div>
 
           <div className="group" aria-label={t('toolbar.style')}>

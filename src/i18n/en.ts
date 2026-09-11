@@ -30,6 +30,8 @@ export const en = {
   'layout.compare': 'Side by side',
   'layout.steps': 'Steps',
   'layout.free': 'Manual',
+  'layout.freeNotice': 'Auto layout off',
+  'layout.turnOn': 'Turn back on',
 
   'background.white': 'White',
   'background.black': 'Black',

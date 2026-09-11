@@ -125,7 +125,16 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   setFrames: (updates) =>
     set((s) => {
       const byId = new Map(updates.map((u) => [u.id, u.frame]))
-      return { board: { ...s.board, nodes: s.board.nodes.map((n) => (byId.has(n.id) ? { ...n, frame: byId.get(n.id)! } : n)) } }
+      return {
+        // The first manual move/resize switches to 'free' so the very next
+        // relayout() (e.g. from adding another image) can't silently
+        // overwrite it - see invariant 4.
+        board: {
+          ...s.board,
+          layout: 'free',
+          nodes: s.board.nodes.map((n) => (byId.has(n.id) ? { ...n, frame: byId.get(n.id)! } : n)),
+        },
+      }
     }),
 
   toast: (message, tone = 'info') => {
