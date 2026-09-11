@@ -37,8 +37,15 @@ test('layout heuristics match the shape of the images', async ({ page, images, a
 test('changing layout, background and style redraws the board', async ({ page, images, addViaPicker }) => {
   await addViaPicker(page, images([[900, 600], [600, 900]]))
   const canvas = page.locator('canvas.board-canvas')
+  // The canvas element itself is viewport-sized (see BoardCanvas.tsx); the
+  // ".board-page" overlay tracks the board's own logical size instead.
+  const boardPage = page.locator('.board-page')
 
-  const sizeOf = () => canvas.evaluate((c: HTMLCanvasElement) => `${c.width}x${c.height}`)
+  const sizeOf = () =>
+    boardPage.evaluate((el: HTMLElement) => {
+      const r = el.getBoundingClientRect()
+      return `${Math.round(r.width)}x${Math.round(r.height)}`
+    })
   const before = await sizeOf()
 
   await page.getByRole('button', { name: 'Stacked' }).click()
@@ -64,10 +71,11 @@ test('unsupported files are refused individually, keeping the good ones', async 
 
 test('a tiny screenshot is not blown up to fill the board', async ({ page, images, addViaPicker }) => {
   await addViaPicker(page, images([[300, 120]]))
-  // Measured in CSS pixels: the backing store is multiplied by devicePixelRatio.
+  // The board's own rect (".board-page"), not the viewport-sized canvas -
+  // fit-to-view never zooms a small board past 100%, see camera.ts.
   const cssWidth = await page
-    .locator('canvas.board-canvas')
-    .evaluate((c: HTMLCanvasElement) => c.getBoundingClientRect().width)
+    .locator('.board-page')
+    .evaluate((el: HTMLElement) => el.getBoundingClientRect().width)
   // 300px of image plus 32px padding either side, and not a pixel more.
   expect(cssWidth).toBeCloseTo(300 + 64, 0)
 })

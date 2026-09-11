@@ -43,6 +43,12 @@ export const en = {
   'spacing.gap': 'Gap',
   'spacing.padding': 'Padding',
 
+  'zoom.out': 'Zoom out',
+  'zoom.in': 'Zoom in',
+  'zoom.reset': 'Reset zoom to 100%',
+  'zoom.fit': 'Fit to view',
+  'zoom.level': 'Zoom {{percent}}%',
+
   'toast.copied': 'Copied. Paste it anywhere with {{mod}} + V.',
   'toast.copiedUnverified': 'Copied. If pasting does not work, use Download.',
   'toast.downloaded': 'Saved as {{name}}',

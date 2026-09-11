@@ -8,11 +8,52 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 
 # START HERE — what this session should do next
 
-**Current state:** Phase 1 complete. `npm run verify` green (typecheck + unit +
-renderer parity on 3 engines + 49 e2e passed, 2 skipped by design — clipboard
-round-trip on headless Firefox/WebKit, see ADR-003, not a failure). The manual
-test checklist has now been run for real (see below) and the gate is cleared.
-Phase 2 has **not** been started — no code, no scaffolding. Start there.
+**Current state:** Phase 1 complete, manual test checklist gate cleared (see
+below). Phase 2 item 1 (zoom/pan) is now done; items 2–9 are not started —
+continue with item 2 (selection) next. `npm run verify` green (typecheck +
+84 unit + 27 renderer parity on 3 engines + 58 e2e passed, 2 skipped by
+design — clipboard round-trip on headless Firefox/WebKit, see ADR-003, not a
+failure).
+
+### Phase 2 item 1 — done: zoom, pan, zoom indicator, fit-to-view
+
+Shipped as its own commit, deploy not yet pushed to the live site (deploy is
+`bash scripts/deploy-pages.sh` when you want it live).
+
+- `src/board/view/camera.ts` — pure camera model (`zoom` + board-space
+  `center`), fully unit-tested in `tests/unit/camera.test.ts`. Deliberately
+  outside `Board`/zustand: the camera is where the user is looking, not
+  something undo or autosave should ever snapshot.
+- **Architecture change from Phase 1:** the `<canvas>` in `BoardCanvas.tsx` is
+  now sized to the *viewport*, not the board. At high zoom a board-sized
+  backing store would blow past the canvas area limit in ADR-005; a
+  viewport-sized one stays bounded at any zoom. `renderScene()` gained one
+  optional field, `offset` (device-px translate), so the preview can be
+  positioned inside that fixed-size canvas — export never sets it, so
+  invariant 1 (one renderer, `alpha` options identical) is untouched; all 27
+  parity tests still pass with no changes on the export side.
+- The old CSS trick (a canvas sized exactly to the board, with a checkerboard
+  `background-image` showing through transparent pixels) no longer works once
+  the canvas is viewport-sized. It's now a separate `.board-page` div
+  (shadow, rounded corners, checkerboard) that `BoardCanvas` repositions every
+  frame to match the board's current on-screen rect. Two existing e2e
+  assertions that read `canvas.width`/`getBoundingClientRect()` on the canvas
+  itself were repointed at `.board-page` — see `tests/e2e/board.spec.ts`.
+- Controls: ctrl/cmd+wheel zooms at the pointer (also how trackpad pinch is
+  reported); plain wheel pans (replaces the scrollbars a fixed-size canvas
+  used to get for free); space+drag or middle-drag pans; `+`/`-`/`0`(fit)/
+  `1`(100%) keys, no modifier, so browser zoom shortcuts are untouched.
+  Zoom % + fit button sit bottom-right per the product plan's screen layout,
+  not in the top bar — which already overflows on mobile (see below).
+- `tests/e2e/zoom.spec.ts` covers the indicator, the shortcuts, and — the
+  one that actually matters — that zooming/panning the preview and then
+  exporting produces byte-identical output to exporting without touching the
+  camera at all.
+- Known follow-up, not a blocker: `TileCache.setRatio()` clears every tile
+  when the ratio changes by more than 0.001 (ADR-002), so a smooth wheel-zoom
+  gesture rebuilds all tiles on nearly every tick. Fine at Phase-1 image
+  counts; worth checking against the "drag 10 images at 60fps" DoD once item
+  3 (move/resize) is in and there's a realistic node count to test with.
 
 ## ✅ The site is live, and `main` is pushed
 
@@ -65,10 +106,9 @@ Cleared — see above. Proceed with the Phase 2 order below.
 Objective: give the user an escape hatch when auto-layout is not what they
 wanted. Build in this order; each item is independently shippable.
 
-1. **Zoom, pan, zoom indicator, fit-to-view button.**
-   The clearest gap in Phase 1: a tall board is silently scaled to ~34% and the
-   user has no idea. Do this first — it is small and it affects every other
-   Phase 2 interaction.
+1. ✅ **Zoom, pan, zoom indicator, fit-to-view button.** Done — see the note
+   under START HERE above for what shipped and one known follow-up
+   (tile-cache thrash during a wheel-zoom gesture) to keep in mind for item 3.
 2. **Selection** — click, shift-click, marquee. Draw handles on the interaction
    layer, not the content layer (ADR-002).
 3. **Move and resize** with snapping and alignment guides. Resize keeps aspect

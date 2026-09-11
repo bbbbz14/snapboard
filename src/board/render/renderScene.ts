@@ -1,4 +1,4 @@
-import type { Rect, Size } from '@/lib/geometry'
+import type { Point, Rect, Size } from '@/lib/geometry'
 import { STYLE_PRESETS, type Background, type StylePreset } from '@/board/model/types'
 
 export interface RenderItem {
@@ -23,6 +23,12 @@ export interface RenderOptions {
   scale: number
   /** Pre-rendered per-node tiles. Preview only — export always draws at full quality. */
   tiles?: TileProvider
+  /**
+   * Device-pixel translation applied after `scale`. Preview-only (pan/zoom):
+   * the export path never sets this, so omitting it must reproduce the exact
+   * pre-Phase-2 transform — see invariant 1.
+   */
+  offset?: Point
 }
 
 export interface Tile {
@@ -43,9 +49,9 @@ export interface TileProvider {
  * The single renderer behind both the on-screen board and the exported file.
  * Verified pixel-identical across Chromium, Firefox and WebKit — see ADR-001.
  */
-export function renderScene(ctx: Ctx2D, input: RenderInput, { scale, tiles }: RenderOptions): void {
+export function renderScene(ctx: Ctx2D, input: RenderInput, { scale, tiles, offset }: RenderOptions): void {
   ctx.save()
-  ctx.setTransform(scale, 0, 0, scale, 0, 0)
+  ctx.setTransform(scale, 0, 0, scale, offset?.x ?? 0, offset?.y ?? 0)
 
   if (input.background.type === 'solid') {
     ctx.fillStyle = input.background.color

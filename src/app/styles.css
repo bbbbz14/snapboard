@@ -204,14 +204,27 @@ body {
 .stage {
   position: relative;
   flex: 1;
-  overflow: auto;
-  display: grid;
-  place-items: center;
-  padding: 28px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.board-canvas {
-  display: block;
+/* Fills the stage independently of the flex rule above, which only centres
+   the empty state - the canvas is viewport-sized, not board-sized, so it
+   must not be treated as flow content. */
+.board-stage {
+  position: absolute;
+  inset: 0;
+  background: var(--surface-2);
+}
+
+/* The "page": shadow, rounded corners, and the transparency checkerboard.
+   Purely decorative DOM, positioned to match the board's on-screen rect at
+   the current zoom/pan - never part of what renderScene draws, so it never
+   ends up in the exported file. */
+.board-page {
+  position: absolute;
   border-radius: 6px;
   box-shadow: var(--shadow-2);
   background-image: linear-gradient(45deg, #d7dce4 25%, transparent 25%),
@@ -220,6 +233,65 @@ body {
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
   background-color: #fff;
+  pointer-events: none;
+}
+
+.board-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  /* Wheel and pointer gestures are handled ourselves for pan/zoom. */
+  touch-action: none;
+}
+
+.zoom-controls {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+}
+
+.zoom-btn,
+.zoom-pct {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 7px;
+  height: 28px;
+}
+
+.zoom-btn {
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  width: 28px;
+}
+
+.zoom-fit {
+  font-size: 13px;
+}
+
+.zoom-pct {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 48px;
+  padding: 0 8px;
+}
+
+.zoom-btn:hover,
+.zoom-pct:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
 }
 
 /* ---------- empty state ---------- */
