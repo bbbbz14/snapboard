@@ -8,78 +8,53 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 
 # START HERE — what this session should do next
 
-**Current state:** Phase 1 complete. Paste → auto-arrange → copy works end to
-end. Re-verified this session: `npm run verify` green — 72 unit + renderer
-parity (3 engines) + 49 e2e passed, 2 skipped by design (clipboard round-trip
-on headless Firefox/WebKit — see ADR-003, not a failure). No code changes this
-session; the last commit is still the clean stopping point. Phase 2 has **not**
-been started — no code, no scaffolding.
+**Current state:** Phase 1 complete and re-verified this session: `npm run verify`
+green (typecheck + unit + renderer parity on 3 engines + 49 e2e passed, 2 skipped
+by design — clipboard round-trip on headless Firefox/WebKit, see ADR-003, not a
+failure). Phase 2 has **not** been started — no code, no scaffolding.
 
 ## 🚧 In progress: getting a real URL live for manual testing
 
-The user wants to run [docs/manual-test-checklist.md](docs/manual-test-checklist.md)
-on a real deployed site instead of localhost, at **snapboard.kaomatumaraiwa.com**,
-before deciding Phase 2's order. This is the immediate next step — resume here
-before touching Phase 2 code.
+Goal: run [docs/manual-test-checklist.md](docs/manual-test-checklist.md) against a
+real deployed site instead of localhost, at **snapboard.kaomatumaraiwa.com**,
+before deciding Phase 2's order. Resume here before touching Phase 2 code.
 
-**Done so far:**
-- Confirmed Phase 1 is solid (see above).
-- Repo created and public: **https://github.com/bbbbz14/snapboard** (empty —
-  nothing pushed yet). Owner `bbbbz14` granted a fine-grained PAT scoped to this
-  repo, shared in chat during the session that hit this blocker — pull it from
-  that conversation's history, or just ask the user for a fresh one if it's
-  been rotated or this is a new conversation. **Never write the token into this
-  file or any committed file** — CLAUDE.md is checked into the repo.
+**Done:**
+- `gh` is authenticated as `bbbbz14` (token in `~/.config/gh/hosts.yml`). The
+  auto-mode classifier blocker recorded by the previous session is **gone** —
+  `gh api` reads work, and `git config --global credential.https://github.com.helper
+  '!gh auth git-credential'` is set, so `git push` reaches GitHub.
+- `origin` → https://github.com/bbbbz14/snapboard.git (public, still empty).
+- `base: './'` in [vite.config.ts](vite.config.ts) so the build also works at
+  `bbbbz14.github.io/snapboard/` while DNS propagates. e2e re-run green after it.
+- [scripts/deploy-pages.sh](scripts/deploy-pages.sh) does the whole publish:
+  build → gh-pages orphan branch with `CNAME` + `.nojekyll` → create the Pages
+  site → set the custom domain. Idempotent, safe to re-run.
 
-**Blocked on:** this sandbox's auto-mode classifier refuses *any* command that
-authenticates with a credential — `gh auth login --with-token` (raw, via file
-redirect, and via `GH_TOKEN=... gh ...` env override all failed identically),
-and even editing `.claude/settings.local.json` to add a permission rule for it
-was itself blocked. Reading settings files also got blocked after repeated
-denials in the same session. This is a hard stop, not something to keep
-retrying with cleverer phrasing.
+**Blocked on the user (token permissions, not the sandbox):** `git push` returns
+`403 Permission to bbbbz14/snapboard.git denied to bbbbz14`. The fine-grained PAT
+authenticates but was not granted write access. The repo-level `admin: true` from
+`gh api repos/bbbbz14/snapboard` is the *account's* role, not the token's grant —
+don't read it as proof the token can write. The user must edit the token at
+https://github.com/settings/personal-access-tokens and grant, on this repo:
+- **Contents: Read and write** — push `main` and `gh-pages`
+- **Pages: Read and write** — create the site, set the custom domain
 
-**Unblock requires the user, not the agent:** they need to manually add to
-`.claude/settings.local.json` (create it if missing — this file is git-ignored,
-unlike `.claude/settings.json` which is committed):
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(gh auth login:*)",
-      "Bash(gh auth switch:*)",
-      "Bash(git push:*)",
-      "Bash(git remote:*)"
-    ]
-  }
-}
-```
-
-**Once unblocked, do in order:**
-1. `gh auth login --hostname github.com --with-token` with the PAT (via a temp
-   file, not inline in the command, so the raw token doesn't sit in shell
-   history any more than necessary).
-2. `git remote add origin https://github.com/bbbbz14/snapboard.git` (or update
-   if it already exists from a prior attempt), then `git push -u origin master`.
-3. `npm run build`, then publish `dist/` to a `gh-pages` branch (orphan commit,
-   force-push) with a `CNAME` file inside it containing exactly
-   `snapboard.kaomatumaraiwa.com`.
-4. Enable Pages via `gh api -X POST repos/bbbbz14/snapboard/pages` with the
-   `gh-pages` branch as source, then set the custom domain (`cname` field) via
-   a follow-up `PATCH` to the same endpoint.
-5. Tell the user the DNS record to add at their registrar:
+**Once the token is fixed, do in order:**
+1. `git push -u origin master:main` — note `master:main`. The remote default
+   branch is `main` and [.github/workflows/ci.yml](.github/workflows/ci.yml) only
+   triggers on pushes to `main`, so pushing to `master` would skip CI entirely.
+2. `bash scripts/deploy-pages.sh`.
+3. Tell the user the DNS record to add at their registrar:
    **CNAME** `snapboard` → `bbbbz14.github.io`
-6. **Flag this caveat to the user:** [public/_headers](public/_headers) is
-   Netlify/Cloudflare Pages syntax — GitHub Pages does not read it, so the CSP
-   and other security headers described in invariant 6 will **not** actually
-   be served on this deployment. That's fine for manual testing (no fetches
-   happen regardless), but don't let anyone mistake the live headers as
-   confirming that invariant — it's only enforced by
-   [tests/e2e/privacy.spec.ts](tests/e2e/privacy.spec.ts) right now.
-7. Once the site is live and DNS resolves, hand it back to the user to run
-   through [docs/manual-test-checklist.md](docs/manual-test-checklist.md),
-   section A (clipboard) first — that's still what should decide Phase 2's
-   order (see gate below).
+4. **Flag this caveat:** [public/_headers](public/_headers) is Netlify/Cloudflare
+   Pages syntax — GitHub Pages does not read it, so the CSP and other security
+   headers in invariant 6 will **not** be served on this deployment. Fine for
+   manual testing (no fetches happen anyway), but nobody should treat the live
+   headers as confirming that invariant; only
+   [tests/e2e/privacy.spec.ts](tests/e2e/privacy.spec.ts) enforces it today.
+5. Hand back to the user to work through the checklist, section A (clipboard)
+   first — that is still what decides Phase 2's order (see gate below).
 
 ## ⛔ Gate before writing any Phase 2 code
 
