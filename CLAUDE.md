@@ -9,14 +9,14 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 # START HERE — what this session should do next
 
 **Current state:** Phase 1 complete, manual test checklist gate cleared (see
-below). Phase 2 items 1–6 (zoom/pan, selection, move/resize, explicit
-free-layout switch, drag-to-reorder, delete/duplicate/z-order) are done;
-items 7–9 are not started — continue with item 7 (undo/redo) next.
-`npm run verify` green (typecheck + 119 unit + 27 renderer parity on 3
-engines + 90 e2e passed, 3 skipped by design — clipboard round-trip on
-headless Firefox/WebKit (ADR-003), plus the reorder pixel-swap assertion on
-headless WebKit only, see the WebKit rasterisation gotcha below — neither is
-a failure).
+below). Phase 2 items 1–7 (zoom/pan, selection, move/resize, explicit
+free-layout switch, drag-to-reorder, delete/duplicate/z-order, undo/redo) are
+done; items 8–9 are not started — continue with item 8 (autosave to
+IndexedDB) next. `npm run verify` green (typecheck + 127 unit + 27 renderer
+parity on 3 engines + 102 e2e passed, 3 skipped by design — clipboard
+round-trip on headless Firefox/WebKit (ADR-003), plus the reorder pixel-swap
+assertion on headless WebKit only, see the WebKit rasterisation gotcha below
+— neither is a failure).
 
 ### Phase 2 item 1 — done: zoom, pan, zoom indicator, fit-to-view
 
@@ -190,8 +190,11 @@ Shipped as its own commit (`4a72ead`). Pushed and deployed to the live site.
   only be freed when its refcount hits zero, "because one image might have
   been duplicated." The copy is offset by 16 board-space px so it doesn't
   render exactly on top of the original, then is left selected instead of it.
+  (Superseded by item 7: `retain`/`release` don't exist anymore, replaced by
+  a history-aware `AssetStore.reconcile()` - see below for why.)
 - `deleteSelected` calls `AssetStore.release()` for each removed node and
-  clears `selectedIds` - the pruning item 2's note asked for.
+  clears `selectedIds` - the pruning item 2's note asked for. (Same item 7
+  note as above - the call site is gone, the pruning behavior isn't.)
 - All three actions call `relayout()` after touching `nodes`. For a `'free'`
   board that's a no-op on frames (invariant 4) so only `order`/membership
   changes; for an auto board it also repositions everything, same overload
@@ -224,7 +227,75 @@ Shipped as its own commit (`4a72ead`). Pushed and deployed to the live site.
   to create an overlap by shifting sideways - it has to come from the
   vertical axis instead.
 
-## ✅ The site is live and up to date with `master`
+### Phase 2 item 7 — done: undo/redo
+
+Shipped as its own commit. Not yet pushed/deployed - see below.
+
+- `board/store/boardStore.ts` gained `past`/`future: Board[]` and a single
+  `commitBoard(s, board)` helper that every mutating action now routes
+  through, replacing each action's own inline `set()`. Plain whole-`Board`
+  snapshots, capped at 50 entries (`MAX_HISTORY`), exactly as the product
+  plan's own 7.3 note prescribes - "ง่าย ถูกต้อง 100% ไม่ต้องทำ patch/inverse-op" -
+  and as CLAUDE.md's item 7 line said not to build. `undo`/`redo` pop/push
+  between `past`, `future` and `board`; any action committed after an undo
+  clears `future` (the standard "a new action discards the redo branch"
+  rule).
+- **Real bug this surfaced, not just an e2e nuisance:** invariant 3 keeps
+  pixels out of `Board`, but item 6's `AssetStore.retain()`/`release()` freed
+  an image's `ImageBitmap` the instant its refcount hit zero - which used to
+  be fine (a deleted node's asset had no other owner) but became actively
+  wrong the moment undo history could still point at it. Deleting a node,
+  then hitting undo, brought back a `Board` snapshot referencing an asset
+  that had already been destroyed - undo would restore the node but not a
+  working image. Fixed by replacing `retain`/`release` entirely with
+  `AssetStore.reconcile(counts)`: `boardStore` computes assetId occurrence
+  counts across `[board, ...past, ...future]` after every commit/undo/redo
+  and reconcile only frees an asset once *no* reachable snapshot - past,
+  present, or redo-future - references it anymore. `tests/e2e/undoRedo.spec.ts`
+  ("undoing a delete brings back a real, still-decoded image") pins this down
+  by sampling the same pixel before delete and after undo.
+- **Second real bug, caught by the same e2e file:** the gap slider is a
+  continuous control - every tick of a drag used to call `setGap` and would
+  otherwise push 50+ history entries for one drag, blowing the whole undo
+  budget on a single gesture (product plan 13.1 flags exactly this: "history:
+  undo/redo, การรวม action ที่ต่อเนื่องกัน" - merge consecutive actions). Fixed
+  with `beginAdjustment`/`endAdjustment`, wired to the slider's
+  pointerdown/up *and* keydown/up (so an arrow-key nudge also commits as one
+  step): `commitBoard` skips the history push entirely while an adjustment
+  window is open and `endAdjustment` commits exactly one entry - the
+  pre-gesture board - for the whole drag. Same "batch continuous input,
+  commit once" shape as item 3's move/resize ref pattern, just at the store
+  level instead of the canvas ref level.
+- **Third real bug, only found because the e2e test held focus on the slider
+  after dragging it (exactly what a real user does right before reaching for
+  undo):** the existing keyboard-shortcut guard in `BoardCanvas.tsx` bailed
+  out of *all* shortcuts whenever `e.target` was an `INPUT`/`TEXTAREA`/
+  `SELECT`, so Ctrl/Cmd+Z silently did nothing while the gap slider had
+  focus. Fixed by moving the undo/redo check ahead of that guard with its own
+  narrower one (`isTextEntry` - bails only for a real text-editing surface:
+  `TEXTAREA`, `SELECT`, or a non-range `INPUT`), so Ctrl/Cmd+Z keeps working
+  with the slider focused but would still defer to a future caption
+  textarea's own native undo (invariant 7). The plain single-key shortcuts
+  (`+`/`-`/`0`/`1`/Delete/Escape) keep the original broad guard untouched -
+  narrowing it further wasn't needed and wasn't in scope here.
+- Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z is the one shortcut in this codebase that
+  deliberately uses a modifier, unlike every other Phase 2 shortcut - see the
+  existing "avoid shortcuts the browser owns" gotcha. It's safe specifically
+  because no browser reserves plain Ctrl/Cmd+Z on a page the way it reserves
+  Ctrl/Cmd+D (why item 6 deferred that one to item 9).
+- **Scope cut:** no visible Undo/Redo button. There's no mockup for one, item
+  9 owns "every action has a shortcut," and the standing mobile-overflow
+  finding (see below) is a specific instruction not to add more to the top
+  bar - keyboard-only is consistent with how item 1's zoom shortcuts and item
+  6's Delete key both shipped ahead of any dedicated button too.
+- `tests/unit/boardStore.test.ts` covers undo/redo (revert+redo, no-op at the
+  ends, redo-branch discard, the 50-step cap, selection pruned to nodes that
+  still exist after undo/redo) and the adjustment window (one entry per
+  gesture, zero entries for a no-op gesture) all against fake assetIds, so
+  the AssetStore interaction above is the e2e test's job specifically, not
+  something the fast unit suite can see.
+
+## ⚠️ The live site is behind `master` again — item 7 isn't pushed or deployed
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved, all assets verified 200 from the command
@@ -232,7 +303,9 @@ line. Source push (`git push origin master:main`) and
 `bash scripts/deploy-pages.sh` were last run together after Phase 2 item 6
 (`6c5eb95`), and both worked cleanly again on the first try (no re-auth, no
 DNS re-check needed) — the earlier "Workflows: Read and write" token-scope fix
-from a prior session is holding. Live site now serves items 1–6.
+from a prior session is holding. Live site still only serves items 1–6; item
+7 (undo/redo) is committed locally but neither command below has been run
+for it yet.
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:
@@ -301,9 +374,9 @@ wanted. Build in this order; each item is independently shippable.
    the product plan's own mockup (no unused send-to-back/forward/backward),
    and an e2e gotcha about the fixture images being gradients, not flat
    colors.
-7. **Undo/redo** by snapshotting `Board`. Board state is a few KB of JSON with
-   no pixels in it, so snapshots are correct and cheap — do not build
-   patch/inverse-op machinery.
+7. ✅ **Undo/redo.** Done — see the note under START HERE above, including
+   the asset-lifetime bug undo history surfaced in item 6's refcounting and
+   the keyboard-guard bug the gap slider surfaced.
 8. **Autosave to IndexedDB** so closing the tab does not lose work. Restore with
    a dismissible "Recovered your last board · [Start fresh]" bar. Assets are
    Blobs in IDB, reference-counted.
