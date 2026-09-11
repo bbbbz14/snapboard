@@ -9,19 +9,18 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 # START HERE — what this session should do next
 
 **Current state:** Phase 1 complete, manual test checklist gate cleared (see
-below). Phase 2 items 1–5 (zoom/pan, selection, move/resize, explicit
-free-layout switch, drag-to-reorder) are done; items 6–9 are not started —
-continue with item 6 (delete, duplicate, z-order) next. `npm run verify`
-green (typecheck + 107 unit + 27 renderer parity on 3 engines + 81 e2e
-passed, 3 skipped by design — clipboard round-trip on headless
-Firefox/WebKit (ADR-003), plus the reorder pixel-swap assertion on headless
-WebKit only, see the WebKit rasterisation gotcha below — neither is a
-failure).
+below). Phase 2 items 1–6 (zoom/pan, selection, move/resize, explicit
+free-layout switch, drag-to-reorder, delete/duplicate/z-order) are done;
+items 7–9 are not started — continue with item 7 (undo/redo) next.
+`npm run verify` green (typecheck + 119 unit + 27 renderer parity on 3
+engines + 90 e2e passed, 3 skipped by design — clipboard round-trip on
+headless Firefox/WebKit (ADR-003), plus the reorder pixel-swap assertion on
+headless WebKit only, see the WebKit rasterisation gotcha below — neither is
+a failure).
 
 ### Phase 2 item 1 — done: zoom, pan, zoom indicator, fit-to-view
 
-Shipped as its own commit, deploy not yet pushed to the live site (deploy is
-`bash scripts/deploy-pages.sh` when you want it live).
+Shipped as its own commit, pushed and deployed to the live site.
 
 - `src/board/view/camera.ts` — pure camera model (`zoom` + board-space
   `center`), fully unit-tested in `tests/unit/camera.test.ts`. Deliberately
@@ -60,14 +59,13 @@ Shipped as its own commit, deploy not yet pushed to the live site (deploy is
 
 ### Phase 2 item 2 — done: selection (click, shift-click, marquee)
 
-Shipped as its own commit (`0326b11`). Source push and deploy for it have not
-happened yet — see the live-site section below.
+Shipped as its own commit (`0326b11`). Pushed and deployed to the live site.
 
 - `selectedIds` lives in the zustand store but **not** inside `Board` — same
   reasoning as the camera: undo/autosave snapshot `Board`, and selection is
   not arranged content, just what the user is currently pointing at. `clear()`
-  resets it; nothing else prunes it yet since there is no delete (item 6) —
-  revisit if stale ids can ever outlive their node.
+  resets it; item 6's `deleteSelected` is the other place that prunes it
+  (clears the selection when the nodes it pointed at are removed).
 - `src/board/interact/hitTest.ts` — pure, unit-tested (`tests/unit/hitTest.test.ts`)
   AABB point/rect hit-testing. No rotation to account for (`ImageNode.frame`
   has none, by design), so this is plain rect math, not a general hit-test.
@@ -90,7 +88,7 @@ happened yet — see the live-site section below.
 
 ### Phase 2 item 3 — done: move and resize, with snapping and alignment guides
 
-Shipped as its own commit (`f2f08fc`). Not yet pushed/deployed — see below.
+Shipped as its own commit (`f2f08fc`). Pushed and deployed to the live site.
 
 - New store action `setFrames` commits moved/resized frames directly and
   **skips `relayout()`** — a manual edit must never be recomputed away.
@@ -128,7 +126,7 @@ Shipped as its own commit (`f2f08fc`). Not yet pushed/deployed — see below.
 
 ### Phase 2 item 4 — done: switching to manual must be explicit
 
-Shipped as its own commit (`6733b51`). Not yet pushed/deployed — see below.
+Shipped as its own commit (`6733b51`). Pushed and deployed to the live site.
 
 - `setFrames` (item 3's only commit path for a move/resize) now sets
   `layout: 'free'` in the same update — so from the very next action, even
@@ -145,7 +143,7 @@ Shipped as its own commit (`6733b51`). Not yet pushed/deployed — see below.
 
 ### Phase 2 item 5 — done: drag to reorder while still in an auto layout
 
-Shipped as its own commit (`b3584b4`). Not yet pushed/deployed — see below.
+Shipped as its own commit (`b3584b4`). Pushed and deployed to the live site.
 
 - New store action `reorder(id, targetIndex)`: moves a node to a target
   index in the order sequence and calls `relayout()` — unlike `setFrames`,
@@ -169,24 +167,78 @@ Shipped as its own commit (`b3584b4`). Not yet pushed/deployed — see below.
   `tests/e2e/reorder.spec.ts` pixel-swap assertion skips on WebKit rather
   than retrying forever (same pattern as ADR-003's clipboard skip).
 
-## ✅ The site is live — but six commits behind `master` right now
+### Phase 2 item 6 — done: delete, duplicate, z-order
+
+Not yet committed/pushed/deployed as of writing this note - see below.
+
+- Scope was pinned to the product plan's own mockup (docs/00-product-plan.md
+  4.2): "when an object is selected, a small floating toolbar appears above
+  it: [Crop] [Duplicate] [Bring to front] [Delete]." Crop is Phase 4. That's
+  why this item ships exactly three actions (no send-to-back/forward/backward)
+  - nothing here has a caller yet, and unused store actions are exactly the
+  kind of speculative surface CLAUDE.md says not to add.
+- `src/board/model/zorder.ts` — pure, unit-tested (`tests/unit/zorder.test.ts`)
+  `moveToFront`, reused by the store's `bringToFront` action. `order` is
+  already the z-order (hitTest.ts picks the highest `order` under the
+  pointer, and `toRenderInput` paints in ascending `order`), so "bring to
+  front" is just "give these ids the highest `order` values."
+  `deleteSelected`/`duplicateSelected`/`bringToFront` all renumber `order` to
+  0..n-1 after they run, same as `reorder` already does.
+- `duplicateSelected` calls the new `AssetStore.retain()` (mirrors `release()`)
+  so the copy shares the same asset with a correct refcount (invariant 3) -
+  matches the product plan's explicit note that a deleted node's asset must
+  only be freed when its refcount hits zero, "because one image might have
+  been duplicated." The copy is offset by 16 board-space px so it doesn't
+  render exactly on top of the original, then is left selected instead of it.
+- `deleteSelected` calls `AssetStore.release()` for each removed node and
+  clears `selectedIds` - the pruning item 2's note asked for.
+- All three actions call `relayout()` after touching `nodes`. For a `'free'`
+  board that's a no-op on frames (invariant 4) so only `order`/membership
+  changes; for an auto board it also repositions everything, same overload
+  of `order` that item 5's `reorder` already leans on for drag-to-reorder.
+- `src/ui/SelectionToolbar.tsx` - a small floating DOM toolbar, not more
+  chips in `TopBar`, per the mockup and per the standing mobile-overflow
+  caution (see the manual-test-checklist finding below). Its position is
+  written directly onto the element in `BoardCanvas`'s `drawInteraction`
+  (ref-first, same pattern as `.board-page` and the drag code) so it tracks
+  the selection during a drag without a React re-render, and is hidden
+  outright while a move/resize/marquee/reorder gesture is in progress.
+- Delete is also bound to the Delete/Backspace key (no modifier, so nothing
+  the browser owns is at risk - see the existing zoom-shortcut gotcha).
+  Duplicate and bring-to-front are toolbar-only for now; a modifier-key
+  binding for them (e.g. the industry-standard but browser-reserved-in-places
+  Ctrl/Cmd+D) is exactly the kind of thing item 9's full keyboard pass should
+  decide deliberately, not something to bolt on here.
+- **e2e gotcha worth remembering:** the fixture images from `tests/e2e/png.ts`
+  are gradients, not flat colors ("keeps the file realistic"). A test that
+  wants to prove "this pixel is node A, not node B" cannot compare against a
+  precomputed solid color - it has to sample the *same* screen point before
+  and after the action and check the color changed, the same technique
+  `moveResize.spec.ts` already uses. `tests/e2e/selectionActions.spec.ts`'s
+  bring-to-front test got this wrong on the first pass (compared two
+  different screen points to each other) and failed identically on all three
+  engines - not flaky, just wrong math, which was the tell that it was a test
+  bug and not a product bug.
+- **Also worth remembering:** with two 400×300 fixture images in "Stacked"
+  mode, each node spans the board's full content width, so there's no room
+  to create an overlap by shifting sideways - it has to come from the
+  vertical axis instead.
+
+## ✅ The site is live and up to date with `master`
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved, all assets verified 200 from the command
 line. Source push (`git push origin master:main`) and
-`bash scripts/deploy-pages.sh` were last run together for Phase 2 item 1
-(`43acf72`), and both worked cleanly again on the first try (no re-auth, no
+`bash scripts/deploy-pages.sh` were last run together after Phase 2 item 5
+(`121698a`), and both worked cleanly again on the first try (no re-auth, no
 DNS re-check needed) — the earlier "Workflows: Read and write" token-scope fix
-from a prior session is holding.
+from a prior session is holding. Live site now serves items 1–5.
 
-**As of this session, `master` is six commits ahead of `origin/main`** —
-Phase 2 items 2–5 (`0326b11`, `903e220`, `f2f08fc`, `6733b51`, `b3584b4`,
-plus doc-only commits) have not been pushed, and the live site is still
-serving item 1. Both are one command away when wanted — source:
-`git push origin master:main`; live site: `bash scripts/deploy-pages.sh`
-(build → gh-pages orphan commit → Pages API, idempotent). Neither runs
-automatically — they're outward-facing, so check with the user first unless
-they've already said to just do it.
+Both commands are one command away whenever there's new work to publish —
+source: `git push origin master:main`; live site:
+`bash scripts/deploy-pages.sh` (build → gh-pages orphan commit → Pages API,
+idempotent). Neither runs automatically — they're outward-facing, so check
+with the user first unless they've already said to just do it.
 
 DNS is a Cloudflare zone, record `snapboard` → `bbbbz14.github.io`, set to
 **DNS only** — it must stay unproxied, or GitHub can't authorise the domain
@@ -244,7 +296,11 @@ wanted. Build in this order; each item is independently shippable.
 5. ✅ **Drag to reorder** while still in an auto mode (step badges renumber).
    Done — see the note under START HERE above, including a real WebKit-only
    repaint bug it surfaced.
-6. **Delete, duplicate, z-order.**
+6. ✅ **Delete, duplicate, z-order.** Done — see the note under START HERE
+   above, including the scope decision to ship exactly the three actions in
+   the product plan's own mockup (no unused send-to-back/forward/backward),
+   and an e2e gotcha about the fixture images being gradients, not flat
+   colors.
 7. **Undo/redo** by snapshotting `Board`. Board state is a few KB of JSON with
    no pixels in it, so snapshots are correct and cheap — do not build
    patch/inverse-op machinery.
