@@ -43,6 +43,8 @@ export const en = {
   'spacing.gap': 'Gap',
   'spacing.padding': 'Padding',
 
+  'selection.count': '{{count}} selected',
+
   'zoom.out': 'Zoom out',
   'zoom.in': 'Zoom in',
   'zoom.reset': 'Reset zoom to 100%',

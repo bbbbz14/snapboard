@@ -244,6 +244,17 @@ body {
   touch-action: none;
 }
 
+/* Selection outlines, handles, and the marquee rect - a second canvas
+   (ADR-002) so redrawing them never touches the tile-cached content canvas.
+   Pointer events pass through to .board-canvas underneath, which owns all
+   the gesture listeners. */
+.board-interaction {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+
 .zoom-controls {
   position: absolute;
   right: 16px;

@@ -1,0 +1,67 @@
+import { describe, it, expect } from 'vitest'
+import { containsPoint, hitTest, intersectsRect, marqueeSelect } from '@/board/interact/hitTest'
+import type { ImageNode } from '@/board/model/types'
+
+function node(id: string, frame: { x: number; y: number; w: number; h: number }, order: number): ImageNode {
+  return { kind: 'image', id, assetId: `a-${id}`, frame, order }
+}
+
+describe('containsPoint', () => {
+  it('is true inside and on the edge of the rect', () => {
+    const r = { x: 0, y: 0, w: 10, h: 10 }
+    expect(containsPoint(r, { x: 5, y: 5 })).toBe(true)
+    expect(containsPoint(r, { x: 0, y: 0 })).toBe(true)
+    expect(containsPoint(r, { x: 10, y: 10 })).toBe(true)
+  })
+
+  it('is false outside the rect', () => {
+    expect(containsPoint({ x: 0, y: 0, w: 10, h: 10 }, { x: 11, y: 5 })).toBe(false)
+  })
+})
+
+describe('intersectsRect', () => {
+  it('is true for overlapping rects', () => {
+    expect(intersectsRect({ x: 0, y: 0, w: 10, h: 10 }, { x: 5, y: 5, w: 10, h: 10 })).toBe(true)
+  })
+
+  it('is false for disjoint rects', () => {
+    expect(intersectsRect({ x: 0, y: 0, w: 10, h: 10 }, { x: 20, y: 20, w: 10, h: 10 })).toBe(false)
+  })
+
+  it('is false for rects that only touch at an edge', () => {
+    expect(intersectsRect({ x: 0, y: 0, w: 10, h: 10 }, { x: 10, y: 0, w: 10, h: 10 })).toBe(false)
+  })
+})
+
+describe('hitTest', () => {
+  it('returns null when nothing is under the point', () => {
+    const nodes = [node('a', { x: 0, y: 0, w: 10, h: 10 }, 0)]
+    expect(hitTest(nodes, { x: 50, y: 50 })).toBeNull()
+  })
+
+  it('returns the single node under the point', () => {
+    const nodes = [node('a', { x: 0, y: 0, w: 10, h: 10 }, 0)]
+    expect(hitTest(nodes, { x: 5, y: 5 })).toBe('a')
+  })
+
+  it('returns the topmost (highest order) node when frames overlap', () => {
+    const nodes = [node('back', { x: 0, y: 0, w: 20, h: 20 }, 0), node('front', { x: 0, y: 0, w: 20, h: 20 }, 1)]
+    expect(hitTest(nodes, { x: 5, y: 5 })).toBe('front')
+  })
+})
+
+describe('marqueeSelect', () => {
+  it('returns ids of every node the marquee intersects, in z-order', () => {
+    const nodes = [
+      node('c', { x: 100, y: 100, w: 10, h: 10 }, 2),
+      node('a', { x: 0, y: 0, w: 10, h: 10 }, 0),
+      node('b', { x: 5, y: 5, w: 10, h: 10 }, 1),
+    ]
+    expect(marqueeSelect(nodes, { x: 0, y: 0, w: 12, h: 12 })).toEqual(['a', 'b'])
+  })
+
+  it('returns an empty array when the marquee hits nothing', () => {
+    const nodes = [node('a', { x: 0, y: 0, w: 10, h: 10 }, 0)]
+    expect(marqueeSelect(nodes, { x: 100, y: 100, w: 10, h: 10 })).toEqual([])
+  })
+})

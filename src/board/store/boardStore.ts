@@ -8,6 +8,7 @@ import {
   type Board,
   type ImageNode,
   type LayoutMode,
+  type NodeId,
   type StylePreset,
 } from '@/board/model/types'
 import { AssetStore, type Asset } from '@/assets/assetStore'
@@ -24,6 +25,10 @@ export interface Toast {
 
 interface BoardState {
   board: Board
+  /** Not part of `Board`: undo/autosave snapshot `Board`, and selection is not
+   * arranged content, just what the user is currently pointing at - same
+   * reasoning as keeping the camera out of the store (see camera.ts). */
+  selectedIds: NodeId[]
   busy: { done: number; total: number } | null
   toasts: Toast[]
   addFiles: (files: File[]) => Promise<void>
@@ -33,6 +38,8 @@ interface BoardState {
   setGap: (gap: number) => void
   setPadding: (padding: number) => void
   clear: () => void
+  setSelection: (ids: NodeId[]) => void
+  toggleSelection: (id: NodeId) => void
   toast: (message: string, tone?: Toast['tone']) => void
   dismissToast: (id: number) => void
 }
@@ -64,6 +71,7 @@ function relayout(board: Board): Board {
 
 export const useBoardStore = create<BoardState>((set, get) => ({
   board: DEFAULT_BOARD,
+  selectedIds: [],
   busy: null,
   toasts: [],
 
@@ -102,8 +110,14 @@ export const useBoardStore = create<BoardState>((set, get) => ({
 
   clear: () => {
     for (const n of get().board.nodes) assetStore.release(n.assetId)
-    set({ board: { ...DEFAULT_BOARD, nodes: [] } })
+    set({ board: { ...DEFAULT_BOARD, nodes: [] }, selectedIds: [] })
   },
+
+  setSelection: (ids) => set({ selectedIds: ids }),
+  toggleSelection: (id) =>
+    set((s) => ({
+      selectedIds: s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id],
+    })),
 
   toast: (message, tone = 'info') => {
     const id = toastSeq++
