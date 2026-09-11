@@ -3,10 +3,13 @@ import { renderScene } from '@/board/render/renderScene'
 import { TileCache } from '@/board/render/tileCache'
 import { toRenderInput, useBoardStore } from '@/board/store/boardStore'
 import { hitTest, marqueeSelect } from '@/board/interact/hitTest'
-import type { Board } from '@/board/model/types'
+import { CORNERS, cornerPoint, HANDLE_SIZE, hitTestHandle } from '@/board/interact/handles'
+import { resizeKeepingAspect } from '@/board/interact/resize'
+import { snapMove, type SnapGuide } from '@/board/interact/snap'
+import type { Board, NodeId } from '@/board/model/types'
 import { boardToScreen, fitCamera, panBy, screenToBoard, zoomAt, type Camera } from '@/board/view/camera'
-import type { Point } from '@/lib/geometry'
-import { rectFromPoints } from '@/lib/geometry'
+import type { Point, Rect } from '@/lib/geometry'
+import { rectFromPoints, translate } from '@/lib/geometry'
 import { ZoomControls } from '@/ui/ZoomControls'
 import { t } from '@/i18n/t'
 
@@ -14,6 +17,10 @@ import { t } from '@/i18n/t'
 const MARQUEE_THRESHOLD = 3
 /** Selection outline and corner-handle color. */
 const SELECTION_COLOR = '#2563eb'
+/** Alignment-guide line color - distinct from the selection color. */
+const GUIDE_COLOR = '#f43f5e'
+/** Screen-px distance within which a drag snaps to an edge/center. */
+const SNAP_THRESHOLD_PX = 8
 
 /** 3x displays cost 2.25x the fill rate of 2x for no visible gain here. */
 const MAX_DPR = 2
@@ -50,10 +57,25 @@ export function BoardCanvas({ board, viewport }: Props) {
   const spaceHeldRef = useRef(false)
   // Board-space marquee rect in progress, plus the screen-space pointerdown
   const marqueeRef = useRef<{ start: Point; current: Point; screenStart: { x: number; y: number } } | null>(null)
+  // Group-move in progress: every moving node's frame at pointerdown, keyed
+  // by id, plus which one was actually grabbed (drives snapping) and where.
+  const moveRef = useRef<{
+    ids: NodeId[]
+    primaryId: NodeId
+    startFrames: Record<NodeId, Rect>
+    startPoint: Point
+  } | null>(null)
+  const resizeRef = useRef<{ id: NodeId; corner: (typeof CORNERS)[number]; startFrame: Rect } | null>(null)
+  // Live frame overrides for nodes being moved/resized, read directly by
+  // `draw`/`drawInteraction` so dragging renders at 60fps without going
+  // through React state - only committed to the store on pointer-up.
+  const dragFramesRef = useRef<Record<NodeId, Rect> | null>(null)
+  const guidesRef = useRef<SnapGuide[]>([])
   const [percent, setPercent] = useState(() => Math.round(cameraRef.current.zoom * 100))
   const selectedIds = useBoardStore((s) => s.selectedIds)
   const setSelection = useBoardStore((s) => s.setSelection)
   const toggleSelection = useBoardStore((s) => s.toggleSelection)
+  const setFrames = useBoardStore((s) => s.setFrames)
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -78,6 +100,17 @@ export function BoardCanvas({ board, viewport }: Props) {
     const tiles = tilesRef.current
     tiles.setRatio(renderScale)
     const input = toRenderInput(board)
+    // Live drag overrides only ever touch this preview-side copy of the
+    // frames - the store (and export) still hold the last committed layout
+    // until pointer-up, matching invariant 1's "export never sees preview-
+    // only state" (same reasoning as the camera's `offset`).
+    const overrides = dragFramesRef.current
+    if (overrides) {
+      for (const item of input.items) {
+        const frame = overrides[item.id]
+        if (frame) item.frame = frame
+      }
+    }
     tiles.retain(input.items.map((i) => i.id))
     renderScene(ctx, input, { scale: renderScale, tiles, offset: { x: origin.x * dpr, y: origin.y * dpr } })
 
@@ -116,23 +149,35 @@ export function BoardCanvas({ board, viewport }: Props) {
     ctx.strokeStyle = SELECTION_COLOR
     ctx.lineWidth = 2
 
-    const HANDLE = 6
+    const overrides = dragFramesRef.current
     for (const n of board.nodes) {
       if (!selectedIds.includes(n.id)) continue
-      const topLeft = boardToScreen(camera, viewport, { x: n.frame.x, y: n.frame.y })
-      const w = n.frame.w * camera.zoom
-      const h = n.frame.h * camera.zoom
+      const frame = overrides?.[n.id] ?? n.frame
+      const topLeft = boardToScreen(camera, viewport, { x: frame.x, y: frame.y })
+      const w = frame.w * camera.zoom
+      const h = frame.h * camera.zoom
       ctx.strokeRect(topLeft.x, topLeft.y, w, h)
       ctx.fillStyle = SELECTION_COLOR
-      const corners: Point[] = [
-        { x: topLeft.x, y: topLeft.y },
-        { x: topLeft.x + w, y: topLeft.y },
-        { x: topLeft.x, y: topLeft.y + h },
-        { x: topLeft.x + w, y: topLeft.y + h },
-      ]
-      for (const c of corners) {
-        ctx.fillRect(c.x - HANDLE / 2, c.y - HANDLE / 2, HANDLE, HANDLE)
+      for (const corner of CORNERS) {
+        const p = boardToScreen(camera, viewport, cornerPoint(frame, corner))
+        ctx.fillRect(p.x - HANDLE_SIZE / 2, p.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE)
       }
+    }
+
+    ctx.strokeStyle = GUIDE_COLOR
+    ctx.lineWidth = 1
+    for (const guide of guidesRef.current) {
+      ctx.beginPath()
+      if (guide.axis === 'x') {
+        const x = boardToScreen(camera, viewport, { x: guide.at, y: 0 }).x
+        ctx.moveTo(x, 0)
+        ctx.lineTo(x, viewport.h)
+      } else {
+        const y = boardToScreen(camera, viewport, { x: 0, y: guide.at }).y
+        ctx.moveTo(0, y)
+        ctx.lineTo(viewport.w, y)
+      }
+      ctx.stroke()
     }
 
     const marquee = marqueeRef.current
@@ -141,6 +186,7 @@ export function BoardCanvas({ board, viewport }: Props) {
       const b = boardToScreen(camera, viewport, marquee.current)
       const rect = rectFromPoints(a, b)
       ctx.fillStyle = 'rgba(37, 99, 235, 0.12)'
+      ctx.strokeStyle = SELECTION_COLOR
       ctx.lineWidth = 1
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
       ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
@@ -271,43 +317,120 @@ export function BoardCanvas({ board, viewport }: Props) {
     }
   }, [applyPan])
 
-  // Left-click selects (shift-click toggles); dragging from empty space
+  // Left-click: a resize handle drags that node's size; a node drags the
+  // whole selection (selecting it first if it wasn't already); empty space
   // marquee-selects. Left-click-without-space is untouched by the pan effect
   // above, so both listeners can sit on the same canvas without conflict.
+  // In-progress geometry lives in refs, not React state, and is drawn by
+  // calling `draw`/`drawInteraction` directly on every pointermove - the
+  // store only hears about it once, on pointer-up.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const toBoardPoint = (e: PointerEvent): Point => {
+    const toScreenPoint = (e: PointerEvent): Point => {
       const rect = canvas.getBoundingClientRect()
-      return screenToBoard(cameraRef.current, viewport, { x: e.clientX - rect.left, y: e.clientY - rect.top })
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top }
     }
+    const toBoardPoint = (e: PointerEvent): Point => screenToBoard(cameraRef.current, viewport, toScreenPoint(e))
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0 || spaceHeldRef.current) return
+
+      const handle = hitTestHandle(board.nodes, selectedIds, cameraRef.current, viewport, toScreenPoint(e))
+      if (handle) {
+        resizeRef.current = { id: handle.id, corner: handle.corner, startFrame: handle.frame }
+        canvas.setPointerCapture(e.pointerId)
+        return
+      }
+
       const point = toBoardPoint(e)
       const hitId = hitTest(board.nodes, point)
       if (hitId) {
-        if (e.shiftKey) toggleSelection(hitId)
-        else if (!useBoardStore.getState().selectedIds.includes(hitId)) setSelection([hitId])
+        if (e.shiftKey) {
+          toggleSelection(hitId)
+          return
+        }
+        const current = useBoardStore.getState().selectedIds
+        const ids = current.includes(hitId) ? current : [hitId]
+        if (!current.includes(hitId)) setSelection(ids)
+        const startFrames: Record<NodeId, Rect> = {}
+        for (const n of board.nodes) if (ids.includes(n.id)) startFrames[n.id] = n.frame
+        moveRef.current = { ids, primaryId: hitId, startFrames, startPoint: point }
+        canvas.setPointerCapture(e.pointerId)
         return
       }
+
       marqueeRef.current = { start: point, current: point, screenStart: { x: e.clientX, y: e.clientY } }
       canvas.setPointerCapture(e.pointerId)
     }
 
     const onPointerMove = (e: PointerEvent) => {
+      const resize = resizeRef.current
+      if (resize) {
+        dragFramesRef.current = { [resize.id]: resizeKeepingAspect(resize.startFrame, resize.corner, toBoardPoint(e)) }
+        draw()
+        drawInteraction()
+        return
+      }
+
+      const move = moveRef.current
+      if (move) {
+        const point = toBoardPoint(e)
+        const dx0 = point.x - move.startPoint.x
+        const dy0 = point.y - move.startPoint.y
+        const primaryStart = move.startFrames[move.primaryId]!
+        const others = board.nodes.filter((n) => !move.ids.includes(n.id)).map((n) => n.frame)
+        const snap = snapMove(translate(primaryStart, dx0, dy0), others, board.size, SNAP_THRESHOLD_PX / cameraRef.current.zoom)
+        guidesRef.current = snap.guides
+        const dx = dx0 + snap.dx
+        const dy = dy0 + snap.dy
+        const frames: Record<NodeId, Rect> = {}
+        for (const id of move.ids) frames[id] = translate(move.startFrames[id]!, dx, dy)
+        dragFramesRef.current = frames
+        draw()
+        drawInteraction()
+        return
+      }
+
       const marquee = marqueeRef.current
-      if (!marquee) return
-      marqueeRef.current = { ...marquee, current: toBoardPoint(e) }
-      drawInteraction()
+      if (marquee) {
+        marqueeRef.current = { ...marquee, current: toBoardPoint(e) }
+        drawInteraction()
+      }
     }
 
-    const endMarquee = (e: PointerEvent) => {
+    const onPointerUp = (e: PointerEvent) => {
+      if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
+
+      if (resizeRef.current) {
+        const { id } = resizeRef.current
+        const frame = dragFramesRef.current?.[id]
+        resizeRef.current = null
+        if (frame) setFrames([{ id, frame }])
+        // Only clear the override after this draw: the store update above
+        // hasn't reached `board` (a prop, updated by React) yet, so without
+        // it this frame would render the pre-resize size for one paint.
+        draw()
+        drawInteraction()
+        dragFramesRef.current = null
+        return
+      }
+
+      if (moveRef.current) {
+        const frames = dragFramesRef.current
+        moveRef.current = null
+        guidesRef.current = []
+        if (frames) setFrames(Object.entries(frames).map(([id, frame]) => ({ id, frame })))
+        draw()
+        drawInteraction()
+        dragFramesRef.current = null
+        return
+      }
+
       const marquee = marqueeRef.current
       if (!marquee) return
       marqueeRef.current = null
-      if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
 
       const moved = Math.hypot(e.clientX - marquee.screenStart.x, e.clientY - marquee.screenStart.y) > MARQUEE_THRESHOLD
       if (!moved) {
@@ -322,15 +445,15 @@ export function BoardCanvas({ board, viewport }: Props) {
 
     canvas.addEventListener('pointerdown', onPointerDown)
     canvas.addEventListener('pointermove', onPointerMove)
-    canvas.addEventListener('pointerup', endMarquee)
-    canvas.addEventListener('pointercancel', endMarquee)
+    canvas.addEventListener('pointerup', onPointerUp)
+    canvas.addEventListener('pointercancel', onPointerUp)
     return () => {
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointermove', onPointerMove)
-      canvas.removeEventListener('pointerup', endMarquee)
-      canvas.removeEventListener('pointercancel', endMarquee)
+      canvas.removeEventListener('pointerup', onPointerUp)
+      canvas.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [board.nodes, viewport, setSelection, toggleSelection, drawInteraction])
+  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, draw, drawInteraction])
 
   // Keyboard shortcuts. None use a modifier key, so the browser's own
   // Ctrl/Cmd +/-/0 page-zoom shortcuts are left alone - see "avoid shortcuts

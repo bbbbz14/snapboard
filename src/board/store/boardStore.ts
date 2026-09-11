@@ -14,6 +14,7 @@ import {
 import { AssetStore, type Asset } from '@/assets/assetStore'
 import type { Rejection } from '@/assets/validate'
 import type { RenderInput } from '@/board/render/renderScene'
+import type { Rect } from '@/lib/geometry'
 
 export const assetStore = new AssetStore()
 
@@ -40,6 +41,9 @@ interface BoardState {
   clear: () => void
   setSelection: (ids: NodeId[]) => void
   toggleSelection: (id: NodeId) => void
+  /** Commits manually-moved/resized frames. Does not relayout - a manual edit
+   * must not be recomputed away by the auto-layout heuristic. */
+  setFrames: (updates: { id: NodeId; frame: Rect }[]) => void
   toast: (message: string, tone?: Toast['tone']) => void
   dismissToast: (id: number) => void
 }
@@ -118,6 +122,11 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     set((s) => ({
       selectedIds: s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id],
     })),
+  setFrames: (updates) =>
+    set((s) => {
+      const byId = new Map(updates.map((u) => [u.id, u.frame]))
+      return { board: { ...s.board, nodes: s.board.nodes.map((n) => (byId.has(n.id) ? { ...n, frame: byId.get(n.id)! } : n)) } }
+    }),
 
   toast: (message, tone = 'info') => {
     const id = toastSeq++
