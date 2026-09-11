@@ -133,6 +133,10 @@ export function TopBar() {
               max={80}
               value={board.gap}
               onChange={(e) => store.setGap(Number(e.target.value))}
+              onPointerDown={store.beginAdjustment}
+              onPointerUp={store.endAdjustment}
+              onKeyDown={store.beginAdjustment}
+              onKeyUp={store.endAdjustment}
               aria-label={t('spacing.gap')}
             />
           </label>

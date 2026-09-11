@@ -80,9 +80,7 @@ export class AssetStore {
           const hash = await hashBlob(file)
           const existingId = this.#byHash.get(hash)
           if (existingId) {
-            const existing = this.#assets.get(existingId)!
-            existing.refs++
-            return existing
+            return this.#assets.get(existingId)!
           }
 
           const res = await this.#decode(file)
@@ -129,20 +127,26 @@ export class AssetStore {
     }
   }
 
-  /** Adds a reference, e.g. when a node is duplicated onto an asset another node already uses. */
-  retain(id: string): void {
-    const asset = this.#assets.get(id)
-    if (asset) asset.refs++
-  }
-
-  release(id: string): void {
-    const asset = this.#assets.get(id)
-    if (!asset) return
-    if (--asset.refs > 0) return
-    asset.display.close()
-    this.#assets.delete(id)
-    for (const [hash, aid] of this.#byHash) {
-      if (aid === id) this.#byHash.delete(hash)
+  /**
+   * Sets each asset's refcount to its occurrence count in `counts` and frees
+   * any asset that drops to zero. Called with the assetIds used across every
+   * board reachable from the current one - the live board plus all of undo
+   * history and the redo stack - so an image a node still references from a
+   * past or future snapshot survives, and only becomes unreachable (and gets
+   * its ImageBitmap closed) once no history entry needs it anymore.
+   */
+  reconcile(counts: Map<string, number>): void {
+    for (const [id, asset] of [...this.#assets]) {
+      const want = counts.get(id) ?? 0
+      if (want > 0) {
+        asset.refs = want
+        continue
+      }
+      asset.display.close()
+      this.#assets.delete(id)
+      for (const [hash, aid] of this.#byHash) {
+        if (aid === id) this.#byHash.delete(hash)
+      }
     }
   }
 

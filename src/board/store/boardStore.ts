@@ -21,6 +21,9 @@ import { translate, type Rect } from '@/lib/geometry'
  * the original instead of sitting exactly on top of it. */
 const DUPLICATE_OFFSET = 16
 
+/** Undo depth required by the product plan's Phase 2 DoD. */
+const MAX_HISTORY = 50
+
 export const assetStore = new AssetStore()
 
 export interface Toast {
@@ -35,6 +38,17 @@ interface BoardState {
    * arranged content, just what the user is currently pointing at - same
    * reasoning as keeping the camera out of the store (see camera.ts). */
   selectedIds: NodeId[]
+  /** Snapshots of `board` to step back/forward to. A plain array of whole
+   * boards, not patches - Board is a few KB of JSON with no pixels in it
+   * (invariant 3), so this is correct and cheap; see CLAUDE.md item 7. */
+  past: Board[]
+  future: Board[]
+  /** Set while a continuous UI gesture (dragging the gap slider) is
+   * live-updating `board` tick by tick; holds the pre-gesture board so
+   * `endAdjustment` can push exactly one history entry for the whole
+   * gesture instead of one per tick. Mirrors the ref-first "commit once"
+   * pattern move/resize already uses, just at the store level. */
+  adjustmentBase: Board | null
   busy: { done: number; total: number } | null
   toasts: Toast[]
   addFiles: (files: File[]) => Promise<void>
@@ -53,9 +67,11 @@ interface BoardState {
    * a still-auto board's own frames come from order, so this is how drag-to-
    * reorder repositions nodes (as opposed to `setFrames`'s free-form move). */
   reorder: (id: NodeId, targetIndex: number) => void
-  /** Removes the selected nodes and releases their asset references
-   * (invariant 3) - also the one place `selectedIds` needs pruning, since
-   * the ids being removed are the ones being cleared (see item 2's note). */
+  /** Removes the selected nodes - `commitBoard`'s reconcile only actually
+   * frees their assets (invariant 3) once no undo/redo entry references
+   * them either, so an undo right after this still has a decoded image to
+   * restore. Also the one place `selectedIds` needs pruning, since the ids
+   * being removed are the ones being cleared (see item 2's note). */
   deleteSelected: () => void
   /** Copies the selected nodes, offset so they read as distinct from the
    * originals, and selects the copies. */
@@ -64,6 +80,15 @@ interface BoardState {
    * relayouts, since `order` doubles as layout position for auto boards -
    * same overload `reorder` already relies on for drag-to-reorder. */
   bringToFront: () => void
+  undo: () => void
+  redo: () => void
+  /** Opens a coalescing window: board updates until `endAdjustment` collapse
+   * into a single undo step. Call on pointerdown/keydown of a continuous
+   * control (the gap slider); idempotent while already open. */
+  beginAdjustment: () => void
+  /** Closes the window opened by `beginAdjustment` and commits one history
+   * entry for the whole gesture, if it actually changed anything. */
+  endAdjustment: () => void
   toast: (message: string, tone?: Toast['tone']) => void
   dismissToast: (id: number) => void
 }
@@ -93,9 +118,39 @@ function relayout(board: Board): Board {
   }
 }
 
+/** Every assetId used by any of these boards is "reachable" and must stay
+ * decoded - see `AssetStore.reconcile`. */
+function reconcileAssets(boards: Board[]): void {
+  const counts = new Map<string, number>()
+  for (const b of boards) {
+    for (const n of b.nodes) counts.set(n.assetId, (counts.get(n.assetId) ?? 0) + 1)
+  }
+  assetStore.reconcile(counts)
+}
+
+/** The single path every board mutation commits through. While an
+ * adjustment window is open (see `beginAdjustment`), it just updates `board`
+ * - the pre-gesture snapshot goes to `past` once, in `endAdjustment` - so a
+ * slider drag is one undo step, not one per tick (product plan 13.1: "merge
+ * consecutive actions"). Otherwise it pushes the *previous* `board` onto
+ * `past` (capped at MAX_HISTORY) and clears `future`, same as any editor's
+ * "new action discards the redo branch" rule. */
+function commitBoard(s: BoardState, board: Board): Pick<BoardState, 'board' | 'past' | 'future'> {
+  if (s.adjustmentBase) {
+    reconcileAssets([board, s.adjustmentBase, ...s.past, ...s.future])
+    return { board, past: s.past, future: s.future }
+  }
+  const past = [...s.past, s.board].slice(-MAX_HISTORY)
+  reconcileAssets([board, ...past])
+  return { board, past, future: [] }
+}
+
 export const useBoardStore = create<BoardState>((set, get) => ({
   board: DEFAULT_BOARD,
   selectedIds: [],
+  past: [],
+  future: [],
+  adjustmentBase: null,
   busy: null,
   toasts: [],
 
@@ -118,7 +173,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         order: startOrder + i,
         frame: { x: 0, y: 0, w: asset.natural.w, h: asset.natural.h },
       }))
-      set((s) => ({ board: relayout({ ...s.board, nodes: [...s.board.nodes, ...nodes] }) }))
+      set((s) => commitBoard(s, relayout({ ...s.board, nodes: [...s.board.nodes, ...nodes] })))
     }
 
     for (const r of result.rejected) {
@@ -126,16 +181,14 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     }
   },
 
-  setLayout: (mode) => set((s) => ({ board: relayout({ ...s.board, layout: mode }) })),
-  setBackground: (name) => set((s) => ({ board: { ...s.board, background: BACKGROUNDS[name] as Background } })),
-  setStyle: (style) => set((s) => ({ board: { ...s.board, style } })),
-  setGap: (gap) => set((s) => ({ board: relayout({ ...s.board, gap }) })),
-  setPadding: (padding) => set((s) => ({ board: relayout({ ...s.board, padding }) })),
+  setLayout: (mode) => set((s) => commitBoard(s, relayout({ ...s.board, layout: mode }))),
+  setBackground: (name) =>
+    set((s) => commitBoard(s, { ...s.board, background: BACKGROUNDS[name] as Background })),
+  setStyle: (style) => set((s) => commitBoard(s, { ...s.board, style })),
+  setGap: (gap) => set((s) => commitBoard(s, relayout({ ...s.board, gap }))),
+  setPadding: (padding) => set((s) => commitBoard(s, relayout({ ...s.board, padding }))),
 
-  clear: () => {
-    for (const n of get().board.nodes) assetStore.release(n.assetId)
-    set({ board: { ...DEFAULT_BOARD, nodes: [] }, selectedIds: [] })
-  },
+  clear: () => set((s) => ({ ...commitBoard(s, { ...DEFAULT_BOARD, nodes: [] }), selectedIds: [] })),
 
   setSelection: (ids) => set({ selectedIds: ids }),
   toggleSelection: (id) =>
@@ -145,16 +198,14 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   setFrames: (updates) =>
     set((s) => {
       const byId = new Map(updates.map((u) => [u.id, u.frame]))
-      return {
-        // The first manual move/resize switches to 'free' so the very next
-        // relayout() (e.g. from adding another image) can't silently
-        // overwrite it - see invariant 4.
-        board: {
-          ...s.board,
-          layout: 'free',
-          nodes: s.board.nodes.map((n) => (byId.has(n.id) ? { ...n, frame: byId.get(n.id)! } : n)),
-        },
-      }
+      // The first manual move/resize switches to 'free' so the very next
+      // relayout() (e.g. from adding another image) can't silently
+      // overwrite it - see invariant 4.
+      return commitBoard(s, {
+        ...s.board,
+        layout: 'free',
+        nodes: s.board.nodes.map((n) => (byId.has(n.id) ? { ...n, frame: byId.get(n.id)! } : n)),
+      })
     }),
 
   reorder: (id, targetIndex) =>
@@ -164,17 +215,16 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       if (from === -1) return {}
       const [moved] = sorted.splice(from, 1)
       sorted.splice(Math.max(0, Math.min(sorted.length, targetIndex)), 0, moved!)
-      return { board: relayout({ ...s.board, nodes: sorted.map((n, i) => ({ ...n, order: i })) }) }
+      return commitBoard(s, relayout({ ...s.board, nodes: sorted.map((n, i) => ({ ...n, order: i })) }))
     }),
 
   deleteSelected: () =>
     set((s) => {
       const ids = new Set(s.selectedIds)
       if (ids.size === 0) return {}
-      for (const n of s.board.nodes) if (ids.has(n.id)) assetStore.release(n.assetId)
       const remaining = [...s.board.nodes].filter((n) => !ids.has(n.id)).sort((a, b) => a.order - b.order)
       return {
-        board: relayout({ ...s.board, nodes: remaining.map((n, i) => ({ ...n, order: i })) }),
+        ...commitBoard(s, relayout({ ...s.board, nodes: remaining.map((n, i) => ({ ...n, order: i })) })),
         selectedIds: [],
       }
     }),
@@ -189,7 +239,6 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       for (const n of sorted) {
         nodes.push(n)
         if (ids.has(n.id)) {
-          assetStore.retain(n.assetId)
           const copy: ImageNode = {
             ...n,
             id: `n${nodeSeq++}`,
@@ -200,7 +249,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         }
       }
       return {
-        board: relayout({ ...s.board, nodes: nodes.map((n, i) => ({ ...n, order: i })) }),
+        ...commitBoard(s, relayout({ ...s.board, nodes: nodes.map((n, i) => ({ ...n, order: i })) })),
         selectedIds: newIds,
       }
     }),
@@ -210,7 +259,50 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       if (s.selectedIds.length === 0) return {}
       const sorted = [...s.board.nodes].sort((a, b) => a.order - b.order)
       const reordered = moveToFront(sorted, new Set(s.selectedIds))
-      return { board: relayout({ ...s.board, nodes: reordered.map((n, i) => ({ ...n, order: i })) }) }
+      return commitBoard(s, relayout({ ...s.board, nodes: reordered.map((n, i) => ({ ...n, order: i })) }))
+    }),
+
+  undo: () =>
+    set((s) => {
+      const previous = s.past[s.past.length - 1]
+      if (!previous) return {}
+      const past = s.past.slice(0, -1)
+      const future = [...s.future, s.board]
+      reconcileAssets([previous, ...past, ...future])
+      return {
+        board: previous,
+        past,
+        future,
+        adjustmentBase: null,
+        selectedIds: s.selectedIds.filter((id) => previous.nodes.some((n) => n.id === id)),
+      }
+    }),
+
+  redo: () =>
+    set((s) => {
+      const next = s.future[s.future.length - 1]
+      if (!next) return {}
+      const future = s.future.slice(0, -1)
+      const past = [...s.past, s.board]
+      reconcileAssets([next, ...past, ...future])
+      return {
+        board: next,
+        past,
+        future,
+        adjustmentBase: null,
+        selectedIds: s.selectedIds.filter((id) => next.nodes.some((n) => n.id === id)),
+      }
+    }),
+
+  beginAdjustment: () => set((s) => (s.adjustmentBase ? {} : { adjustmentBase: s.board })),
+  endAdjustment: () =>
+    set((s) => {
+      const base = s.adjustmentBase
+      if (!base) return {}
+      if (base === s.board) return { adjustmentBase: null }
+      const past = [...s.past, base].slice(-MAX_HISTORY)
+      reconcileAssets([s.board, ...past])
+      return { past, future: [], adjustmentBase: null }
     }),
 
   toast: (message, tone = 'info') => {

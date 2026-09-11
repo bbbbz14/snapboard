@@ -89,6 +89,8 @@ export function BoardCanvas({ board, viewport }: Props) {
   const deleteSelected = useBoardStore((s) => s.deleteSelected)
   const duplicateSelected = useBoardStore((s) => s.duplicateSelected)
   const bringToFront = useBoardStore((s) => s.bringToFront)
+  const undo = useBoardStore((s) => s.undo)
+  const redo = useBoardStore((s) => s.redo)
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -552,13 +554,34 @@ export function BoardCanvas({ board, viewport }: Props) {
     }
   }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction])
 
-  // Keyboard shortcuts. None use a modifier key, so the browser's own
-  // Ctrl/Cmd +/-/0 page-zoom shortcuts are left alone - see "avoid shortcuts
-  // the browser owns" in CLAUDE.md.
+  // Keyboard shortcuts. Undo/redo is the one deliberate exception to "no
+  // modifier keys": Ctrl/Cmd+Z is universal and, unlike Ctrl/Cmd+D (see item
+  // 6's note on why that one waits for item 9), no browser reserves it on a
+  // plain page. Every other shortcut here still avoids modifiers so the
+  // browser's own Ctrl/Cmd +/-/0 page-zoom shortcuts are left alone.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey) return
       const target = e.target as HTMLElement | null
+
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'z') {
+        // Only bail for an actual text-editing surface, where Ctrl/Cmd+Z
+        // should undo typing, not the board - unlike the gap slider below,
+        // there's no such surface yet (Phase 4 is what adds one), but this
+        // keeps the promise invariant 7 already makes about text input.
+        // The gap slider itself commonly still has focus right after a drag
+        // (the exact moment a user reaches for undo), so it must not be
+        // caught by that check the way the plain shortcuts below are.
+        const isTextEntry =
+          target instanceof HTMLTextAreaElement ||
+          target instanceof HTMLSelectElement ||
+          (target instanceof HTMLInputElement && target.type !== 'range')
+        if (isTextEntry) return
+        e.preventDefault()
+        if (e.shiftKey) redo()
+        else undo()
+        return
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
 
       if (e.key === '+' || e.key === '=') {
@@ -584,7 +607,7 @@ export function BoardCanvas({ board, viewport }: Props) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [zoomByFactor, fitToView, resetTo100, setSelection, selectedIds, deleteSelected])
+  }, [zoomByFactor, fitToView, resetTo100, setSelection, selectedIds, deleteSelected, undo, redo])
 
   return (
     <div className="board-stage">

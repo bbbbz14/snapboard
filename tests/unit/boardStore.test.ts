@@ -117,6 +117,106 @@ describe('duplicateSelected', () => {
   })
 })
 
+describe('undo/redo', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', gap: 20, nodes: [node('a', { x: 0, y: 0, w: 10, h: 10 })] },
+      selectedIds: [],
+      past: [],
+      future: [],
+      adjustmentBase: null,
+    })
+  })
+
+  it('reverts the last committed action and redo re-applies it', () => {
+    useBoardStore.getState().setGap(40)
+    expect(useBoardStore.getState().board.gap).toBe(40)
+
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.gap).toBe(20)
+
+    useBoardStore.getState().redo()
+    expect(useBoardStore.getState().board.gap).toBe(40)
+  })
+
+  it('does nothing when there is nothing to undo or redo', () => {
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.gap).toBe(20)
+    useBoardStore.getState().redo()
+    expect(useBoardStore.getState().board.gap).toBe(20)
+  })
+
+  it('discards the redo branch once a new action is committed after an undo', () => {
+    useBoardStore.getState().setGap(40)
+    useBoardStore.getState().setGap(60)
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.gap).toBe(40)
+
+    useBoardStore.getState().setGap(99)
+    expect(useBoardStore.getState().future).toHaveLength(0)
+    useBoardStore.getState().redo()
+    expect(useBoardStore.getState().board.gap).toBe(99)
+  })
+
+  it('restores a deleted node on undo', () => {
+    useBoardStore.setState({ selectedIds: ['a'] })
+    useBoardStore.getState().deleteSelected()
+    expect(useBoardStore.getState().board.nodes).toHaveLength(0)
+
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.nodes.map((n) => n.id)).toEqual(['a'])
+  })
+
+  it('prunes selection to nodes that still exist in the restored board', () => {
+    useBoardStore.setState({ selectedIds: ['a'] })
+    useBoardStore.getState().duplicateSelected()
+    const copyId = useBoardStore.getState().selectedIds[0]!
+    expect(copyId).not.toBe('a')
+
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.nodes.map((n) => n.id)).toEqual(['a'])
+    expect(useBoardStore.getState().selectedIds).toEqual([])
+  })
+
+  it('caps undo history at 50 steps', () => {
+    for (let i = 1; i <= 60; i++) useBoardStore.getState().setGap(i)
+    expect(useBoardStore.getState().past).toHaveLength(50)
+    for (let i = 0; i < 60; i++) useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.gap).toBe(10)
+  })
+})
+
+describe('beginAdjustment/endAdjustment', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', gap: 20, nodes: [] },
+      past: [],
+      future: [],
+      adjustmentBase: null,
+    })
+  })
+
+  it('collapses a whole dragged gesture into a single undo step', () => {
+    useBoardStore.getState().beginAdjustment()
+    useBoardStore.getState().setGap(30)
+    useBoardStore.getState().setGap(45)
+    useBoardStore.getState().setGap(60)
+    useBoardStore.getState().endAdjustment()
+
+    expect(useBoardStore.getState().board.gap).toBe(60)
+    expect(useBoardStore.getState().past).toHaveLength(1)
+
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.gap).toBe(20)
+  })
+
+  it('commits no history entry when the gesture never changed anything', () => {
+    useBoardStore.getState().beginAdjustment()
+    useBoardStore.getState().endAdjustment()
+    expect(useBoardStore.getState().past).toHaveLength(0)
+  })
+})
+
 describe('bringToFront', () => {
   beforeEach(() => {
     useBoardStore.setState({
