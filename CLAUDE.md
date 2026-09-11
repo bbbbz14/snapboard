@@ -169,7 +169,7 @@ Shipped as its own commit (`b3584b4`). Pushed and deployed to the live site.
 
 ### Phase 2 item 6 — done: delete, duplicate, z-order
 
-Not yet committed/pushed/deployed as of writing this note - see below.
+Shipped as its own commit (`4a72ead`). Pushed and deployed to the live site.
 
 - Scope was pinned to the product plan's own mockup (docs/00-product-plan.md
   4.2): "when an object is selected, a small floating toolbar appears above
@@ -229,10 +229,10 @@ Not yet committed/pushed/deployed as of writing this note - see below.
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved, all assets verified 200 from the command
 line. Source push (`git push origin master:main`) and
-`bash scripts/deploy-pages.sh` were last run together after Phase 2 item 5
-(`121698a`), and both worked cleanly again on the first try (no re-auth, no
+`bash scripts/deploy-pages.sh` were last run together after Phase 2 item 6
+(`6c5eb95`), and both worked cleanly again on the first try (no re-auth, no
 DNS re-check needed) — the earlier "Workflows: Read and write" token-scope fix
-from a prior session is holding. Live site now serves items 1–5.
+from a prior session is holding. Live site now serves items 1–6.
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:
