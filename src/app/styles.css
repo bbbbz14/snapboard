@@ -283,6 +283,47 @@ body {
   pointer-events: none;
 }
 
+/* Floating above the current selection, per the product plan's 4.2 mockup -
+   position is written directly by BoardCanvas's drawInteraction (ref-first,
+   same as .board-page), not by layout, so it tracks the selection at 60fps
+   during a drag. */
+.selection-toolbar {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 10px));
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  pointer-events: auto;
+  z-index: 1;
+}
+
+.selection-toolbar__btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 7px;
+  width: 28px;
+  height: 28px;
+  color: var(--text-dim);
+}
+
+.selection-toolbar__btn:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.selection-toolbar__btn--danger:hover {
+  color: #dc2626;
+  background: color-mix(in srgb, #dc2626 10%, transparent);
+}
+
 .zoom-controls {
   position: absolute;
   right: 16px;

@@ -9,8 +9,9 @@ import { snapMove, type SnapGuide } from '@/board/interact/snap'
 import type { Board, NodeId } from '@/board/model/types'
 import { boardToScreen, fitCamera, panBy, screenToBoard, zoomAt, type Camera } from '@/board/view/camera'
 import type { Point, Rect } from '@/lib/geometry'
-import { rectFromPoints, translate } from '@/lib/geometry'
+import { boundsOf, rectFromPoints, translate } from '@/lib/geometry'
 import { ZoomControls } from '@/ui/ZoomControls'
+import { SelectionToolbar } from '@/ui/SelectionToolbar'
 import { t } from '@/i18n/t'
 
 /** Screen-px movement below this counts as a click, not a marquee drag. */
@@ -47,6 +48,7 @@ export function BoardCanvas({ board, viewport }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const interactionCanvasRef = useRef<HTMLCanvasElement>(null)
   const pageRef = useRef<HTMLDivElement>(null)
+  const toolbarRef = useRef<HTMLDivElement>(null)
   const tilesRef = useRef(new TileCache())
   const cameraRef = useRef<Camera>(fitCamera(board.size, viewport, VIEW_MARGIN))
   // True until the user zooms or pans by hand; while true, the camera keeps
@@ -84,6 +86,9 @@ export function BoardCanvas({ board, viewport }: Props) {
   const toggleSelection = useBoardStore((s) => s.toggleSelection)
   const setFrames = useBoardStore((s) => s.setFrames)
   const reorder = useBoardStore((s) => s.reorder)
+  const deleteSelected = useBoardStore((s) => s.deleteSelected)
+  const duplicateSelected = useBoardStore((s) => s.duplicateSelected)
+  const bringToFront = useBoardStore((s) => s.bringToFront)
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -175,6 +180,26 @@ export function BoardCanvas({ board, viewport }: Props) {
       for (const corner of CORNERS) {
         const p = boardToScreen(camera, viewport, cornerPoint(frame, corner))
         ctx.fillRect(p.x - HANDLE_SIZE / 2, p.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE)
+      }
+    }
+
+    // Positions the floating selection toolbar imperatively, same ref-first
+    // reasoning as `pageRef` above - it must track the selection at 60fps
+    // during a drag without going through React state. Hidden mid-gesture so
+    // it doesn't float over a move/resize/marquee in progress.
+    const toolbar = toolbarRef.current
+    if (toolbar) {
+      const dragging = !!(moveRef.current || resizeRef.current || reorderRef.current || marqueeRef.current)
+      if (selectedIds.length === 0 || dragging) {
+        toolbar.style.display = 'none'
+      } else {
+        const frames = board.nodes.filter((n) => selectedIds.includes(n.id)).map((n) => overrides?.[n.id] ?? n.frame)
+        const bounds = boundsOf(frames)
+        const boundsTopLeft = boardToScreen(camera, viewport, { x: bounds.x, y: bounds.y })
+        const boundsTopRight = boardToScreen(camera, viewport, { x: bounds.x + bounds.w, y: bounds.y })
+        toolbar.style.display = 'flex'
+        toolbar.style.left = `${(boundsTopLeft.x + boundsTopRight.x) / 2}px`
+        toolbar.style.top = `${boundsTopLeft.y}px`
       }
     }
 
@@ -550,11 +575,16 @@ export function BoardCanvas({ board, viewport }: Props) {
         resetTo100()
       } else if (e.key === 'Escape') {
         setSelection([])
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedIds.length > 0) {
+          e.preventDefault()
+          deleteSelected()
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [zoomByFactor, fitToView, resetTo100, setSelection])
+  }, [zoomByFactor, fitToView, resetTo100, setSelection, selectedIds, deleteSelected])
 
   return (
     <div className="board-stage">
@@ -569,6 +599,12 @@ export function BoardCanvas({ board, viewport }: Props) {
       <div className="selection-status visually-hidden" role="status" aria-live="polite">
         {selectedIds.length > 0 ? t('selection.count', { count: selectedIds.length }) : ''}
       </div>
+      <SelectionToolbar
+        ref={toolbarRef}
+        onDuplicate={duplicateSelected}
+        onBringToFront={bringToFront}
+        onDelete={deleteSelected}
+      />
       <ZoomControls
         percent={percent}
         onZoomOut={() => zoomByFactor(1 / ZOOM_STEP)}

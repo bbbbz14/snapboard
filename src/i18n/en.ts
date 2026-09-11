@@ -46,6 +46,9 @@ export const en = {
   'spacing.padding': 'Padding',
 
   'selection.count': '{{count}} selected',
+  'selection.duplicate': 'Duplicate',
+  'selection.bringToFront': 'Bring to front',
+  'selection.delete': 'Delete',
 
   'zoom.out': 'Zoom out',
   'zoom.in': 'Zoom in',

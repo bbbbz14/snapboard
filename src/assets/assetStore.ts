@@ -129,6 +129,12 @@ export class AssetStore {
     }
   }
 
+  /** Adds a reference, e.g. when a node is duplicated onto an asset another node already uses. */
+  retain(id: string): void {
+    const asset = this.#assets.get(id)
+    if (asset) asset.refs++
+  }
+
   release(id: string): void {
     const asset = this.#assets.get(id)
     if (!asset) return

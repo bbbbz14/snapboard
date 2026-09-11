@@ -56,3 +56,85 @@ describe('reorder', () => {
     expect(useBoardStore.getState().board.layout).toBe('steps')
   })
 })
+
+describe('deleteSelected', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'steps', nodes: [stepNode('a', 0), stepNode('b', 1), stepNode('c', 2)] },
+      selectedIds: ['b'],
+    })
+  })
+
+  it('removes the selected nodes and clears the selection', () => {
+    useBoardStore.getState().deleteSelected()
+    const board = useBoardStore.getState().board
+    expect(board.nodes.map((n) => n.id)).toEqual(['a', 'c'])
+    expect(useBoardStore.getState().selectedIds).toEqual([])
+  })
+
+  it('renumbers step badges to close the gap', () => {
+    useBoardStore.getState().deleteSelected()
+    const input = toRenderInput(useBoardStore.getState().board)
+    expect(input.items.map((i) => i.id)).toEqual(['a', 'c'])
+    expect(input.items.map((i) => i.badge)).toEqual([1, 2])
+  })
+
+  it('does nothing when nothing is selected', () => {
+    useBoardStore.setState({ selectedIds: [] })
+    useBoardStore.getState().deleteSelected()
+    expect(useBoardStore.getState().board.nodes).toHaveLength(3)
+  })
+})
+
+describe('duplicateSelected', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'free', nodes: [node('orig', { x: 0, y: 0, w: 10, h: 10 })] },
+      selectedIds: ['orig'],
+    })
+  })
+
+  it('adds a copy right after the original and selects it', () => {
+    useBoardStore.getState().duplicateSelected()
+    const board = useBoardStore.getState().board
+    expect(board.nodes).toHaveLength(2)
+    expect(board.nodes[0]?.id).toBe('orig')
+    const copy = board.nodes[1]!
+    expect(copy.id).not.toBe('orig')
+    expect(useBoardStore.getState().selectedIds).toEqual([copy.id])
+  })
+
+  it('offsets the copy so it is not stacked exactly on the original', () => {
+    useBoardStore.getState().duplicateSelected()
+    const [original, copy] = useBoardStore.getState().board.nodes
+    expect(copy!.frame.x).toBeGreaterThan(original!.frame.x)
+    expect(copy!.frame.y).toBeGreaterThan(original!.frame.y)
+  })
+
+  it('does not touch layout (stays free, invariant 4)', () => {
+    useBoardStore.getState().duplicateSelected()
+    expect(useBoardStore.getState().board.layout).toBe('free')
+  })
+})
+
+describe('bringToFront', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'free', nodes: [stepNode('a', 0), stepNode('b', 1), stepNode('c', 2)] },
+      selectedIds: ['a'],
+    })
+  })
+
+  it('moves the selected node to the end of z-order', () => {
+    useBoardStore.getState().bringToFront()
+    const order = [...useBoardStore.getState().board.nodes].sort((a, b) => a.order - b.order).map((n) => n.id)
+    expect(order).toEqual(['b', 'c', 'a'])
+  })
+
+  it('does nothing when nothing is selected', () => {
+    useBoardStore.setState({ selectedIds: [] })
+    useBoardStore.getState().bringToFront()
+    const order = [...useBoardStore.getState().board.nodes].sort((a, b) => a.order - b.order).map((n) => n.id)
+    expect(order).toEqual(['a', 'b', 'c'])
+  })
+})

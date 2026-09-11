@@ -11,10 +11,15 @@ import {
   type NodeId,
   type StylePreset,
 } from '@/board/model/types'
+import { moveToFront } from '@/board/model/zorder'
 import { AssetStore, type Asset } from '@/assets/assetStore'
 import type { Rejection } from '@/assets/validate'
 import type { RenderInput } from '@/board/render/renderScene'
-import type { Rect } from '@/lib/geometry'
+import { translate, type Rect } from '@/lib/geometry'
+
+/** Board-space offset applied to a duplicate so it's visibly distinct from
+ * the original instead of sitting exactly on top of it. */
+const DUPLICATE_OFFSET = 16
 
 export const assetStore = new AssetStore()
 
@@ -48,6 +53,17 @@ interface BoardState {
    * a still-auto board's own frames come from order, so this is how drag-to-
    * reorder repositions nodes (as opposed to `setFrames`'s free-form move). */
   reorder: (id: NodeId, targetIndex: number) => void
+  /** Removes the selected nodes and releases their asset references
+   * (invariant 3) - also the one place `selectedIds` needs pruning, since
+   * the ids being removed are the ones being cleared (see item 2's note). */
+  deleteSelected: () => void
+  /** Copies the selected nodes, offset so they read as distinct from the
+   * originals, and selects the copies. */
+  duplicateSelected: () => void
+  /** Moves the selected nodes to the top of z-order (drawn last). Also
+   * relayouts, since `order` doubles as layout position for auto boards -
+   * same overload `reorder` already relies on for drag-to-reorder. */
+  bringToFront: () => void
   toast: (message: string, tone?: Toast['tone']) => void
   dismissToast: (id: number) => void
 }
@@ -149,6 +165,52 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       const [moved] = sorted.splice(from, 1)
       sorted.splice(Math.max(0, Math.min(sorted.length, targetIndex)), 0, moved!)
       return { board: relayout({ ...s.board, nodes: sorted.map((n, i) => ({ ...n, order: i })) }) }
+    }),
+
+  deleteSelected: () =>
+    set((s) => {
+      const ids = new Set(s.selectedIds)
+      if (ids.size === 0) return {}
+      for (const n of s.board.nodes) if (ids.has(n.id)) assetStore.release(n.assetId)
+      const remaining = [...s.board.nodes].filter((n) => !ids.has(n.id)).sort((a, b) => a.order - b.order)
+      return {
+        board: relayout({ ...s.board, nodes: remaining.map((n, i) => ({ ...n, order: i })) }),
+        selectedIds: [],
+      }
+    }),
+
+  duplicateSelected: () =>
+    set((s) => {
+      const ids = new Set(s.selectedIds)
+      if (ids.size === 0) return {}
+      const sorted = [...s.board.nodes].sort((a, b) => a.order - b.order)
+      const nodes: ImageNode[] = []
+      const newIds: NodeId[] = []
+      for (const n of sorted) {
+        nodes.push(n)
+        if (ids.has(n.id)) {
+          assetStore.retain(n.assetId)
+          const copy: ImageNode = {
+            ...n,
+            id: `n${nodeSeq++}`,
+            frame: translate(n.frame, DUPLICATE_OFFSET, DUPLICATE_OFFSET),
+          }
+          nodes.push(copy)
+          newIds.push(copy.id)
+        }
+      }
+      return {
+        board: relayout({ ...s.board, nodes: nodes.map((n, i) => ({ ...n, order: i })) }),
+        selectedIds: newIds,
+      }
+    }),
+
+  bringToFront: () =>
+    set((s) => {
+      if (s.selectedIds.length === 0) return {}
+      const sorted = [...s.board.nodes].sort((a, b) => a.order - b.order)
+      const reordered = moveToFront(sorted, new Set(s.selectedIds))
+      return { board: relayout({ ...s.board, nodes: reordered.map((n, i) => ({ ...n, order: i })) }) }
     }),
 
   toast: (message, tone = 'info') => {
