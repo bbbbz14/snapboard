@@ -13,48 +13,52 @@ green (typecheck + unit + renderer parity on 3 engines + 49 e2e passed, 2 skippe
 by design — clipboard round-trip on headless Firefox/WebKit, see ADR-003, not a
 failure). Phase 2 has **not** been started — no code, no scaffolding.
 
-## 🚧 In progress: getting a real URL live for manual testing
+## ✅ The site is live
 
-Goal: run [docs/manual-test-checklist.md](docs/manual-test-checklist.md) against a
-real deployed site instead of localhost, at **snapboard.kaomatumaraiwa.com**,
-before deciding Phase 2's order. Resume here before touching Phase 2 code.
+**https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
+HTTPS enforced, certificate approved. Verified from the command line: the HTML
+and every built asset return 200 and `server: GitHub.com`. Redeploy after any
+change with `bash scripts/deploy-pages.sh` (build → gh-pages orphan commit →
+Pages API); it is idempotent.
 
-**Done:**
-- `gh` is authenticated as `bbbbz14` (token in `~/.config/gh/hosts.yml`). The
-  auto-mode classifier blocker recorded by the previous session is **gone** —
-  `gh api` reads work, and `git config --global credential.https://github.com.helper
-  '!gh auth git-credential'` is set, so `git push` reaches GitHub.
-- `origin` → https://github.com/bbbbz14/snapboard.git (public, still empty).
-- `base: './'` in [vite.config.ts](vite.config.ts) so the build also works at
-  `bbbbz14.github.io/snapboard/` while DNS propagates. e2e re-run green after it.
-- [scripts/deploy-pages.sh](scripts/deploy-pages.sh) does the whole publish:
-  build → gh-pages orphan branch with `CNAME` + `.nojekyll` → create the Pages
-  site → set the custom domain. Idempotent, safe to re-run.
+DNS is a Cloudflare zone, record `snapboard` → `bbbbz14.github.io`, set to
+**DNS only**. It must stay unproxied: with Cloudflare's proxy on, GitHub cannot
+authorise the domain or issue the certificate.
 
-**Blocked on the user (token permissions, not the sandbox):** `git push` returns
-`403 Permission to bbbbz14/snapboard.git denied to bbbbz14`. The fine-grained PAT
-authenticates but was not granted write access. The repo-level `admin: true` from
-`gh api repos/bbbbz14/snapboard` is the *account's* role, not the token's grant —
-don't read it as proof the token can write. The user must edit the token at
-https://github.com/settings/personal-access-tokens and grant, on this repo:
-- **Contents: Read and write** — push `main` and `gh-pages`
-- **Pages: Read and write** — create the site, set the custom domain
+**Confirmed caveat — the live site serves no security headers.**
+`curl -I` returns only `server` and `cache-control`; no CSP, no HSTS, no
+`X-Content-Type-Options`. [public/_headers](public/_headers) is
+Netlify/Cloudflare Pages syntax and GitHub Pages ignores it, so invariant 6 is
+**not** enforced in production — only by
+[tests/e2e/privacy.spec.ts](tests/e2e/privacy.spec.ts). Harmless for manual
+testing (the app makes no requests at all), but never cite the live headers as
+evidence for that invariant. Turning the Cloudflare proxy back on and adding a
+Transform Rule would be the way to fix it for real, once manual testing is done.
 
-**Once the token is fixed, do in order:**
-1. `git push -u origin master:main` — note `master:main`. The remote default
-   branch is `main` and [.github/workflows/ci.yml](.github/workflows/ci.yml) only
-   triggers on pushes to `main`, so pushing to `master` would skip CI entirely.
-2. `bash scripts/deploy-pages.sh`.
-3. Tell the user the DNS record to add at their registrar:
-   **CNAME** `snapboard` → `bbbbz14.github.io`
-4. **Flag this caveat:** [public/_headers](public/_headers) is Netlify/Cloudflare
-   Pages syntax — GitHub Pages does not read it, so the CSP and other security
-   headers in invariant 6 will **not** be served on this deployment. Fine for
-   manual testing (no fetches happen anyway), but nobody should treat the live
-   headers as confirming that invariant; only
-   [tests/e2e/privacy.spec.ts](tests/e2e/privacy.spec.ts) enforces it today.
-5. Hand back to the user to work through the checklist, section A (clipboard)
-   first — that is still what decides Phase 2's order (see gate below).
+## 🚧 Still not pushed: `main`
+
+The source has **not** reached GitHub yet. `git push origin master:main` is
+rejected with:
+
+> refusing to allow a Personal Access Token to create or update workflow
+> `.github/workflows/ci.yml` without `workflow` scope
+
+The token can write contents and Pages, but not workflow files. The user must
+add **Workflows: Read and write** to the fine-grained token at
+https://github.com/settings/personal-access-tokens (repo `snapboard`). Then:
+
+```bash
+git push -u origin master:main   # master:main — CI only triggers on main
+```
+
+Local commits ahead of the remote: the Phase 1 work plus the relative-`base`
+fix and the deploy script. `origin` and a `gh` login (as `bbbbz14`) are already
+configured, and git's credential helper is `!gh auth git-credential`.
+
+Note for diagnosing any future 403: `gh api repos/bbbbz14/snapboard` reporting
+`admin: true` describes the *account's* role, not what the *token* may do, and
+`~/.config/gh/hosts.yml` may hold a stale token from an older session — check
+its mtime before trusting it.
 
 ## ⛔ Gate before writing any Phase 2 code
 

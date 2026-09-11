@@ -28,10 +28,13 @@ git -C "$WORKTREE" push -q --force "https://github.com/$REPO.git" "$BRANCH:$BRAN
 rm -rf "$WORKTREE"
 
 # Create the site on first run; afterwards just keep the domain in sync.
-# Both payloads go in as JSON because the source field is nested.
+# Both payloads go in as JSON because the source field is nested. Pushing a
+# gh-pages branch can enable Pages on its own, so 409 here means "already
+# done", not a failure.
 if ! gh api "repos/$REPO/pages" >/dev/null 2>&1; then
   printf '{"source":{"branch":"%s","path":"/"}}' "$BRANCH" \
-    | gh api -X POST "repos/$REPO/pages" --input - >/dev/null
+    | gh api -X POST "repos/$REPO/pages" --input - >/dev/null \
+    || gh api "repos/$REPO/pages" >/dev/null
 fi
 printf '{"cname":"%s"}' "$DOMAIN" | gh api -X PUT "repos/$REPO/pages" --input -
 # Enforcing HTTPS only works once GitHub has issued the certificate, which
