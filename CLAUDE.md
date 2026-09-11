@@ -8,22 +8,25 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 
 # START HERE — what this session should do next
 
-**Current state:** Phase 1 complete and re-verified this session: `npm run verify`
-green (typecheck + unit + renderer parity on 3 engines + 49 e2e passed, 2 skipped
-by design — clipboard round-trip on headless Firefox/WebKit, see ADR-003, not a
-failure). Phase 2 has **not** been started — no code, no scaffolding.
+**Current state:** Phase 1 complete. `npm run verify` green (typecheck + unit +
+renderer parity on 3 engines + 49 e2e passed, 2 skipped by design — clipboard
+round-trip on headless Firefox/WebKit, see ADR-003, not a failure). The manual
+test checklist has now been run for real (see below) and the gate is cleared.
+Phase 2 has **not** been started — no code, no scaffolding. Start there.
 
-## ✅ The site is live
+## ✅ The site is live, and `main` is pushed
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
-HTTPS enforced, certificate approved. Verified from the command line: the HTML
-and every built asset return 200 and `server: GitHub.com`. Redeploy after any
-change with `bash scripts/deploy-pages.sh` (build → gh-pages orphan commit →
-Pages API); it is idempotent.
+HTTPS enforced, certificate approved, all assets verified 200 from the command
+line. Source is on GitHub too: `git push origin master:main` succeeded once
+the token got **Workflows: Read and write** (it already had Contents and
+Pages), and CI ran on the push. Redeploy the site after any code change with
+`bash scripts/deploy-pages.sh` (build → gh-pages orphan commit → Pages API);
+it's idempotent. Push source changes the normal way: `git push origin master:main`.
 
 DNS is a Cloudflare zone, record `snapboard` → `bbbbz14.github.io`, set to
-**DNS only**. It must stay unproxied: with Cloudflare's proxy on, GitHub cannot
-authorise the domain or issue the certificate.
+**DNS only** — it must stay unproxied, or GitHub can't authorise the domain
+or issue the certificate.
 
 **Confirmed caveat — the live site serves no security headers.**
 `curl -I` returns only `server` and `cache-control`; no CSP, no HSTS, no
@@ -32,46 +35,30 @@ Netlify/Cloudflare Pages syntax and GitHub Pages ignores it, so invariant 6 is
 **not** enforced in production — only by
 [tests/e2e/privacy.spec.ts](tests/e2e/privacy.spec.ts). Harmless for manual
 testing (the app makes no requests at all), but never cite the live headers as
-evidence for that invariant. Turning the Cloudflare proxy back on and adding a
-Transform Rule would be the way to fix it for real, once manual testing is done.
+evidence for that invariant.
 
-## 🚧 Still not pushed: `main`
+## ✅ Gate cleared — manual test checklist run on desktop
 
-The source has **not** reached GitHub yet. `git push origin master:main` is
-rejected with:
+The user ran [docs/manual-test-checklist.md](docs/manual-test-checklist.md)
+against the live URL. **Sections A–D passed, including A (clipboard)** — the
+thing that would have reordered Phase 2 if it had failed. It didn't, so the
+planned order below stands.
 
-> refusing to allow a Personal Access Token to create or update workflow
-> `.github/workflows/ci.yml` without `workflow` scope
-
-The token can write contents and Pages, but not workflow files. The user must
-add **Workflows: Read and write** to the fine-grained token at
-https://github.com/settings/personal-access-tokens (repo `snapboard`). Then:
-
-```bash
-git push -u origin master:main   # master:main — CI only triggers on main
-```
-
-Local commits ahead of the remote: the Phase 1 work plus the relative-`base`
-fix and the deploy script. `origin` and a `gh` login (as `bbbbz14`) are already
-configured, and git's credential helper is `!gh auth git-credential`.
-
-Note for diagnosing any future 403: `gh api repos/bbbbz14/snapboard` reporting
-`admin: true` describes the *account's* role, not what the *token* may do, and
-`~/.config/gh/hosts.yml` may hold a stale token from an older session — check
-its mtime before trusting it.
+- **Section E (robustness/edge cases) and F (privacy)** — not run yet. Still
+  open; not blocking, but don't claim them as verified.
+- **New finding, desktop-only testing so far:** on mobile, the top bar/toolbar
+  requires horizontal scrolling to reach — awkward to use. Not filed as a
+  Phase 2 item (user wants it noted, not built now); revisit when doing
+  mobile-specific work, likely alongside or after Phase 5 polish. Keep this in
+  mind if any Phase 2 UI (zoom controls, selection handles) adds more to that
+  bar — it makes the overflow worse, not better.
+- Real Safari/Firefox and non-Chromium mobile browsers still haven't been
+  explicitly confirmed one by one — if that level of detail matters before
+  Phase 2, ask the user which browsers they actually used.
 
 ## ⛔ Gate before writing any Phase 2 code
 
-Ask the user whether they have run
-[docs/manual-test-checklist.md](docs/manual-test-checklist.md) yet (now that a
-real URL exists, this is finally answerable for real).
-
-- **If they have results** → start from those results. Real findings outrank the
-  planned order below, especially anything in section A (clipboard). A broken
-  copy path on real Safari or into real Slack changes what Phase 2 should be.
-- **If they have not, and want to proceed anyway** → build Phase 2 in the order
-  below and say plainly that the clipboard path is still unverified on real
-  browsers.
+Cleared — see above. Proceed with the Phase 2 order below.
 
 ## Phase 2 — Manual control and undo
 
