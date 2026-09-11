@@ -44,6 +44,10 @@ interface BoardState {
   /** Commits manually-moved/resized frames. Does not relayout - a manual edit
    * must not be recomputed away by the auto-layout heuristic. */
   setFrames: (updates: { id: NodeId; frame: Rect }[]) => void
+  /** Moves a node to `targetIndex` in the auto-layout sequence and relayouts -
+   * a still-auto board's own frames come from order, so this is how drag-to-
+   * reorder repositions nodes (as opposed to `setFrames`'s free-form move). */
+  reorder: (id: NodeId, targetIndex: number) => void
   toast: (message: string, tone?: Toast['tone']) => void
   dismissToast: (id: number) => void
 }
@@ -135,6 +139,16 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           nodes: s.board.nodes.map((n) => (byId.has(n.id) ? { ...n, frame: byId.get(n.id)! } : n)),
         },
       }
+    }),
+
+  reorder: (id, targetIndex) =>
+    set((s) => {
+      const sorted = [...s.board.nodes].sort((a, b) => a.order - b.order)
+      const from = sorted.findIndex((n) => n.id === id)
+      if (from === -1) return {}
+      const [moved] = sorted.splice(from, 1)
+      sorted.splice(Math.max(0, Math.min(sorted.length, targetIndex)), 0, moved!)
+      return { board: relayout({ ...s.board, nodes: sorted.map((n, i) => ({ ...n, order: i })) }) }
     }),
 
   toast: (message, tone = 'info') => {

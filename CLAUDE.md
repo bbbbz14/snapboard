@@ -338,6 +338,17 @@ tests/render/         renderer parity harness (imports src directly, dev server 
 - **Timing canvas work requires a flush.** Read one pixel with `getImageData`
   before reading the clock, or WebKit reports 0 ms because rasterisation is
   asynchronous. Every perf measurement in this repo does this.
+- **The same async-rasterisation gap can leave stale pixels, not just a bad
+  timestamp.** Found while building drag-to-reorder (Phase 2 item 5): headless
+  WebKit can leave the preview canvas showing the pre-reorder frame for an
+  unbounded stretch after two same-size cached tiles swap position in one
+  redraw. Confirmed via direct tile/store inspection that the committed
+  `Board` and the tiles themselves are correct immediately - only WebKit's
+  own repaint lags. A `getImageData(0,0,1,1)` flush right after `renderScene()`
+  in `BoardCanvas.tsx`'s `draw()` is cheap insurance but did not reliably fix
+  it, so `tests/e2e/reorder.spec.ts`'s pixel-swap assertion skips on WebKit
+  (`browserName === 'webkit'`) rather than retrying forever. Not reproduced on
+  Chromium or Firefox; real Safari is unconfirmed either way.
 - **`clipboard.write()` resolving is not proof.** Firefox resolves it with an
   empty clipboard. Never gate the "Copied" message on the promise alone, and
   never hide the Download button (ADR-003).

@@ -66,6 +66,13 @@ export function BoardCanvas({ board, viewport }: Props) {
     startPoint: Point
   } | null>(null)
   const resizeRef = useRef<{ id: NodeId; corner: (typeof CORNERS)[number]; startFrame: Rect } | null>(null)
+  // Drag-to-reorder in progress (any layout mode except 'free'): the dragged
+  // node floats to follow the pointer without reflowing the rest of the
+  // board (computeLayout is too slow to call every pointermove - see
+  // performance.spec.ts's ~50ms relayout at a dozen images), and the id of
+  // whichever other node it's currently hovering, for the drop-target outline.
+  const reorderRef = useRef<{ id: NodeId; startFrame: Rect; startPoint: Point } | null>(null)
+  const reorderHoverRef = useRef<NodeId | null>(null)
   // Live frame overrides for nodes being moved/resized, read directly by
   // `draw`/`drawInteraction` so dragging renders at 60fps without going
   // through React state - only committed to the store on pointer-up.
@@ -76,6 +83,7 @@ export function BoardCanvas({ board, viewport }: Props) {
   const setSelection = useBoardStore((s) => s.setSelection)
   const toggleSelection = useBoardStore((s) => s.toggleSelection)
   const setFrames = useBoardStore((s) => s.setFrames)
+  const reorder = useBoardStore((s) => s.reorder)
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -113,6 +121,12 @@ export function BoardCanvas({ board, viewport }: Props) {
     }
     tiles.retain(input.items.map((i) => i.id))
     renderScene(ctx, input, { scale: renderScale, tiles, offset: { x: origin.x * dpr, y: origin.y * dpr } })
+    // Forces rasterization to finish before this function returns. WebKit's
+    // canvas rasterization is asynchronous (see the timing gotcha in
+    // CLAUDE.md); without this, reordering two same-size tiles could leave
+    // the visible canvas showing the pre-reorder pixels for an arbitrary
+    // stretch, since nothing else here reads the bitmap back to force it.
+    ctx.getImageData(0, 0, 1, 1)
 
     // The "page" - checkerboard/shadow/rounded corners - is a DOM layer, not
     // drawn by renderScene, so it never touches the exported pixels.
@@ -161,6 +175,20 @@ export function BoardCanvas({ board, viewport }: Props) {
       for (const corner of CORNERS) {
         const p = boardToScreen(camera, viewport, cornerPoint(frame, corner))
         ctx.fillRect(p.x - HANDLE_SIZE / 2, p.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE)
+      }
+    }
+
+    const hoverId = reorderHoverRef.current
+    if (hoverId) {
+      const target = board.nodes.find((n) => n.id === hoverId)
+      if (target) {
+        const topLeft = boardToScreen(camera, viewport, { x: target.frame.x, y: target.frame.y })
+        ctx.save()
+        ctx.strokeStyle = GUIDE_COLOR
+        ctx.lineWidth = 3
+        ctx.setLineDash([6, 4])
+        ctx.strokeRect(topLeft.x, topLeft.y, target.frame.w * camera.zoom, target.frame.h * camera.zoom)
+        ctx.restore()
       }
     }
 
@@ -351,6 +379,16 @@ export function BoardCanvas({ board, viewport }: Props) {
           toggleSelection(hitId)
           return
         }
+        if (board.layout !== 'free') {
+          // Still auto-arranged: dragging reorders instead of moving freely
+          // (see `reorder` in the store) - only a resize handle (checked
+          // above) or `setFrames` switches this board to 'free'.
+          setSelection([hitId])
+          const hitNode = board.nodes.find((n) => n.id === hitId)!
+          reorderRef.current = { id: hitId, startFrame: hitNode.frame, startPoint: point }
+          canvas.setPointerCapture(e.pointerId)
+          return
+        }
         const current = useBoardStore.getState().selectedIds
         const ids = current.includes(hitId) ? current : [hitId]
         if (!current.includes(hitId)) setSelection(ids)
@@ -369,6 +407,18 @@ export function BoardCanvas({ board, viewport }: Props) {
       const resize = resizeRef.current
       if (resize) {
         dragFramesRef.current = { [resize.id]: resizeKeepingAspect(resize.startFrame, resize.corner, toBoardPoint(e)) }
+        draw()
+        drawInteraction()
+        return
+      }
+
+      const reorderState = reorderRef.current
+      if (reorderState) {
+        const point = toBoardPoint(e)
+        const frame = translate(reorderState.startFrame, point.x - reorderState.startPoint.x, point.y - reorderState.startPoint.y)
+        dragFramesRef.current = { [reorderState.id]: frame }
+        const center = { x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }
+        reorderHoverRef.current = hitTest(board.nodes.filter((n) => n.id !== reorderState.id), center)
         draw()
         drawInteraction()
         return
@@ -428,6 +478,28 @@ export function BoardCanvas({ board, viewport }: Props) {
         return
       }
 
+      if (reorderRef.current) {
+        const { id } = reorderRef.current
+        const hoverId = reorderHoverRef.current
+        const frame = dragFramesRef.current?.[id]
+        reorderRef.current = null
+        reorderHoverRef.current = null
+        if (hoverId) {
+          // Dropped onto another node: swap places, still auto-arranged.
+          const targetIndex = [...board.nodes].sort((a, b) => a.order - b.order).findIndex((n) => n.id === hoverId)
+          if (targetIndex !== -1) reorder(id, targetIndex)
+        } else if (frame) {
+          // Dropped on open space, not onto a slot: this is the manual
+          // escape hatch (invariant 4/item 4), same as a drag that started
+          // already-free.
+          setFrames([{ id, frame }])
+        }
+        draw()
+        drawInteraction()
+        dragFramesRef.current = null
+        return
+      }
+
       const marquee = marqueeRef.current
       if (!marquee) return
       marqueeRef.current = null
@@ -453,7 +525,7 @@ export function BoardCanvas({ board, viewport }: Props) {
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, draw, drawInteraction])
+  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction])
 
   // Keyboard shortcuts. None use a modifier key, so the browser's own
   // Ctrl/Cmd +/-/0 page-zoom shortcuts are left alone - see "avoid shortcuts
