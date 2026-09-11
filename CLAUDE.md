@@ -55,15 +55,22 @@ Shipped as its own commit, deploy not yet pushed to the live site (deploy is
   counts; worth checking against the "drag 10 images at 60fps" DoD once item
   3 (move/resize) is in and there's a realistic node count to test with.
 
-## ✅ The site is live, and `main` is pushed
+## ✅ The site is live — but one commit behind `master` right now
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved, all assets verified 200 from the command
-line. Source is on GitHub too: `git push origin master:main` succeeded once
-the token got **Workflows: Read and write** (it already had Contents and
-Pages), and CI ran on the push. Redeploy the site after any code change with
-`bash scripts/deploy-pages.sh` (build → gh-pages orphan commit → Pages API);
-it's idempotent. Push source changes the normal way: `git push origin master:main`.
+line. Source is on GitHub too, up to `ac1fec6`: `git push origin master:main`
+succeeded once the token got **Workflows: Read and write** (it already had
+Contents and Pages), and CI ran on that push.
+
+**As of this session, `master` is one commit ahead of `origin/main`** — Phase 2
+item 1 (`12d7b81`, zoom/pan) has not been pushed, and the live site itself is
+still serving Phase 1 (deploy is separate from source push; neither has
+happened for item 1 yet). Both are one command away when wanted — source:
+`git push origin master:main`; live site: `bash scripts/deploy-pages.sh`
+(build → gh-pages orphan commit → Pages API, idempotent). Neither runs
+automatically — they're outward-facing, so check with the user first unless
+they've already said to just do it.
 
 DNS is a Cloudflare zone, record `snapboard` → `bbbbz14.github.io`, set to
 **DNS only** — it must stay unproxied, or GitHub can't authorise the domain
