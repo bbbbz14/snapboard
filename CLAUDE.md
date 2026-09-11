@@ -9,11 +9,12 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 # START HERE — what this session should do next
 
 **Current state:** Phase 1 complete, manual test checklist gate cleared (see
-below). Phase 2 items 1 (zoom/pan) and 2 (selection) are done; items 3–9 are
-not started — continue with item 3 (move/resize) next. `npm run verify` green
-(typecheck + 94 unit + 27 renderer parity on 3 engines + 70 e2e passed, 2
-skipped by design — clipboard round-trip on headless Firefox/WebKit, see
-ADR-003, not a failure).
+below). Phase 2 items 1–4 (zoom/pan, selection, move/resize, explicit
+free-layout switch) are done; items 5–9 are not started — continue with
+item 5 (drag to reorder) next. `npm run verify` green (typecheck + 104 unit
++ 27 renderer parity on 3 engines + 79 e2e passed, 2 skipped by design —
+clipboard round-trip on headless Firefox/WebKit, see ADR-003, not a
+failure).
 
 ### Phase 2 item 1 — done: zoom, pan, zoom indicator, fit-to-view
 
@@ -85,7 +86,62 @@ happened yet — see the live-site section below.
   — dragging them does nothing until item 3 (move/resize) wires it up.
 - Escape and a plain click on empty space both clear the selection.
 
-## ✅ The site is live — but two commits behind `master` right now
+### Phase 2 item 3 — done: move and resize, with snapping and alignment guides
+
+Shipped as its own commit (`f2f08fc`). Not yet pushed/deployed — see below.
+
+- New store action `setFrames` commits moved/resized frames directly and
+  **skips `relayout()`** — a manual edit must never be recomputed away.
+  (Item 4 builds directly on this: it's also the one place that flips
+  `layout` to `'free'`.)
+- Move and resize follow the exact ref-first pattern the camera already
+  established for pan/zoom: `moveRef`/`resizeRef`/`dragFramesRef` hold
+  in-progress geometry, `draw()` and `drawInteraction()` are called directly
+  on every pointermove (bypassing React state for 60fps), and the store only
+  hears about it once, via `setFrames`, on pointer-up.
+- **Bug caught by the resize e2e test, not by eye:** the first version
+  cleared `dragFramesRef` *before* the final `draw()` call on pointer-up,
+  so the store's `setFrames` update (which reaches `BoardCanvas` as a prop
+  asynchronously via React) hadn't landed yet, and that one frame briefly
+  rendered the pre-resize size. Fixed by clearing the ref *after* the final
+  draw. Worth remembering for item 5+: any "commit ref state, then redraw"
+  handler needs the same ordering.
+- `src/board/interact/resize.ts` — pure, aspect-locked resize anchored at the
+  opposite corner. `src/board/interact/snap.ts` — pure, per-axis edge/center
+  snapping against other nodes and the board bounds. `src/board/interact/handles.ts`
+  — shared corner-point math + screen-space handle hit-testing, used by both
+  the hit-test and `drawInteraction`'s handle-square drawing.
+- **Deliberate scope cuts:** resize is always single-node, even with a
+  multi-selection (no group-resize-together). Snapping only applies to move,
+  not resize — combining edge-snap with an aspect-ratio constraint on one
+  freely-dragged corner is real extra complexity the aspect lock mostly
+  already covers. A resize that pushes past the board's own edge clips in
+  preview and export alike, since a drag never grows `board.size` — resizing
+  the board itself for free-layout boards is unscoped follow-up work.
+- `tests/e2e/moveResize.spec.ts` samples pixels directly off the live
+  `canvas.board-canvas` (`getImageData`, converted from page-space to the
+  canvas's own backing-store coordinates) rather than decoding an exported
+  PNG — simpler and enough to prove a drag actually moved/resized the node
+  and that it's still there after export.
+
+### Phase 2 item 4 — done: switching to manual must be explicit
+
+Shipped as its own commit (`6733b51`). Not yet pushed/deployed — see below.
+
+- `setFrames` (item 3's only commit path for a move/resize) now sets
+  `layout: 'free'` in the same update — so from the very next action, even
+  one unrelated to layout like changing the gap slider, `relayout()`'s
+  existing `if (board.layout === 'free') return board` guard (invariant 4)
+  already protects the manual arrangement. There was no separate "did the
+  user just drag for the first time" flag to add.
+- `TopBar.tsx`: when `board.layout === 'free'`, the layout-chip group is
+  replaced by "Auto layout off · Turn back on" (`.free-banner`) instead of
+  showing alongside the chips — none of the chips include `'free'`, so
+  they'd otherwise all show unpressed, which reads as broken, not as "off
+  on purpose." "Turn back on" calls `setLayout('auto')` — explicit and
+  reversible, never automatic.
+
+## ✅ The site is live — but four commits behind `master` right now
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved, all assets verified 200 from the command
@@ -95,9 +151,10 @@ line. Source push (`git push origin master:main`) and
 DNS re-check needed) — the earlier "Workflows: Read and write" token-scope fix
 from a prior session is holding.
 
-**As of this session, `master` is one commit ahead of `origin/main`** — Phase 2
-item 2 (`0326b11`, selection) has not been pushed, and the live site is still
-serving item 1. Both are one command away when wanted — source:
+**As of this session, `master` is four commits ahead of `origin/main`** —
+Phase 2 items 2–4 (`0326b11`, `903e220`, `f2f08fc`, `6733b51`) have not been
+pushed, and the live site is still serving item 1. Both are one command away
+when wanted — source:
 `git push origin master:main`; live site: `bash scripts/deploy-pages.sh`
 (build → gh-pages orphan commit → Pages API, idempotent). Neither runs
 automatically — they're outward-facing, so check with the user first unless
@@ -150,12 +207,12 @@ wanted. Build in this order; each item is independently shippable.
 2. ✅ **Selection** — click, shift-click, marquee. Done — see the note under
    START HERE above. Corner handles are drawn but not yet interactive; item 3
    wires them up.
-3. **Move and resize** with snapping and alignment guides. Resize keeps aspect
-   ratio. Keep in-progress geometry in a ref, not React state; commit to the
-   store on pointer-up only.
-4. **Switching to manual must be explicit.** The first drag flips
-   `layout` to `'free'` and shows "Auto layout off · [Turn back on]". Auto-layout
-   must never silently overwrite manual work.
+3. ✅ **Move and resize** with snapping and alignment guides. Done — see the
+   note under START HERE above, including a real ordering bug the e2e test
+   caught (clearing the drag-override ref before the final draw).
+4. ✅ **Switching to manual must be explicit.** Done — see the note under
+   START HERE above. `setFrames` (item 3) flips `layout` to `'free'` and
+   `TopBar` shows "Auto layout off · Turn back on".
 5. **Drag to reorder** while still in an auto mode (step badges renumber).
 6. **Delete, duplicate, z-order.**
 7. **Undo/redo** by snapshotting `Board`. Board state is a few KB of JSON with
