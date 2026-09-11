@@ -9,11 +9,11 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 # START HERE — what this session should do next
 
 **Current state:** Phase 1 complete, manual test checklist gate cleared (see
-below). Phase 2 item 1 (zoom/pan) is now done; items 2–9 are not started —
-continue with item 2 (selection) next. `npm run verify` green (typecheck +
-84 unit + 27 renderer parity on 3 engines + 58 e2e passed, 2 skipped by
-design — clipboard round-trip on headless Firefox/WebKit, see ADR-003, not a
-failure).
+below). Phase 2 items 1 (zoom/pan) and 2 (selection) are done; items 3–9 are
+not started — continue with item 3 (move/resize) next. `npm run verify` green
+(typecheck + 94 unit + 27 renderer parity on 3 engines + 70 e2e passed, 2
+skipped by design — clipboard round-trip on headless Firefox/WebKit, see
+ADR-003, not a failure).
 
 ### Phase 2 item 1 — done: zoom, pan, zoom indicator, fit-to-view
 
@@ -55,18 +55,49 @@ Shipped as its own commit, deploy not yet pushed to the live site (deploy is
   counts; worth checking against the "drag 10 images at 60fps" DoD once item
   3 (move/resize) is in and there's a realistic node count to test with.
 
-## ✅ The site is live — but one commit behind `master` right now
+### Phase 2 item 2 — done: selection (click, shift-click, marquee)
+
+Shipped as its own commit (`0326b11`). Source push and deploy for it have not
+happened yet — see the live-site section below.
+
+- `selectedIds` lives in the zustand store but **not** inside `Board` — same
+  reasoning as the camera: undo/autosave snapshot `Board`, and selection is
+  not arranged content, just what the user is currently pointing at. `clear()`
+  resets it; nothing else prunes it yet since there is no delete (item 6) —
+  revisit if stale ids can ever outlive their node.
+- `src/board/interact/hitTest.ts` — pure, unit-tested (`tests/unit/hitTest.test.ts`)
+  AABB point/rect hit-testing. No rotation to account for (`ImageNode.frame`
+  has none, by design), so this is plain rect math, not a general hit-test.
+- **`BoardCanvas.tsx` is now two canvases**, per ADR-002's "2 canvas layers"
+  decision: `.board-canvas` (content, tile-cached) and the new
+  `.board-interaction` (selection outline, corner handles, marquee rect),
+  both viewport-sized and redrawn with the same `boardToScreen` transform.
+  `.board-interaction` has `pointer-events: none` — `.board-canvas` still owns
+  every gesture listener, so the two layers never fight over events.
+  Selection/marquee pointer handling is its own `useEffect` on `.board-canvas`,
+  separate from the pan effect; they don't conflict because the pan effect
+  already ignores plain left-click (`button !== 1 && !(button 0 && space)`).
+- A `.selection-status` visually-hidden `aria-live` region announces the
+  count, per ADR-001's a11y-compensation note (canvas has no DOM semantics)
+  and because canvas pixels aren't queryable by Playwright — it's also what
+  `tests/e2e/selection.spec.ts` asserts against.
+- **What's drawn but not yet wired:** the four corner squares are visual only
+  — dragging them does nothing until item 3 (move/resize) wires it up.
+- Escape and a plain click on empty space both clear the selection.
+
+## ✅ The site is live — but two commits behind `master` right now
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved, all assets verified 200 from the command
-line. Source is on GitHub too, up to `ac1fec6`: `git push origin master:main`
-succeeded once the token got **Workflows: Read and write** (it already had
-Contents and Pages), and CI ran on that push.
+line. Source push (`git push origin master:main`) and
+`bash scripts/deploy-pages.sh` were last run together for Phase 2 item 1
+(`43acf72`), and both worked cleanly again on the first try (no re-auth, no
+DNS re-check needed) — the earlier "Workflows: Read and write" token-scope fix
+from a prior session is holding.
 
 **As of this session, `master` is one commit ahead of `origin/main`** — Phase 2
-item 1 (`12d7b81`, zoom/pan) has not been pushed, and the live site itself is
-still serving Phase 1 (deploy is separate from source push; neither has
-happened for item 1 yet). Both are one command away when wanted — source:
+item 2 (`0326b11`, selection) has not been pushed, and the live site is still
+serving item 1. Both are one command away when wanted — source:
 `git push origin master:main`; live site: `bash scripts/deploy-pages.sh`
 (build → gh-pages orphan commit → Pages API, idempotent). Neither runs
 automatically — they're outward-facing, so check with the user first unless
@@ -116,8 +147,9 @@ wanted. Build in this order; each item is independently shippable.
 1. ✅ **Zoom, pan, zoom indicator, fit-to-view button.** Done — see the note
    under START HERE above for what shipped and one known follow-up
    (tile-cache thrash during a wheel-zoom gesture) to keep in mind for item 3.
-2. **Selection** — click, shift-click, marquee. Draw handles on the interaction
-   layer, not the content layer (ADR-002).
+2. ✅ **Selection** — click, shift-click, marquee. Done — see the note under
+   START HERE above. Corner handles are drawn but not yet interactive; item 3
+   wires them up.
 3. **Move and resize** with snapping and alignment guides. Resize keeps aspect
    ratio. Keep in-progress geometry in a ref, not React state; commit to the
    store on pointer-up only.
