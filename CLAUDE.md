@@ -37,9 +37,9 @@ the live site — see the Gate section below for the full results).
 are done. Not yet pushed to `main` or deployed** — see the notes right below
 for both. `npm run verify` green (typecheck + 171 unit + 27 renderer parity
 on 3 engines + 166 e2e passed, 5 skipped by design — same 5 as before, see
-the note above; the new box e2e file added 9 passing tests and no new
-skips). **Next session should do Phase 4 item 3** (text) — see "Phase 4 —
-Annotations" below for the full item list.
+the note above; the new box e2e file added 5 test cases (15 counting all 3
+browser engines) and no new skips). **Next session should do Phase 4 item 3**
+(text) — see "Phase 4 — Annotations" below for the full item list.
 
 ### Phase 4 item 1 — done: arrow annotation
 
@@ -124,7 +124,9 @@ live-site section below for the usual two commands).
 
 ### Phase 4 item 2 — done: box/rectangle annotation
 
-Not yet committed - see the note under START HERE above for what's staged.
+Shipped as its own commit (`e122ee0`). Committed to `master`, **not yet
+pushed to `main` or deployed** - same as item 1, ask the user before doing
+either (see the live-site section below for the usual two commands).
 
 - Mirrors item 1's arrow tool exactly, down to the interaction shape: a
   floating "Box" tool button in the same bottom-left `AnnotationToolbar`
