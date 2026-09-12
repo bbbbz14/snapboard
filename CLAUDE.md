@@ -31,9 +31,97 @@ the WebKit rasterisation gotcha below — none of these are failures).
 
 **Manual-testing gap now closed** (2026-09-12, sections E and F of
 [docs/manual-test-checklist.md](docs/manual-test-checklist.md) run against
-the live site — see the Gate section below for the full results). **Next
-session should start Phase 4** (annotations: arrow, box, text, number,
-redact, crop) — see "After Phase 3" below for the full Phase list.
+the live site — see the Gate section below for the full results).
+
+**Phase 4 (annotations) is underway. Item 1, arrow, is done, shipped
+(`9a63829`), committed to `master` but not yet pushed to `main` or
+deployed** — see the note right below. `npm run verify` green (typecheck +
+163 unit + 27 renderer parity on 3 engines + 151 e2e passed, 5 skipped by
+design — same 5 as before, see the note above; the new arrow e2e file added
+12 passing tests and no new skips). **Next session should do Phase 4 item 2**
+(box/rectangle annotation) — see "Phase 4 — Annotations" below for the full
+item list.
+
+### Phase 4 item 1 — done: arrow annotation
+
+Shipped as its own commit (`9a63829`). Committed to `master`, **not yet
+pushed to `main` or deployed** - ask the user before doing either (see the
+live-site section below for the usual two commands).
+
+- A floating "Arrow" tool button, bottom-left (mirrors `ZoomControls`'
+  bottom-right placement), plus a plain `A` keyboard shortcut - press once to
+  arm it, drag anywhere on the board to draw, release to commit. One-shot by
+  design: committing an arrow (or a stray click with no drag) reverts the
+  tool to `'select'` automatically, so there's no separate "done drawing"
+  step. Escape while armed cancels back to `'select'` without creating
+  anything.
+- `BoardNode` (`src/board/model/types.ts`) is now a real discriminated union
+  - `ImageNode | ArrowNode` - instead of the single-member alias it was
+  through all of Phase 1–3. `ArrowNode` carries `start`/`end` (the actual
+  drawn points) plus a `frame` that's a *derived*, padded bounding box, kept
+  only so the existing generic code (`hitTest`, `marqueeSelect`, `moveToFront`
+  - all already written in terms of `frame`/`order`/`id`, needed zero
+  changes) keeps working on arrows exactly like it does on images.
+- Every place that used to assume every node has an `assetId` needed an
+  explicit filter to image nodes: `relayout` (arrows never participate in
+  auto-layout - they're absolute board-space points the user placed, same
+  as invariant 4 already treats a manually-moved image's frame),
+  `reconcileAssets`, `decodeBoardAssets`, and autosave's `persist`/
+  `restoreAutosave` (`src/board/persist/autosave.ts`). `toRenderInput` now
+  filters to image nodes *before* numbering step badges, which incidentally
+  fixes a latent bug this change would otherwise have introduced (badges
+  would have started counting arrows as steps too).
+- `src/board/render/arrow.ts` - pure geometry, no canvas-2D specifics beyond
+  the actual `stroke()` calls: a single control point offset perpendicular to
+  the line (so the arrow bows slightly - "โค้งเล็กน้อย ดูเป็นมิตร" per the
+  product plan, not a rigid straight line), with the arrowhead angled off the
+  curve's own tangent at the end point (direction from the control point to
+  `end`), not the naive straight `start`-to-`end` line - the latter visibly
+  points off the curve once it's bowed. `strokeArrow` is called identically
+  by `renderScene` (the committed arrow, board-space, invariant 1) and
+  `BoardCanvas`'s interaction-canvas preview (screen-space, while dragging),
+  so the preview can't drift from what actually gets drawn - same "one
+  source of truth" reasoning Phase 3's export-size estimate already used.
+  `arrowFrame` is a padded AABB (not an exact curve hit-test) around the
+  straight-line bounding box, wide enough to cover the bow and the
+  arrowhead - plain rect math, same simplicity `hitTest.ts`'s "no rotation"
+  comment already commits to for images.
+- Arrows never expose a resize handle - `handles.ts`'s `hitTestHandle` now
+  skips non-image nodes, and `BoardCanvas`'s selection-outline drawing skips
+  the corner squares for them too, so the UI never advertises a drag
+  interaction that doesn't exist. Dragging an arrow's outline moves it
+  instead (the existing `moveRef`/`setFrames` path, unchanged) - `setFrames`
+  and `duplicateSelected` both now special-case `kind === 'arrow'` to
+  translate `start`/`end` by the same delta as the frame, since for an arrow
+  (unlike an image) the frame alone isn't what gets rendered.
+- **Real bug caught before it shipped, not by a test:** the board canvas's
+  `aria-label` (`Board with {n} images`) used `board.nodes.length` directly -
+  once arrows could share `board.nodes` with images, drawing one arrow would
+  have made the label say "3 images" for a board with 2 images and 1 arrow.
+  Fixed by counting only `kind === 'image'` nodes for that label
+  specifically; `tests/e2e/selectionActions.spec.ts` and others that assert
+  on this exact text would have caught it too, but not until they started
+  mixing arrows into their own fixtures, which none of them do yet.
+- `tests/unit/arrow.test.ts` covers the curve/arrowhead geometry and the
+  padded frame directly. `tests/unit/boardStore.test.ts` gained an
+  `addArrow` block covering the free-layout switch, the tool reverting to
+  `'select'`, move/duplicate translating `start`/`end`, exclusion from
+  `toRenderInput.items`/badge numbering, and delete+undo.
+  `tests/unit/hitTest.test.ts` gained one mixed-kind case. `tests/e2e/arrow.spec.ts`
+  (new) covers drawing (and that it survives export, invariant 1), the `A`
+  shortcut, Escape-cancels-without-creating, a stray click creating nothing,
+  and select→delete→undo - using a scan for the arrow's distinctive red
+  against the white background/blue-gradient fixtures rather than sampling
+  one exact pixel, since the curve's bow means the stroke isn't on the
+  straight line between the two drag points.
+- **Deliberately not done, scoped to what "arrow" alone needs:** no color
+  picker (fixed `DEFAULT_ARROW_COLOR`, `#dc2626` - the other five annotation
+  types will need their own color decisions anyway, and picking one now for
+  arrows alone would be exactly the kind of speculative surface CLAUDE.md
+  says not to add). No endpoint-drag editing after the fact - move the whole
+  arrow, or delete and redraw it; a full two-handle editing UI is real extra
+  scope the product plan's own line item ("ลูกศร โค้งเล็กน้อย ดูเป็นมิตร")
+  doesn't ask for.
 
 ### Phase 3 — done: export options (scale/format/quality) UI
 
@@ -710,11 +798,38 @@ are true** (see [docs/phases/phase-3.md](docs/phases/phase-3.md) for the
 Definition of Done table); **the fourth needs a human with real accounts and
 screens in those apps** — not doable from inside this environment.
 
-## After Phase 3
+## Phase 4 — Annotations
 
-Phase 4 annotations (arrow, box, text, number, redact, crop) · Phase 5
-polish, dark mode, Thai UI · Phase 6 persistence and PWA · Phase 7 Chrome
-extension. Full definitions in
+Objective: move from "arranging screenshots" to "explaining them" - per the
+product plan's own framing, "เปลี่ยนจาก 'ต่อรูป' เป็น 'อธิบาย'." Build in this
+order; each item is independently shippable, same as Phase 2/3.
+
+1. ✅ **Arrow** (gently curved, friendly, not a rigid straight line). Done —
+   see "Phase 4 item 1" under START HERE above.
+2. ⬜ **Box/rectangle** outline to frame a region of interest.
+3. ⬜ **Text** - needs a shared `measureText`-based line-wrap used by both
+   preview and export (invariant 1), and a `textarea` overlay for editing
+   that reads only `.value` (invariant 7 - never let user text become DOM
+   HTML).
+4. ⬜ **Auto-numbered badge** - a standalone annotation, distinct from the
+   step-sequence badges `'steps'` layout already draws (see
+   `BADGE_DIAMETER`/`drawBadge` in `renderScene.ts`); likely needs its own
+   name to avoid confusion with that existing concept.
+5. ⬜ **Redact** (blur/pixelate/solid fill) over a region - the product
+   plan's own risk note applies here: a light blur can be reversible, so a
+   safe minimum pixelation strength should be enforced, and "solid" should be
+   the suggested default for genuinely sensitive content.
+6. ⬜ **Crop** the board itself.
+
+**Phase 4 is done when:** placing an arrow + number on a bug report takes
+under 15 seconds · redacted content is verifiably unrecoverable from the
+exported file (tested by zooming into the export, not just eyeballing the
+preview) · the product plan's own Definition of Done (section 12) is met.
+
+## After Phase 4
+
+Phase 5 polish, dark mode, Thai UI · Phase 6 persistence and PWA · Phase 7
+Chrome extension. Full definitions in
 [docs/00-product-plan.md](docs/00-product-plan.md) section 12.
 
 ## When a phase finishes
