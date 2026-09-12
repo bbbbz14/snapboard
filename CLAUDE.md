@@ -29,10 +29,11 @@ Firefox/WebKit for both the Copy button and the Ctrl/Cmd+Shift+C shortcut
 (ADR-003), plus the reorder pixel-swap assertion on headless WebKit only, see
 the WebKit rasterisation gotcha below — none of these are failures).
 
-**Next session should either close the open manual-testing gaps (see below)
-or start Phase 4** (annotations: arrow, box, text, number, redact, crop) —
-see "After Phase 3" below for the full Phase list. Neither gap blocks
-starting Phase 4; ask if unsure which the user wants prioritized.
+**Manual-testing gap now closed** (2026-09-12, sections E and F of
+[docs/manual-test-checklist.md](docs/manual-test-checklist.md) run against
+the live site — see the Gate section below for the full results). **Next
+session should start Phase 4** (annotations: arrow, box, text, number,
+redact, crop) — see "After Phase 3" below for the full Phase list.
 
 ### Phase 3 — done: export options (scale/format/quality) UI
 
@@ -587,15 +588,45 @@ Netlify/Cloudflare Pages syntax and GitHub Pages ignores it, so invariant 6 is
 testing (the app makes no requests at all), but never cite the live headers as
 evidence for that invariant.
 
-## ✅ Gate cleared — manual test checklist run on desktop
+## ✅ Gate cleared — manual test checklist run on desktop (sections A–E; F skipped by choice)
 
 The user ran [docs/manual-test-checklist.md](docs/manual-test-checklist.md)
 against the live URL. **Sections A–D passed, including A (clipboard)** — the
 thing that would have reordered Phase 2 if it had failed. It didn't, so the
 planned order below stands.
 
-- **Section E (robustness/edge cases) and F (privacy)** — not run yet. Still
-  open; not blocking, but don't claim them as verified.
+**Section E (robustness/edge cases), run 2026-09-12 against the live site:**
+
+- **E1** (drop 20+ images at once) — pass, no hang, progress showed.
+- **E2** (HEIC file from iPhone) — skipped, user had no HEIC file on hand.
+  Still formally unverified.
+- **E3** (corrupted file, `.txt` renamed to `.png`) — pass, rejected with a
+  clear "not supported" message.
+- **E4** (file over 50MB) — skipped, same reason as E2. Still formally
+  unverified.
+- **E5** (mash the Copy button repeatedly, tens of times) — pass, no crash.
+- **E6** (resize/zoom the browser window) — investigated as part of this
+  report, not a bug: **browser-native zoom (Ctrl/Cmd +/-) and window resize
+  scale the whole page, top bar included** — that's how every website
+  behaves under browser zoom; `TopBar.tsx`'s CSS is plain px/em with nothing
+  viewport-relative (confirmed by grep), so there's no app-side scaling logic
+  to blame. The app's *own* zoom (the bottom-right +/- controls from item 1)
+  correctly zooms only the board canvas and leaves the top bar untouched,
+  which the user separately confirmed works fine. Pass — worth remembering
+  this distinction if "the UI resizes when I zoom" comes up again; that's
+  the browser's job, not this app's.
+- **E7** (OS set to dark mode) — pass, UI chrome follows the OS theme, board
+  background does not change (correct — the board background is export
+  content, not UI).
+- **E8** (close tab, reopen) — pass, the board comes back via
+  `RecoveryBar`/autosave (item 8). This supersedes the pre-Phase-2 version of
+  this checklist item, which expected work to be lost.
+- **Section F (privacy: Network tab, offline reload)** — user chose to skip
+  both; not planned to revisit unless something else prompts it.
+- **Manual-testing gap is now closed** to the scope the user wants covered.
+  E2/E4 remain formally unverified (no test file was available, not that they
+  failed) and real Safari/Firefox/non-Chromium mobile are still unconfirmed
+  one by one (see "Not yet verified" below) — neither blocks starting Phase 4.
 - **New finding, desktop-only testing so far:** on mobile, the top bar/toolbar
   requires horizontal scrolling to reach — awkward to use. Not filed as a
   Phase 2 item (user wants it noted, not built now); revisit when doing
@@ -604,7 +635,7 @@ planned order below stands.
   bar — it makes the overflow worse, not better.
 - Real Safari/Firefox and non-Chromium mobile browsers still haven't been
   explicitly confirmed one by one — if that level of detail matters before
-  Phase 2, ask the user which browsers they actually used.
+  Phase 4, ask the user which browsers they actually used.
 
 ## ⛔ Gate before writing any Phase 2 code
 
