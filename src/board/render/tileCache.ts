@@ -47,7 +47,7 @@ export class TileCache implements TileProvider {
     const ctx = canvas.getContext('2d')
     if (!ctx) return null
     ctx.setTransform(this.#ratio, 0, 0, this.#ratio, 0, 0)
-    drawFramedImage(ctx, { x: margin, y: margin, w: item.frame.w, h: item.frame.h }, item.image, style)
+    drawFramedImage(ctx, { x: margin, y: margin, w: item.frame.w, h: item.frame.h }, item.image, style, item.crop)
 
     const tile: CachedTile = { canvas, dx: margin, dy: margin, w: logicalW, h: logicalH, key }
     this.#tiles.set(item.id, tile)
@@ -75,7 +75,10 @@ export class TileCache implements TileProvider {
   }
 }
 
-/** Position is deliberately absent: moving a node must not rebuild its tile. */
+/** Position is deliberately absent: moving a node must not rebuild its tile.
+ * Crop is included alongside size/style/ratio (invariant 2) - it changes
+ * what's drawn inside the tile just as much as a style change does. */
 function tileKey(item: RenderItem, style: StylePreset, ratio: number): string {
-  return `${Math.round(item.frame.w)}x${Math.round(item.frame.h)}:${style}:${ratio.toFixed(2)}`
+  const crop = item.crop ? `${item.crop.x.toFixed(4)},${item.crop.y.toFixed(4)},${item.crop.w.toFixed(4)},${item.crop.h.toFixed(4)}` : 'full'
+  return `${Math.round(item.frame.w)}x${Math.round(item.frame.h)}:${style}:${ratio.toFixed(2)}:${crop}`
 }

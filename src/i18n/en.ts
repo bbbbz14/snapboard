@@ -57,11 +57,15 @@ export const en = {
   'spacing.padding': 'Padding',
 
   'selection.count': '{{count}} selected',
+  'selection.crop': 'Crop',
   'selection.duplicate': 'Duplicate',
   'selection.duplicateTitle': 'Duplicate (D)',
   'selection.bringToFront': 'Bring to front',
   'selection.bringToFrontTitle': 'Bring to front (F)',
   'selection.delete': 'Delete',
+
+  'crop.confirm': 'Done',
+  'crop.cancel': 'Cancel',
 
   'annotate.arrow': 'Arrow',
   'annotate.arrowTitle': 'Arrow (A)',
@@ -71,6 +75,8 @@ export const en = {
   'annotate.textTitle': 'Text (T)',
   'annotate.marker': 'Number',
   'annotate.markerTitle': 'Number (N)',
+  'annotate.redact': 'Redact',
+  'annotate.redactTitle': 'Redact (C)',
 
   'zoom.out': 'Zoom out',
   'zoom.in': 'Zoom in',

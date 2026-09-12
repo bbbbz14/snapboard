@@ -2,6 +2,11 @@ import { forwardRef } from 'react'
 import { t } from '@/i18n/t'
 
 interface Props {
+  /** Only passed when the selection is exactly one image node - Crop makes
+   * no sense for a multi-selection or for an annotation kind (arrow/box/
+   * text/marker/redact), so the button itself only renders when there's
+   * somewhere for it to go. */
+  onCrop?: (() => void) | undefined
   onDuplicate: () => void
   onBringToFront: () => void
   onDelete: () => void
@@ -17,11 +22,16 @@ interface Props {
  * prop starting hidden below.
  */
 export const SelectionToolbar = forwardRef<HTMLDivElement, Props>(function SelectionToolbar(
-  { onDuplicate, onBringToFront, onDelete },
+  { onCrop, onDuplicate, onBringToFront, onDelete },
   ref,
 ) {
   return (
     <div ref={ref} className="selection-toolbar" style={{ display: 'none' }}>
+      {onCrop && (
+        <button className="selection-toolbar__btn" title={t('selection.crop')} aria-label={t('selection.crop')} onClick={onCrop}>
+          ⛶
+        </button>
+      )}
       <button className="selection-toolbar__btn" title={t('selection.duplicateTitle')} aria-label={t('selection.duplicate')} onClick={onDuplicate}>
         ⧉
       </button>

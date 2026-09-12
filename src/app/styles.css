@@ -392,6 +392,18 @@ body {
   pointer-events: none;
 }
 
+/* The crop-session overlay: the full uncropped image dimmed outside the
+   crop window, drawn on its own canvas (not .board-interaction) so a crop
+   session never mixes image content into the plain selection-UI canvas -
+   see BoardCanvas's drawCropOverlay. Only non-empty while a crop session is
+   open. */
+.board-crop-overlay {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+
 /* The text-tool editing overlay - per the product plan's 7.1 "DOM overlay
    used only for... textarea while editing text" note, styled after
    Excalidraw's own text editor: a plain textarea, not an attempt to make it

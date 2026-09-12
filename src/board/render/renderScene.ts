@@ -3,12 +3,16 @@ import { STYLE_PRESETS, type Background, type StylePreset } from '@/board/model/
 import { ARROW_STROKE_WIDTH, strokeArrow } from './arrow'
 import { BOX_STROKE_WIDTH, strokeBox } from './box'
 import { drawMarker } from './marker'
+import { fillRedact } from './redact'
 import { drawText } from './text'
 
 export interface RenderItem {
   id: string
   frame: Rect
   image: CanvasImageSource | null
+  /** Normalized (0..1) source sub-rect to draw, mirroring `ImageNode.crop` -
+   * absent means the whole image. */
+  crop?: Rect
   /** 1-based step number drawn in the left gutter, when the layout has one. */
   badge?: number
 }
@@ -41,6 +45,11 @@ export interface RenderMarker {
   color: string
 }
 
+export interface RenderRedact {
+  id: string
+  frame: Rect
+}
+
 export interface RenderInput {
   size: Size
   background: Background
@@ -57,6 +66,8 @@ export interface RenderInput {
   texts?: RenderText[]
   /** Optional for the same reason `arrows` is. */
   markers?: RenderMarker[]
+  /** Optional for the same reason `arrows` is. */
+  redacts?: RenderRedact[]
 }
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
@@ -112,8 +123,17 @@ export function renderScene(ctx: Ctx2D, input: RenderInput, { scale, tiles, offs
     if (tile) {
       ctx.drawImage(tile.canvas, item.frame.x - tile.dx, item.frame.y - tile.dy, tile.w, tile.h)
     } else {
-      drawFramedImage(ctx, item.frame, item.image, input.style)
+      drawFramedImage(ctx, item.frame, item.image, input.style, item.crop)
     }
+  }
+
+  // Redactions must permanently blot out whatever's underneath, so they draw
+  // immediately after the images and before every other annotation kind -
+  // an arrow, box, text or marker added afterward can still point at or
+  // label a redaction, but nothing that draws before it (only the images)
+  // could ever show through it.
+  for (const redact of input.redacts ?? []) {
+    fillRedact(ctx, redact.frame)
   }
 
   // Boxes and arrows are drawn on top of every image - they exist to point
@@ -167,7 +187,7 @@ export function roundedPath(ctx: Ctx2D, r: Rect, radius: number): void {
   ctx.closePath()
 }
 
-export function drawFramedImage(ctx: Ctx2D, frame: Rect, image: CanvasImageSource, style: StylePreset): void {
+export function drawFramedImage(ctx: Ctx2D, frame: Rect, image: CanvasImageSource, style: StylePreset, crop?: Rect): void {
   const preset = STYLE_PRESETS[style]
   ctx.save()
   if (preset.shadow) {
@@ -185,8 +205,21 @@ export function drawFramedImage(ctx: Ctx2D, frame: Rect, image: CanvasImageSourc
   }
   roundedPath(ctx, frame, preset.radius)
   ctx.clip()
-  ctx.drawImage(image, frame.x, frame.y, frame.w, frame.h)
+  if (crop) {
+    const { w: iw, h: ih } = imageSize(image)
+    ctx.drawImage(image, crop.x * iw, crop.y * ih, crop.w * iw, crop.h * ih, frame.x, frame.y, frame.w, frame.h)
+  } else {
+    ctx.drawImage(image, frame.x, frame.y, frame.w, frame.h)
+  }
   ctx.restore()
+}
+
+/** Every image source this codebase ever draws is an `ImageBitmap`
+ * (`AssetStore.display`, and the render-parity test harness's own fixtures)
+ * - `CanvasImageSource` is a wider union only because the DOM type says so. */
+function imageSize(image: CanvasImageSource): Size {
+  const bitmap = image as ImageBitmap
+  return { w: bitmap.width, h: bitmap.height }
 }
 
 export const BADGE_DIAMETER = 44

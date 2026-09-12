@@ -33,15 +33,172 @@ the WebKit rasterisation gotcha below — none of these are failures).
 [docs/manual-test-checklist.md](docs/manual-test-checklist.md) run against
 the live site — see the Gate section below for the full results).
 
-**Phase 4 (annotations) is underway. Items 1 (arrow), 2 (box/rectangle), 3
-(text), and 4 (auto-numbered marker) are all done, pushed to `main`
-(`cad4471`), and deployed to the live site.** **Next session should start
-Phase 4 item 5** (redact) — see "Phase 4 — Annotations" below for the full
-item list.
-`npm run verify` green (typecheck + 198 unit + 27 renderer parity on 3
-engines + 196 e2e passed, 5 skipped by design — same 5 as before, see the
-note above; the marker e2e file added 5 test cases (15 counting all 3
-browser engines) and no new skips).
+**Phase 4 (annotations) is now complete - all 6 items done.** Items 1
+(arrow), 2 (box/rectangle), 3 (text), and 4 (auto-numbered marker) were
+already pushed to `main` (`cad4471`) and deployed before this session. **Item
+5 (redact, solid fill only) and item 6 (crop, per-image) were both built and
+shipped in this session** - item 5 had been sitting done-but-uncommitted in
+the working tree since the prior session; the user explicitly approved
+building item 6 first and then committing, pushing, and deploying both
+together in one pass, which is what the commit this paragraph describes did.
+See "Phase 4 item 5" and "Phase 4 item 6" below for what each one built, and
+[docs/phases/phase-4.md](docs/phases/phase-4.md) for the full Phase 4 writeup
+and Definition of Done table. `npm run verify` green (typecheck + 218 unit +
+27 renderer parity on 3 engines + 234 e2e - 229 passed, 5 skipped by design -
+same 5 as always, see the note above; item 6's e2e file added 5 test cases
+(15 counting all 3 browser engines) and no new skips).
+
+**Next up: Phase 5 (polish, dark mode, Thai UI)** - see "After Phase 4"
+below. Before diving in, consider closing the manual-testing gaps that have
+carried over since Phase 2/3 (real Safari/Firefox confirmation, and the
+Slack/LINE/Jira/Gmail/Word/Figma/Google Docs paste results table) - neither
+is doable from inside this environment and both need the user.
+
+### Phase 4 item 6 — done: crop (per-image, not the whole board)
+
+Built this session, on top of item 5 (redact) which had been sitting done
+but uncommitted since the prior session - both shipped together in the same
+commit, push, and deploy, per the user's explicit go-ahead this session. Full
+detail lives in [docs/phases/phase-4.md](docs/phases/phase-4.md); the
+highlights:
+
+- **The first thing this item needed was a scope question, not code:**
+  CLAUDE.md's own item-6 line said "crop the board itself," but the product
+  plan's data model (§7.3's `ImageNode.crop?: Rect`, normalized 0..1) and its
+  §4.2 mockup (crop lives in the floating per-object toolbar - `[ครอบตัด]
+  [ทำซ้ำ][ขึ้นหน้า][ลบ]` - that appears when *one object* is selected) both
+  describe a **per-image** crop, not a whole-board one. Asked the user, who
+  confirmed per-image is correct - CLAUDE.md's phrasing was simply imprecise,
+  not a deliberate redirection of scope.
+- **UX is a classic crop tool, not a resize handle repurposed:** the
+  SelectionToolbar's new Crop button (shown only when exactly one image node
+  is selected) opens a session showing the *entire* uncropped source image,
+  dimmed outside the current crop window, with 4 free (non-aspect-locked)
+  corner handles to drag - confirm (Done/Enter) commits, cancel
+  (Cancel/Escape) discards. The session is modal: every other click/keyboard
+  shortcut is a no-op while it's open, so a stray Delete/D/F can't touch the
+  node being cropped.
+- **A new third canvas** (`.board-crop-overlay`) draws the dimmed full image
+  + handles, kept separate from `.board-interaction` specifically so image
+  content never mixes into the plain selection-UI canvas the existing e2e
+  pixel-scanning tests already assume is otherwise empty.
+- **A real correctness bug caught by reasoning, not by a test:** `relayout()`
+  fed `computeLayout` the source image's full natural size for aspect-ratio
+  purposes, even for a cropped node - turning auto-layout back on after
+  cropping would have recomputed a frame sized to the *uncropped* aspect
+  ratio while `crop` still only showed a sub-rect, stretching it. Fixed by
+  using the cropped natural size (`natural.w * crop.w`, `natural.h *
+  crop.h`) when a node has a `crop`. Not independently unit-testable through
+  `boardStore`'s existing test conventions (its tests never touch a real
+  `assetStore` asset, only the `{w:16,h:9}` fallback), so this one is
+  protected by code review and type-checking, not a new assertion - worth
+  remembering if a future feature needs to exercise this path for real.
+- `RenderItem.crop` and the tile-cache key both had to change together
+  (invariant 2 - crop is now a fourth dimension, alongside size/style/ratio,
+  that must invalidate a tile) but invariant 1 (one renderer for preview and
+  export) needed no new code at all - crop is just an extra parameter on the
+  same `drawFramedImage` both paths already shared.
+- `tests/unit/crop.test.ts` (8 cases, the crop-window geometry directly),
+  `boardStore.test.ts`'s `commitCrop` block (4 cases), `tests/e2e/crop.spec.ts`
+  (5 cases × 3 engines = 15, including a real shrink-then-export-then-
+  sample-the-uncovered-pixel check) - all passed on every engine on the first
+  run, no new skips.
+- **Deliberately not done:** panning the crop window without resizing it (4
+  corner handles already cover "trim excess from any edge," which is all the
+  product plan's "สกรีนช็อตมักมีส่วนเกิน" line asks for), aspect-ratio locking
+  or presets (crop must trim each edge independently, the opposite of what
+  image resize's aspect lock is for; no preset is asked for anywhere in the
+  product plan either).
+
+### Phase 4 item 5 — done: redact (solid fill only)
+
+Shipped in the same commit, push, and deploy as item 6 above - see that
+note for why the two went out together.
+
+- **Scoped to solid fill only before any code was written** - the user
+  explicitly cut blur and pixelate ahead of implementation, not as a
+  discovered simplification. This sidesteps the product plan's own risk
+  note almost entirely: a light blur can be reversed, and pixelate needs an
+  enforced minimum block size to stay safe, but solid fill has no
+  "how strong" dial at all - the covered pixels are simply never drawn, so
+  there is no reversibility spectrum to get wrong.
+- A floating "Redact" tool button in the same bottom-left
+  `AnnotationToolbar` (icon: `■`, a filled square - visually distinct from
+  box's outline-only `▢`), plus a plain `C` keyboard shortcut (for
+  "censor" - the product plan's own Thai word is "เซ็นเซอร์"; `R` was
+  already box's, `B` reads as "blur" which doesn't exist here). Same
+  one-shot drag-to-draw shape as box: press once to arm, drag to draw,
+  release to commit (or revert to `'select'` on a stray click); Escape
+  while armed cancels without creating anything - all for free from the
+  existing generic `tool !== 'select'` Escape handler and drag-vs-click
+  threshold pattern, no new branching needed.
+- `RedactNode` (`src/board/model/types.ts`) mirrors `BoxNode` almost
+  exactly - `frame` is the actual dragged rectangle, not a derived pad, so
+  every generic frame-based helper (`setFrames` move, `duplicateSelected`'s
+  offset-copy, `hitTest`, `handles.ts`'s resize-handle exclusion,
+  `relayout`/`reconcileAssets`/`decodeBoardAssets`'s existing
+  `kind !== 'image'` filters) needed zero new per-kind branches - same
+  "box needed no new branches either" reasoning item 2 established, and
+  the smallest diff of the five annotation kinds shipped so far for exactly
+  that reason. **One deliberate difference from every other annotation
+  kind: no `color` field.** Arrow/box/text/marker all carry a `color` that
+  happens to be fixed to `DEFAULT_ANNOTATION_COLOR` today but exists as a
+  field; giving redact one too would silently invite a future "let the user
+  pick a semi-transparent redaction color" feature, which is exactly the
+  see-through-redaction risk the whole item is trying to foreclose. The
+  fill is instead a module-level constant, `REDACT_FILL_COLOR` (`#000000`,
+  fully opaque) in the new `src/board/render/redact.ts`.
+- `src/board/render/redact.ts` - `fillRedact`, a thin `ctx.fillRect` wrapper,
+  called identically by `renderScene` (committed redaction, board-space,
+  invariant 1) and `BoardCanvas`'s interaction-canvas preview (screen-space,
+  while dragging) - same one-source-of-truth reasoning `strokeBox`/
+  `strokeArrow` already established. Unlike those two, the preview and the
+  final result are pixel-identical by construction (fully opaque black
+  either way), not just structurally similar - there's nothing left to
+  reveal once the drag commits.
+- **Draw order matters here more than for any other annotation kind, and is
+  the one real design decision this item made:** `renderScene` draws
+  redactions immediately after the images and *before* boxes/arrows/
+  text/markers, not after everything like markers are. Drawing them last
+  (matching markers) would still visually cover the image today, but would
+  be fragile - it would rely on "nothing else happens to render after
+  redact" staying true forever. Drawing them right after images instead
+  means a redaction is structurally *part of what's already on the board*
+  before any other annotation is even considered, so a later arrow can
+  still point at a redacted region or a marker can still number it, without
+  ever risking something rendering on top that could make the cover look
+  incomplete.
+- `boardStore.ts`'s `addRedact(start, end)` mirrors `addBox` exactly
+  (`rectFromPoints`, `layout: 'free'`, select the new node, revert
+  `tool` to `'select'`). `toRenderInput` filters/maps it into
+  `RenderInput.redacts` the same way boxes become `.boxes` - excluded from
+  step-badge numbering, same as every other annotation kind.
+- **The one test that actually matters for this item, beyond the usual
+  parity with box's own suite:** Phase 4's Definition of Done specifically
+  requires proving redacted content is unrecoverable "tested by zooming
+  into the export, not just eyeballing the preview" - the other four
+  annotation kinds' e2e specs only check `download.path()` is truthy for
+  "survives export," which doesn't prove anything about content. This
+  item's `tests/e2e/redact.spec.ts` adds a dedicated test that downloads
+  the real exported file, decodes it through the browser's own PNG decoder
+  (an `<img>` loaded from a `data:` URL, not a hand-rolled Node-side
+  decoder - canvas-exported PNGs use real per-scanline filtering that a
+  from-scratch decoder would have to reimplement correctly), and reads back
+  the exact pixel under the redaction with `getImageData`. The fixture
+  image's own gradient (see `png.ts`) fixes its blue channel at a constant
+  180, so it can never coincidentally produce a pure-black pixel on its
+  own - meaning a `[0, 0, 0, 255]` read back from the *downloaded file*
+  is unambiguous proof the original content is gone, not just covered
+  on-screen. The rest of the file (drawing survives export, the `C`
+  shortcut, Escape-cancels, a stray click creating nothing,
+  select→delete→undo, no resize handle) mirrors `box.spec.ts`'s structure
+  directly. All 6 cases pass on all 3 engines with no skips needed.
+- **Deliberately not done, scoped to what "solid-fill redact" alone
+  needs:** no blur or pixelate modes (cut by explicit user decision before
+  implementation, not a discovered gap - see above), no opacity/color
+  choice (no `color` field at all, see above), no resize handle (move it,
+  or delete and redraw - same as arrow/box/text/marker), no mode-switching
+  UI of any kind (nothing to switch between with only one mode).
 
 ### Phase 4 item 4 — done: auto-numbered marker annotation
 
@@ -934,21 +1091,17 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with Phase 4 items 1–4 (arrow, box, text, marker)
+## Live site status — being brought up to date with Phase 4 items 5–6 (redact, crop) this session
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
-HTTPS enforced, certificate approved. Source push (`git push origin
-master:main`) and `bash scripts/deploy-pages.sh` were last run together right
-after Phase 4 item 4's auto-numbered-marker commit (`1e6578d`, plus its
-CLAUDE.md follow-up `cad4471`), and both worked cleanly again on the first
-try (no re-auth, no DNS re-check needed). Live site now serves all of Phase 2
-(items 1–9), the Clear board addition, Phase 3, and Phase 4 items 1–4. Deploy
-script itself reported success (`Published.` + the live URL); a same-session
-`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. (The
-custom domain sits behind a CDN edge cache with a 10-minute `max-age`, so a
-stale bundle hash can be observed for a few minutes right after a deploy —
-not a deploy failure, just propagation - worth a re-check next session if in
-doubt about the *bundle* specifically, as opposed to the page.)
+HTTPS enforced, certificate approved. As of the feature commit this
+paragraph ships alongside, the source push and deploy for Phase 4 items 5
+(redact) and 6 (crop) had not yet run — see the follow-up commit right after
+this one (or, if there isn't one yet, treat this as still outstanding and
+check with the user before running either) for the actual result. Before
+this session, the live site served all of Phase 2 (items 1–9), the Clear
+board addition, Phase 3, and Phase 4 items 1–4, last confirmed after Phase 4
+item 4's commit (`1e6578d`, plus its CLAUDE.md follow-up `cad4471`).
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:
@@ -1107,16 +1260,18 @@ order; each item is independently shippable, same as Phase 2/3.
    "badge", to avoid confusion with the unrelated per-image step-sequence
    badge `'steps'` layout already draws (`BADGE_DIAMETER`/`drawBadge` in
    `renderScene.ts`).
-5. ⬜ **Redact** (blur/pixelate/solid fill) over a region - the product
-   plan's own risk note applies here: a light blur can be reversible, so a
-   safe minimum pixelation strength should be enforced, and "solid" should be
-   the suggested default for genuinely sensitive content.
-6. ⬜ **Crop** the board itself.
+5. ✅ **Redact** - done — see "Phase 4 item 5" under START HERE above. Scoped
+   down to solid fill only (no blur/pixelate) by explicit user decision - see
+   that note for why.
+6. ✅ **Crop**, per-image (not the whole board - see "Phase 4 item 6" under
+   START HERE above for why that distinction needed asking the user first).
 
 **Phase 4 is done when:** placing an arrow + number on a bug report takes
 under 15 seconds · redacted content is verifiably unrecoverable from the
 exported file (tested by zooming into the export, not just eyeballing the
 preview) · the product plan's own Definition of Done (section 12) is met.
+**All three are now true** - see [docs/phases/phase-4.md](docs/phases/phase-4.md)
+for the full Definition of Done table and everything item 6 (crop) shipped.
 
 ## After Phase 4
 
@@ -1171,7 +1326,9 @@ anything in `render/` or `export/`.
 [tileCache.ts](src/board/render/tileCache.ts) pre-renders each node because drop
 shadows cost 72–91% of frame time (ADR-002). Adding `x`/`y` to `tileKey()` would
 silently rebuild every tile on every drag and destroy the 18–23x speedup.
-Size, style and pixel ratio are the only things that may invalidate a tile.
+Size, style, pixel ratio, and (since Phase 4 item 6) crop are the only things
+that may invalidate a tile — crop changes what's drawn inside the tile just
+as much as a style change does.
 
 **3. Image pixels live outside the store.**
 `AssetStore` is a module singleton; `Board` holds only `assetId` references. That

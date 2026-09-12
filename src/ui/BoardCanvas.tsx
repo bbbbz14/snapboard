@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { renderScene } from '@/board/render/renderScene'
 import { TileCache } from '@/board/render/tileCache'
-import { toRenderInput, useBoardStore } from '@/board/store/boardStore'
+import { assetStore, toRenderInput, useBoardStore } from '@/board/store/boardStore'
 import { hitTest, marqueeSelect } from '@/board/interact/hitTest'
-import { CORNERS, cornerPoint, HANDLE_SIZE, hitTestHandle } from '@/board/interact/handles'
-import { resizeKeepingAspect } from '@/board/interact/resize'
+import { CORNERS, cornerPoint, HANDLE_SIZE, hitTestHandle, hitTestRectHandle } from '@/board/interact/handles'
+import { resizeKeepingAspect, type Corner } from '@/board/interact/resize'
+import { FULL_CROP, fullImageRect, resizeCropWindow, windowToCrop } from '@/board/interact/crop'
 import { snapMove, type SnapGuide } from '@/board/interact/snap'
 import { ARROW_STROKE_WIDTH, strokeArrow } from '@/board/render/arrow'
 import { BOX_STROKE_WIDTH, strokeBox } from '@/board/render/box'
+import { fillRedact } from '@/board/render/redact'
 import { TEXT_DEFAULT_WIDTH, TEXT_FONT_SIZE, TEXT_LINE_HEIGHT, TEXT_PADDING, ensureAnnotationFont, textFont, textHeight, wrapText } from '@/board/render/text'
 import type { Board, NodeId } from '@/board/model/types'
 import { DEFAULT_ANNOTATION_COLOR } from '@/board/model/types'
@@ -16,6 +18,7 @@ import type { Point, Rect } from '@/lib/geometry'
 import { boundsOf, rectFromPoints, translate } from '@/lib/geometry'
 import { ZoomControls } from '@/ui/ZoomControls'
 import { SelectionToolbar } from '@/ui/SelectionToolbar'
+import { CropToolbar } from '@/ui/CropToolbar'
 import { AnnotationToolbar } from '@/ui/AnnotationToolbar'
 import { t } from '@/i18n/t'
 
@@ -24,6 +27,8 @@ import { t } from '@/i18n/t'
 const ARROW_MIN_DRAG = 4
 /** Same threshold, for the box tool. */
 const BOX_MIN_DRAG = 4
+/** Same threshold, for the redact tool. */
+const REDACT_MIN_DRAG = 4
 
 /** Screen-px movement below this counts as a click, not a marquee drag. */
 const MARQUEE_THRESHOLD = 3
@@ -88,6 +93,10 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // Box-tool drag in progress - same shape as `arrowDraftRef`, just for the
   // other one-shot annotation tool.
   const boxDraftRef = useRef<{ start: Point; current: Point; screenStart: { x: number; y: number } } | null>(null)
+  // Redact-tool drag in progress - same shape as `boxDraftRef`. The preview
+  // drawn from this ref is already the fully-opaque final fill (see
+  // `fillRedact`), so there's nothing further to reveal once it commits.
+  const redactDraftRef = useRef<{ start: Point; current: Point; screenStart: { x: number; y: number } } | null>(null)
   // The text tool's editing session - a brand-new placement (`id: null`) or
   // a re-edit of an existing node (dblclick), live only in this component's
   // state until committed on blur/Cmd+Enter or discarded on Escape. Unlike
@@ -108,6 +117,18 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // whichever other node it's currently hovering, for the drop-target outline.
   const reorderRef = useRef<{ id: NodeId; startFrame: Rect; startPoint: Point } | null>(null)
   const reorderHoverRef = useRef<NodeId | null>(null)
+  // A crop session (opened from SelectionToolbar's Crop button) - `bounds`
+  // (the full, uncropped image's board-space rect) is fixed for the whole
+  // session; `cropWindowRef` holds the live, board-space crop window and is
+  // mutated directly during a handle drag (ref-first, same 60fps pattern as
+  // `dragFramesRef`), read by `drawInteraction` and by `confirmCrop`. Nothing
+  // commits to the store until the session's own confirm/cancel, unlike
+  // every other drag in this file which commits on plain pointer-up.
+  const [cropSession, setCropSession] = useState<{ id: NodeId; bounds: Rect } | null>(null)
+  const cropWindowRef = useRef<Rect | null>(null)
+  const cropDragRef = useRef<{ corner: Corner } | null>(null)
+  const cropOverlayCanvasRef = useRef<HTMLCanvasElement>(null)
+  const cropToolbarRef = useRef<HTMLDivElement>(null)
   // Live frame overrides for nodes being moved/resized, read directly by
   // `draw`/`drawInteraction` so dragging renders at 60fps without going
   // through React state - only committed to the store on pointer-up.
@@ -130,10 +151,42 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   const addBox = useBoardStore((s) => s.addBox)
   const commitText = useBoardStore((s) => s.commitText)
   const addMarker = useBoardStore((s) => s.addMarker)
+  const addRedact = useBoardStore((s) => s.addRedact)
+  const commitCrop = useBoardStore((s) => s.commitCrop)
 
   useEffect(() => {
     void ensureAnnotationFont().then(() => setFontReady(true))
   }, [])
+
+  /** Opens a crop session for the single selected image node - `bounds` is
+   * computed once here from the node's *current* frame/crop (see
+   * `fullImageRect`) and never recomputed mid-session, so dragging a handle
+   * back out always means "reveal more of this same image", not a moving
+   * target. */
+  const beginCrop = useCallback(() => {
+    if (selectedIds.length !== 1) return
+    const node = board.nodes.find((n) => n.id === selectedIds[0])
+    if (!node || node.kind !== 'image') return
+    const bounds = fullImageRect(node.frame, node.crop ?? FULL_CROP)
+    cropWindowRef.current = node.frame
+    setCropSession({ id: node.id, bounds })
+  }, [selectedIds, board.nodes])
+
+  const cancelCrop = useCallback(() => {
+    setCropSession(null)
+    cropWindowRef.current = null
+  }, [])
+
+  /** Commits the live crop window as the node's new `frame` plus a matching
+   * normalized `crop` (see `windowToCrop`) - the two are set together so
+   * they can never disagree (see `ImageNode.crop`'s own note). */
+  const confirmCrop = useCallback(() => {
+    if (!cropSession) return
+    const cropWindow = cropWindowRef.current
+    if (cropWindow) commitCrop(cropSession.id, cropWindow, windowToCrop(cropWindow, cropSession.bounds))
+    setCropSession(null)
+    cropWindowRef.current = null
+  }, [cropSession, commitCrop])
 
   /** Wraps `editingText.text` with the same measurement `drawText` uses, and
    * commits it - a fresh node if it's a new placement, or the existing
@@ -289,6 +342,13 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       strokeBox(ctx, rectFromPoints(a, b), DEFAULT_ANNOTATION_COLOR, BOX_STROKE_WIDTH * camera.zoom)
     }
 
+    const redactDraft = redactDraftRef.current
+    if (redactDraft) {
+      const a = boardToScreen(camera, viewport, redactDraft.start)
+      const b = boardToScreen(camera, viewport, redactDraft.current)
+      fillRedact(ctx, rectFromPoints(a, b))
+    }
+
     // The text tool's own "preview" is the textarea overlay itself (see the
     // .text-edit element below), not anything drawn on this canvas - only
     // its screen position/size needs to track pan/zoom while it's open,
@@ -311,7 +371,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     const toolbar = toolbarRef.current
     if (toolbar) {
       const dragging = !!(moveRef.current || resizeRef.current || reorderRef.current || marqueeRef.current)
-      if (selectedIds.length === 0 || dragging) {
+      if (selectedIds.length === 0 || dragging || cropSession) {
         toolbar.style.display = 'none'
       } else {
         const frames = board.nodes.filter((n) => selectedIds.includes(n.id)).map((n) => overrides?.[n.id] ?? n.frame)
@@ -366,7 +426,70 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
     }
     ctx.restore()
-  }, [board.nodes, selectedIds, viewport, editingText])
+
+    // The crop-session overlay: the full uncropped image, dimmed outside the
+    // live crop window, plus the window's own resize handles - drawn on a
+    // third canvas (not this one) so image content never mixes into the
+    // plain selection-UI canvas above. Only non-empty while a session is
+    // open (see `beginCrop`/`confirmCrop`/`cancelCrop`).
+    const cropCanvas = cropOverlayCanvasRef.current
+    if (cropCanvas) {
+      cropCanvas.width = Math.max(1, Math.round(viewport.w * dpr))
+      cropCanvas.height = Math.max(1, Math.round(viewport.h * dpr))
+      cropCanvas.style.width = `${viewport.w}px`
+      cropCanvas.style.height = `${viewport.h}px`
+      const cropCtx = cropCanvas.getContext('2d')
+      const cropWindow = cropWindowRef.current
+      if (cropCtx) {
+        cropCtx.clearRect(0, 0, cropCanvas.width, cropCanvas.height)
+        if (cropSession && cropWindow) {
+          const node = board.nodes.find((n) => n.id === cropSession.id)
+          const asset = node && node.kind === 'image' ? assetStore.get(node.assetId) : null
+          if (asset) {
+            cropCtx.save()
+            cropCtx.scale(dpr, dpr)
+            const boundsTopLeft = boardToScreen(camera, viewport, { x: cropSession.bounds.x, y: cropSession.bounds.y })
+            const bw = cropSession.bounds.w * camera.zoom
+            const bh = cropSession.bounds.h * camera.zoom
+            cropCtx.drawImage(asset.display, boundsTopLeft.x, boundsTopLeft.y, bw, bh)
+
+            const winTopLeft = boardToScreen(camera, viewport, { x: cropWindow.x, y: cropWindow.y })
+            const ww = cropWindow.w * camera.zoom
+            const wh = cropWindow.h * camera.zoom
+            cropCtx.fillStyle = 'rgba(15, 23, 42, 0.55)'
+            cropCtx.fillRect(boundsTopLeft.x, boundsTopLeft.y, bw, winTopLeft.y - boundsTopLeft.y)
+            cropCtx.fillRect(boundsTopLeft.x, winTopLeft.y + wh, bw, boundsTopLeft.y + bh - (winTopLeft.y + wh))
+            cropCtx.fillRect(boundsTopLeft.x, winTopLeft.y, winTopLeft.x - boundsTopLeft.x, wh)
+            cropCtx.fillRect(winTopLeft.x + ww, winTopLeft.y, boundsTopLeft.x + bw - (winTopLeft.x + ww), wh)
+
+            cropCtx.strokeStyle = SELECTION_COLOR
+            cropCtx.lineWidth = 2
+            cropCtx.strokeRect(winTopLeft.x, winTopLeft.y, ww, wh)
+            cropCtx.fillStyle = SELECTION_COLOR
+            for (const corner of CORNERS) {
+              const p = boardToScreen(camera, viewport, cornerPoint(cropWindow, corner))
+              cropCtx.fillRect(p.x - HANDLE_SIZE / 2, p.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE)
+            }
+            cropCtx.restore()
+          }
+        }
+      }
+    }
+
+    const cropToolbar = cropToolbarRef.current
+    if (cropToolbar) {
+      const cropWindow = cropWindowRef.current
+      if (cropSession && cropWindow) {
+        const topLeft = boardToScreen(camera, viewport, { x: cropWindow.x, y: cropWindow.y })
+        const topRight = boardToScreen(camera, viewport, { x: cropWindow.x + cropWindow.w, y: cropWindow.y })
+        cropToolbar.style.display = 'flex'
+        cropToolbar.style.left = `${(topLeft.x + topRight.x) / 2}px`
+        cropToolbar.style.top = `${topLeft.y}px`
+      } else {
+        cropToolbar.style.display = 'none'
+      }
+    }
+  }, [board.nodes, selectedIds, viewport, editingText, cropSession])
 
   useEffect(() => {
     if (autoFitRef.current) {
@@ -511,6 +634,23 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0 || spaceHeldRef.current) return
 
+      // A crop session is modal for this canvas: nothing else (select, move,
+      // marquee, tool switching) can happen until it's confirmed or
+      // cancelled, so only a handle hit on the live crop window does
+      // anything at all - a click anywhere else inside the session is a
+      // deliberate no-op, not a fallthrough to normal selection.
+      if (cropSession) {
+        const cropWindow = cropWindowRef.current
+        if (cropWindow) {
+          const corner = hitTestRectHandle(cropWindow, cameraRef.current, viewport, toScreenPoint(e))
+          if (corner) {
+            cropDragRef.current = { corner }
+            canvas.setPointerCapture(e.pointerId)
+          }
+        }
+        return
+      }
+
       if (tool === 'arrow') {
         const point = toBoardPoint(e)
         arrowDraftRef.current = { start: point, current: point, screenStart: { x: e.clientX, y: e.clientY } }
@@ -521,6 +661,13 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       if (tool === 'box') {
         const point = toBoardPoint(e)
         boxDraftRef.current = { start: point, current: point, screenStart: { x: e.clientX, y: e.clientY } }
+        canvas.setPointerCapture(e.pointerId)
+        return
+      }
+
+      if (tool === 'redact') {
+        const point = toBoardPoint(e)
+        redactDraftRef.current = { start: point, current: point, screenStart: { x: e.clientX, y: e.clientY } }
         canvas.setPointerCapture(e.pointerId)
         return
       }
@@ -592,6 +739,16 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     }
 
     const onPointerMove = (e: PointerEvent) => {
+      if (cropSession) {
+        const drag = cropDragRef.current
+        const current = cropWindowRef.current
+        if (drag && current) {
+          cropWindowRef.current = resizeCropWindow(current, drag.corner, toBoardPoint(e), cropSession.bounds)
+          drawInteraction()
+        }
+        return
+      }
+
       const arrowDraft = arrowDraftRef.current
       if (arrowDraft) {
         arrowDraftRef.current = { ...arrowDraft, current: toBoardPoint(e) }
@@ -602,6 +759,13 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       const boxDraft = boxDraftRef.current
       if (boxDraft) {
         boxDraftRef.current = { ...boxDraft, current: toBoardPoint(e) }
+        drawInteraction()
+        return
+      }
+
+      const redactDraft = redactDraftRef.current
+      if (redactDraft) {
+        redactDraftRef.current = { ...redactDraft, current: toBoardPoint(e) }
         drawInteraction()
         return
       }
@@ -655,6 +819,11 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     const onPointerUp = (e: PointerEvent) => {
       if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
 
+      if (cropSession) {
+        cropDragRef.current = null
+        return
+      }
+
       const arrowDraft = arrowDraftRef.current
       if (arrowDraft) {
         arrowDraftRef.current = null
@@ -670,6 +839,16 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         boxDraftRef.current = null
         const dragged = Math.hypot(e.clientX - boxDraft.screenStart.x, e.clientY - boxDraft.screenStart.y) > BOX_MIN_DRAG
         if (dragged) addBox(boxDraft.start, boxDraft.current)
+        else setTool('select')
+        drawInteraction()
+        return
+      }
+
+      const redactDraft = redactDraftRef.current
+      if (redactDraft) {
+        redactDraftRef.current = null
+        const dragged = Math.hypot(e.clientX - redactDraft.screenStart.x, e.clientY - redactDraft.screenStart.y) > REDACT_MIN_DRAG
+        if (dragged) addRedact(redactDraft.start, redactDraft.current)
         else setTool('select')
         drawInteraction()
         return
@@ -747,7 +926,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction, tool, addArrow, addBox, addMarker, setTool, setEditingText])
+  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction, tool, addArrow, addBox, addMarker, addRedact, setTool, setEditingText, cropSession])
 
   // Keyboard shortcuts (Phase 2 item 9 completes this set). Undo/redo and
   // copy are the deliberate exceptions to "no modifier keys": Ctrl/Cmd+Z is
@@ -765,6 +944,21 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // escape) already avoids modifiers for the same reason.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // A crop session is modal (see the pointer-effect's own note) - only
+      // its own confirm/cancel keys do anything while one is open, so a
+      // stray Delete/D/F/tool-switch keystroke mid-session can't touch the
+      // node being cropped or arm an unrelated tool underneath it.
+      if (cropSession) {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          cancelCrop()
+        } else if (e.key === 'Enter') {
+          e.preventDefault()
+          confirmCrop()
+        }
+        return
+      }
+
       const target = e.target as HTMLElement | null
       // Only bail for an actual text-editing surface, where a modifier
       // shortcut should act on the text, not the board - unlike the gap
@@ -837,6 +1031,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       } else if (e.key.toLowerCase() === 'n') {
         e.preventDefault()
         setTool(tool === 'marker' ? 'select' : 'marker')
+      } else if (e.key.toLowerCase() === 'c') {
+        e.preventDefault()
+        setTool(tool === 'redact' ? 'select' : 'redact')
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -855,6 +1052,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     onCopy,
     tool,
     setTool,
+    cropSession,
+    cancelCrop,
+    confirmCrop,
   ])
 
   // Double-click re-opens an existing text node for editing - the only way
@@ -902,6 +1102,10 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // count - used only for the a11y label below - must not count them too.
   const imageCount = board.nodes.filter((n) => n.kind === 'image').length
 
+  // Crop only makes sense for a single selected image node - see
+  // SelectionToolbar's own note on why the button itself is conditional.
+  const canCrop = selectedIds.length === 1 && board.nodes.find((n) => n.id === selectedIds[0])?.kind === 'image'
+
   return (
     <div className="board-stage">
       <div ref={pageRef} className="board-page" />
@@ -913,6 +1117,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         onDoubleClick={onCanvasDoubleClick}
       />
       <canvas ref={interactionCanvasRef} className="board-interaction" aria-hidden="true" />
+      <canvas ref={cropOverlayCanvasRef} className="board-crop-overlay" aria-hidden="true" />
       {editingText && (
         <textarea
           ref={textEditRef}
@@ -929,10 +1134,12 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       </div>
       <SelectionToolbar
         ref={toolbarRef}
+        onCrop={canCrop ? beginCrop : undefined}
         onDuplicate={duplicateSelected}
         onBringToFront={bringToFront}
         onDelete={deleteSelected}
       />
+      <CropToolbar ref={cropToolbarRef} onConfirm={confirmCrop} onCancel={cancelCrop} />
       <ZoomControls
         percent={percent}
         onZoomOut={() => zoomByFactor(1 / ZOOM_STEP)}
@@ -946,6 +1153,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         onToggleBox={() => setTool(tool === 'box' ? 'select' : 'box')}
         onToggleText={() => setTool(tool === 'text' ? 'select' : 'text')}
         onToggleMarker={() => setTool(tool === 'marker' ? 'select' : 'marker')}
+        onToggleRedact={() => setTool(tool === 'redact' ? 'select' : 'redact')}
       />
     </div>
   )

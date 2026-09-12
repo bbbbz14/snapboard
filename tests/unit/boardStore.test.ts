@@ -31,6 +31,46 @@ describe('setFrames', () => {
   })
 })
 
+describe('commitCrop', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', nodes: [node('n0', { x: 0, y: 0, w: 100, h: 100 })] },
+      selectedIds: ['n0'],
+    })
+  })
+
+  it('sets both frame and crop, and switches layout to free (same manual-edit rule as setFrames)', () => {
+    useBoardStore.getState().commitCrop('n0', { x: 10, y: 10, w: 40, h: 40 }, { x: 0.25, y: 0.25, w: 0.5, h: 0.5 })
+    const board = useBoardStore.getState().board
+    const n = board.nodes.find((x) => x.id === 'n0')
+    expect(board.layout).toBe('free')
+    expect(n?.frame).toEqual({ x: 10, y: 10, w: 40, h: 40 })
+    expect(n?.kind).toBe('image')
+    expect((n as ImageNode).crop).toEqual({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 })
+  })
+
+  it('leaves the crop untouched by a later relayout, same as invariant 4 protects any other manual edit', () => {
+    useBoardStore.getState().commitCrop('n0', { x: 10, y: 10, w: 40, h: 40 }, { x: 0.25, y: 0.25, w: 0.5, h: 0.5 })
+    useBoardStore.getState().setGap(40)
+    const n = useBoardStore.getState().board.nodes.find((x) => x.id === 'n0') as ImageNode
+    expect(n.frame).toEqual({ x: 10, y: 10, w: 40, h: 40 })
+    expect(n.crop).toEqual({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 })
+  })
+
+  it('does not disturb the selection', () => {
+    useBoardStore.getState().commitCrop('n0', { x: 10, y: 10, w: 40, h: 40 }, { x: 0.25, y: 0.25, w: 0.5, h: 0.5 })
+    expect(useBoardStore.getState().selectedIds).toEqual(['n0'])
+  })
+
+  it('can be undone, restoring the pre-crop frame and dropping the crop field', () => {
+    useBoardStore.getState().commitCrop('n0', { x: 10, y: 10, w: 40, h: 40 }, { x: 0.25, y: 0.25, w: 0.5, h: 0.5 })
+    useBoardStore.getState().undo()
+    const n = useBoardStore.getState().board.nodes.find((x) => x.id === 'n0') as ImageNode
+    expect(n.frame).toEqual({ x: 0, y: 0, w: 100, h: 100 })
+    expect(n.crop).toBeUndefined()
+  })
+})
+
 describe('reorder', () => {
   beforeEach(() => {
     useBoardStore.setState({
@@ -404,6 +444,78 @@ describe('addMarker', () => {
 
     useBoardStore.getState().undo()
     expect(useBoardStore.getState().board.nodes.find((n) => n.id === markerId)).toBeDefined()
+  })
+})
+
+describe('addRedact', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', nodes: [node('img', { x: 0, y: 0, w: 10, h: 10 })] },
+      selectedIds: [],
+      tool: 'redact',
+    })
+  })
+
+  it('adds a redact node from the two drag corners, selects it, switches layout to free, and returns to the select tool', () => {
+    useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const board = useBoardStore.getState().board
+    const redact = board.nodes.find((n) => n.kind === 'redact')
+    expect(redact).toBeDefined()
+    expect(redact!.frame).toEqual({ x: 0, y: 0, w: 40, h: 30 })
+    expect(board.layout).toBe('free')
+    expect(useBoardStore.getState().selectedIds).toEqual([redact!.id])
+    expect(useBoardStore.getState().tool).toBe('select')
+  })
+
+  it('normalizes the frame regardless of which corner was dragged from', () => {
+    useBoardStore.getState().addRedact({ x: 40, y: 30 }, { x: 0, y: 0 })
+    const redact = useBoardStore.getState().board.nodes.find((n) => n.kind === 'redact')!
+    expect(redact.frame).toEqual({ x: 0, y: 0, w: 40, h: 30 })
+  })
+
+  it('does not disturb the existing image node', () => {
+    useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const board = useBoardStore.getState().board
+    expect(board.nodes.find((n) => n.id === 'img')?.frame).toEqual({ x: 0, y: 0, w: 10, h: 10 })
+  })
+
+  it('moving a redaction (setFrames) just sets the new frame directly, same as an image', () => {
+    useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const redact = useBoardStore.getState().board.nodes.find((n) => n.kind === 'redact')!
+    useBoardStore.getState().setFrames([{ id: redact.id, frame: { x: 100, y: 5, w: 40, h: 30 } }])
+    const moved = useBoardStore.getState().board.nodes.find((n) => n.id === redact.id)
+    expect(moved?.frame).toEqual({ x: 100, y: 5, w: 40, h: 30 })
+  })
+
+  it('duplicating a redaction offsets its frame like an image', () => {
+    useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const redact = useBoardStore.getState().board.nodes.find((n) => n.kind === 'redact')!
+    useBoardStore.setState({ selectedIds: [redact.id] })
+    useBoardStore.getState().duplicateSelected()
+    const copyId = useBoardStore.getState().selectedIds[0]!
+    const copy = useBoardStore.getState().board.nodes.find((n) => n.id === copyId)
+    expect(copy?.frame).toEqual({ x: 16, y: 16, w: 40, h: 30 })
+  })
+
+  it('is excluded from toRenderInput.items and step badge numbering, and appears in .redacts', () => {
+    useBoardStore.setState({ board: { ...useBoardStore.getState().board, layout: 'steps', resolvedLayout: 'steps' } })
+    useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const input = toRenderInput(useBoardStore.getState().board)
+    expect(input.items.map((i) => i.id)).toEqual(['img'])
+    expect(input.items[0]?.badge).toBe(1)
+    expect(input.redacts).toHaveLength(1)
+    expect(input.redacts![0]).toMatchObject({ frame: { x: 0, y: 0, w: 40, h: 30 } })
+  })
+
+  it('can be deleted and undone like any other node', () => {
+    useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const redactId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'redact')!.id
+    useBoardStore.setState({ selectedIds: [redactId] })
+    useBoardStore.getState().deleteSelected()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === redactId)).toBeUndefined()
+
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === redactId)).toBeDefined()
   })
 })
 

@@ -14,6 +14,7 @@ import {
   type LayoutMode,
   type MarkerNode,
   type NodeId,
+  type RedactNode,
   type StylePreset,
   type TextNode,
 } from '@/board/model/types'
@@ -108,6 +109,13 @@ interface BoardState {
   /** Commits manually-moved/resized frames. Does not relayout - a manual edit
    * must not be recomputed away by the auto-layout heuristic. */
   setFrames: (updates: { id: NodeId; frame: Rect }[]) => void
+  /** Commits a crop session (see `interact/crop.ts` and the SelectionToolbar's
+   * Crop button): sets an image node's `frame` to the dragged crop window and
+   * its `crop` to the matching normalized source rect, in one step - the two
+   * must never disagree (see `ImageNode.crop`'s own note). Same "manual edit,
+   * switch to free" rule as `setFrames`, since a crop is exactly that: a
+   * frame the user set by hand, which relayout must not recompute away. */
+  commitCrop: (id: NodeId, frame: Rect, crop: Rect) => void
   /** Moves a node to `targetIndex` in the auto-layout sequence and relayouts -
    * a still-auto board's own frames come from order, so this is how drag-to-
    * reorder repositions nodes (as opposed to `setFrames`'s free-form move). */
@@ -121,14 +129,14 @@ interface BoardState {
   /** Copies the selected nodes, offset so they read as distinct from the
    * originals, and selects the copies. */
   duplicateSelected: () => void
-  /** Which pointer gesture on the board canvas means "draw a new arrow/box",
-   * "place a new text box", or "drop a numbered marker" instead of
-   * "select/move/marquee" - not part of `Board` for the same reason
-   * `selectedIds` isn't: it's what the user is about to do, not arranged
-   * content. Reverts to `'select'` the instant an arrow, box, text, or
-   * marker placement commits. */
-  tool: 'select' | 'arrow' | 'box' | 'text' | 'marker'
-  setTool: (tool: 'select' | 'arrow' | 'box' | 'text' | 'marker') => void
+  /** Which pointer gesture on the board canvas means "draw a new
+   * arrow/box/redaction", "place a new text box", or "drop a numbered
+   * marker" instead of "select/move/marquee" - not part of `Board` for the
+   * same reason `selectedIds` isn't: it's what the user is about to do, not
+   * arranged content. Reverts to `'select'` the instant an arrow, box,
+   * text, marker, or redaction placement commits. */
+  tool: 'select' | 'arrow' | 'box' | 'text' | 'marker' | 'redact'
+  setTool: (tool: 'select' | 'arrow' | 'box' | 'text' | 'marker' | 'redact') => void
   /** Commits a new arrow from `start` to `end` (board-space) and switches
    * back to the select tool - same one-shot pattern a stamp tool would use.
    * Locks the board to `layout: 'free'` like `setFrames` does: an arrow's
@@ -160,6 +168,11 @@ interface BoardState {
    * render time (see `toRenderInput`), not stored here - so deleting one
    * marker just renumbers the rest, no separate counter to keep in sync. */
   addMarker: (point: Point) => void
+  /** Commits a new redaction from `start` to `end` (board-space, opposite
+   * drag corners) and switches back to the select tool - same one-shot
+   * pattern as `addBox`, for the same reason (an absolute board-space rect
+   * the user placed by hand, not something layout should ever move). */
+  addRedact: (start: Point, end: Point) => void
   /** Moves the selected nodes to the top of z-order (drawn last). Also
    * relayouts, since `order` doubles as layout position for auto boards -
    * same overload `reorder` already relies on for drag-to-reorder. */
@@ -191,7 +204,15 @@ function relayout(board: Board): Board {
   const items = board.nodes
     .filter((n): n is ImageNode => n.kind === 'image')
     .sort((a, b) => a.order - b.order)
-    .map((n) => ({ id: n.id, natural: assetStore.get(n.assetId)?.natural ?? { w: 16, h: 9 } }))
+    .map((n) => {
+      const nat = assetStore.get(n.assetId)?.natural ?? { w: 16, h: 9 }
+      // A cropped node's *layout* aspect ratio must be the cropped one, not
+      // the source's - otherwise a later relayout (or turning auto back on)
+      // would size the frame from the full image while `crop` still only
+      // shows a sub-rect of it, stretching that sub-rect to the wrong shape.
+      const natural = n.crop ? { w: nat.w * n.crop.w, h: nat.h * n.crop.h } : nat
+      return { id: n.id, natural }
+    })
 
   const result = computeLayout(items, board.layout === 'auto' ? 'auto' : board.layout, {
     gap: board.gap,
@@ -424,6 +445,15 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       })
     }),
 
+  commitCrop: (id, frame, crop) =>
+    set((s) =>
+      commitBoard(s, {
+        ...s.board,
+        layout: 'free',
+        nodes: s.board.nodes.map((n) => (n.id === id && n.kind === 'image' ? { ...n, frame, crop } : n)),
+      }),
+    ),
+
   reorder: (id, targetIndex) =>
     set((s) => {
       const sorted = [...s.board.nodes].sort((a, b) => a.order - b.order)
@@ -559,6 +589,21 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }
     }),
 
+  addRedact: (start, end) =>
+    set((s) => {
+      const redact: RedactNode = {
+        kind: 'redact',
+        id: `n${nodeSeq++}`,
+        frame: rectFromPoints(start, end),
+        order: s.board.nodes.length,
+      }
+      return {
+        ...commitBoard(s, { ...s.board, layout: 'free', nodes: [...s.board.nodes, redact] }),
+        selectedIds: [redact.id],
+        tool: 'select',
+      }
+    }),
+
   bringToFront: () =>
     set((s) => {
       if (s.selectedIds.length === 0) return {}
@@ -651,6 +696,7 @@ export function toRenderInput(board: Board): RenderInput {
         id: n.id,
         frame: n.frame,
         image: assetStore.get(n.assetId)?.display ?? null,
+        ...(n.crop ? { crop: n.crop } : {}),
         ...(board.resolvedLayout === 'steps' ? { badge: i + 1 } : {}),
       })),
     arrows: sorted
@@ -667,5 +713,6 @@ export function toRenderInput(board: Board): RenderInput {
     markers: sorted
       .filter((n): n is MarkerNode => n.kind === 'marker')
       .map((n, i) => ({ id: n.id, frame: n.frame, number: i + 1, color: n.color })),
+    redacts: sorted.filter((n): n is RedactNode => n.kind === 'redact').map((n) => ({ id: n.id, frame: n.frame })),
   }
 }

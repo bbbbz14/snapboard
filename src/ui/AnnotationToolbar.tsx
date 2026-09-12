@@ -1,21 +1,22 @@
 import { t } from '@/i18n/t'
 
 interface Props {
-  tool: 'select' | 'arrow' | 'box' | 'text' | 'marker'
+  tool: 'select' | 'arrow' | 'box' | 'text' | 'marker' | 'redact'
   onToggleArrow: () => void
   onToggleBox: () => void
   onToggleText: () => void
   onToggleMarker: () => void
+  onToggleRedact: () => void
 }
 
 /**
  * Bottom-left, mirroring `ZoomControls`' bottom-right placement - a floating
  * button outside the top bar, per the same standing mobile-overflow note
  * (see CLAUDE.md) that already kept zoom and selection actions out of it.
- * Arrow, box, text, and the numbered marker for now; the rest of Phase 4's
- * annotation tools land here too as they ship.
+ * Arrow, box, text, the numbered marker, and redact for now; the rest of
+ * Phase 4's annotation tools land here too as they ship.
  */
-export function AnnotationToolbar({ tool, onToggleArrow, onToggleBox, onToggleText, onToggleMarker }: Props) {
+export function AnnotationToolbar({ tool, onToggleArrow, onToggleBox, onToggleText, onToggleMarker, onToggleRedact }: Props) {
   return (
     <div className="annotation-toolbar">
       <button
@@ -53,6 +54,15 @@ export function AnnotationToolbar({ tool, onToggleArrow, onToggleBox, onToggleTe
         aria-pressed={tool === 'marker'}
       >
         ①
+      </button>
+      <button
+        className={`annotation-toolbar__btn${tool === 'redact' ? ' is-active' : ''}`}
+        onClick={onToggleRedact}
+        title={t('annotate.redactTitle')}
+        aria-label={t('annotate.redact')}
+        aria-pressed={tool === 'redact'}
+      >
+        ■
       </button>
     </div>
   )

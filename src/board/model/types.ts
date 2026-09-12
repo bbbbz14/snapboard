@@ -27,6 +27,14 @@ export interface ImageNode {
   frame: Rect
   /** Logical order, drives layout position and step numbering. */
   order: number
+  /** Normalized (0..1) sub-rect of the source image actually drawn - the
+   * product plan's own `ImageNode.crop`, for trimming the excess a
+   * screenshot often has. Absent means "the whole image, uncropped", which
+   * is why most nodes never carry this field at all. Committing a crop also
+   * sets `frame` to match (see `commitCrop`/`crop.ts`), so `frame`'s aspect
+   * ratio and `crop`'s never disagree - the source rect drawn by
+   * `drawFramedImage` always fills `frame` exactly, never stretched. */
+  crop?: Rect
 }
 
 /** A gently curved connector, per the product plan's Phase 4 annotations.
@@ -92,7 +100,26 @@ export interface MarkerNode {
   color: string
 }
 
-export type BoardNode = ImageNode | ArrowNode | BoxNode | TextNode | MarkerNode
+/** A solid-fill rectangle that permanently covers sensitive content -
+ * "เซ็นเซอร์" (redact) in the product plan's Phase 4 list. Deliberately
+ * solid-fill only, no blur/pixelate mode: the product plan's own risk note
+ * warns a light blur can be reversed, so this ships only the one mode
+ * that's irrecoverable by construction - the covered pixels are simply
+ * never drawn. Like `BoxNode`, `frame` is not derived - it's the rectangle
+ * the user dragged, so every generic frame-based helper (move, duplicate,
+ * hitTest) needs no per-kind branch. No `color` field, unlike every other
+ * annotation kind - offering a color/opacity choice here would risk a
+ * see-through redaction, exactly the "decision nothing asked for yet"
+ * CLAUDE.md says not to add; the fill is a fixed, fully-opaque black
+ * (`REDACT_FILL_COLOR` in render/redact.ts). */
+export interface RedactNode {
+  kind: 'redact'
+  id: NodeId
+  frame: Rect
+  order: number
+}
+
+export type BoardNode = ImageNode | ArrowNode | BoxNode | TextNode | MarkerNode | RedactNode
 
 /** Shared by every annotation kind - red, visible on any background, per
  * the product plan's "สีอัตโนมัติ (แดงเป็นค่าเริ่มต้น)". */
