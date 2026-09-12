@@ -44,6 +44,12 @@ export function TopBar({ copied, onCopy }: Props) {
     store.toast(t('toast.downloaded', { name }), 'success')
   }
 
+  // A blocking confirm, not just relying on undo/the "Board cleared" bar:
+  // those are the safety net for a misclick, this is what stops one.
+  const onClear = () => {
+    if (window.confirm(t('toolbar.clearConfirm', { mod: modKey() }))) store.clear()
+  }
+
   return (
     <header className="topbar">
       <span className="brand">{t('app.name')}</span>
@@ -125,7 +131,7 @@ export function TopBar({ copied, onCopy }: Props) {
 
       {hasImages && (
         <>
-          <button className="btn" onClick={store.clear}>
+          <button className="btn" onClick={onClear}>
             {t('toolbar.clear')}
           </button>
           {/* Download stays visible next to Copy: a silent clipboard failure is

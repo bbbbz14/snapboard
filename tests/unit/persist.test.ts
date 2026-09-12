@@ -2,7 +2,14 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_BOARD, type Board, type ImageNode } from '@/board/model/types'
 import { clearAllRecords, getAssetRecord, getBoardRecord } from '@/board/persist/db'
-import { restoreAutosave, scheduleAutosave, wipeAutosave } from '@/board/persist/autosave'
+import {
+  restoreAutosave,
+  restoreLastCleared,
+  saveLastCleared,
+  scheduleAutosave,
+  wipeAutosave,
+  wipeLastCleared,
+} from '@/board/persist/autosave'
 
 // scheduleAutosave debounces for 800ms (src/board/persist/autosave.ts) - fake
 // timers don't mix reliably with fake-indexeddb's own internal scheduling,
@@ -97,6 +104,41 @@ describe('restoreAutosave', () => {
   }, 10000)
 })
 
+describe('saveLastCleared / restoreLastCleared', () => {
+  it('writes immediately, not debounced', async () => {
+    const b = board([node('n0', 'a0')])
+    await saveLastCleared(b, () => new Blob(['a']))
+    const restored = await restoreLastCleared()
+    expect(restored?.board.nodes.map((n) => n.id)).toEqual(['n0'])
+  })
+
+  it('is unaffected by the normal autosave diff deleting the same assetId', async () => {
+    // Mirrors the real sequence: clear() saves the snapshot, then the
+    // scheduled autosave for the now-empty board runs and would otherwise
+    // delete asset a0 from the live `assets` store.
+    const blob = new Blob(['a'])
+    await saveLastCleared(board([node('n0', 'a0')]), () => blob)
+    scheduleAutosave(board([]), () => blob)
+    await sleep(PAST_DEBOUNCE)
+
+    expect(await getAssetRecord('a0')).toBeNull()
+    const restored = await restoreLastCleared()
+    expect(restored?.assets.get('a0')).toStrictEqual(blob)
+  }, 10000)
+
+  it('does nothing for an already-empty board', async () => {
+    await saveLastCleared(board([]), () => new Blob(['a']))
+    expect(await restoreLastCleared()).toBeNull()
+  })
+
+  it('returns null once wiped', async () => {
+    await saveLastCleared(board([node('n0', 'a0')]), () => new Blob(['a']))
+    wipeLastCleared()
+    await sleep(BELOW_DEBOUNCE)
+    expect(await restoreLastCleared()).toBeNull()
+  })
+})
+
 describe('wipeAutosave', () => {
   it('cancels a pending debounced write and clears storage immediately', async () => {
     scheduleAutosave(board([node('n0', 'a0')]), () => new Blob(['a']))
@@ -118,4 +160,10 @@ describe('wipeAutosave', () => {
     await sleep(PAST_DEBOUNCE)
     expect(await getAssetRecord('a0')).toMatchObject({ id: 'a0' })
   }, 10000)
+
+  it('also wipes any pending last-cleared snapshot (clearAllRecords covers both stores)', async () => {
+    await saveLastCleared(board([node('n0', 'a0')]), () => new Blob(['a']))
+    wipeAutosave()
+    expect(await restoreLastCleared()).toBeNull()
+  })
 })

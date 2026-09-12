@@ -11,9 +11,14 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 **Current state:** Phase 1 complete, manual test checklist gate cleared (see
 below). **Phase 2 is complete — all 9 items done, shipped (`69cc234`), pushed
 to `main`, and deployed to the live site** — see
-[docs/phases/phase-2.md](docs/phases/phase-2.md) for the full writeup.
-`npm run verify` green (typecheck + 140 unit + 27 renderer parity on 3 engines
-+ 118 e2e passed, 5 skipped by design — clipboard round-trip on headless
+[docs/phases/phase-2.md](docs/phases/phase-2.md) for the full writeup. On top
+of that, a small unplanned addition shipped locally but **not yet pushed or
+deployed**: a "Clear board" misclick safety net (confirm dialog + a
+one-snapshot restore, see the note right below) — ask the user before running
+`git push origin master:main` / `bash scripts/deploy-pages.sh` for it, same as
+any other push/deploy.
+`npm run verify` green (typecheck + 151 unit + 27 renderer parity on 3 engines
++ 130 e2e passed, 5 skipped by design — clipboard round-trip on headless
 Firefox/WebKit for both the Copy button and the Ctrl/Cmd+Shift+C shortcut
 (ADR-003), plus the reorder pixel-swap assertion on headless WebKit only, see
 the WebKit rasterisation gotcha below — none of these are failures).
@@ -26,6 +31,61 @@ confirming `Ctrl/Cmd+Shift+C` doesn't lose to Chrome/Edge's DevTools
 inspect-element accelerator on a real desktop build - untestable in headless
 Playwright, see item 9's note below). Neither gap blocks starting Phase 3; ask
 if unsure which the user wants prioritized.
+
+### Unplanned addition — done: "Clear board" misclick safety net
+
+Not a numbered Phase 2/3 item - a small standalone fix requested mid-session
+because `clear()` had no confirmation and no way back once the 800ms autosave
+overwrote the board record. Shipped locally, `npm run verify` green; **not
+pushed or deployed yet**.
+
+- `TopBar.tsx`'s Clear button now confirms (`window.confirm`, no new modal
+  component - the codebase had no existing dialog primitive and this is a
+  one-off) before calling `store.clear()`. This alone stops most misclicks;
+  everything below is the safety net for the rest.
+- Investigating this turned up that `clear()` already routed through
+  `commitBoard` like every other mutation, so the board it empties was
+  already landing in undo `past` - **Ctrl/Cmd+Z immediately after a Clear
+  already worked, with no code changes.** The actual gap was reload/tab-close
+  before hitting undo: `past`/`future` are memory-only, and the 800ms
+  autosave debounce (item 8) overwrites the persisted board with the new,
+  empty one regardless.
+- Closed that gap with a second, separate IndexedDB snapshot - `boardStore`'s
+  `clear()` now also fires `saveLastCleared()` (`src/board/persist/autosave.ts`)
+  immediately (not debounced - the normal autosave's own diff would otherwise
+  delete these same assets out from under it on its next 800ms tick) into a
+  new `lastCleared` object store (`src/board/persist/db.ts`, `DB_VERSION`
+  bumped 1→2; `onupgradeneeded` only adds the store, so existing installs
+  upgrade with no data loss). One slot, not a history - deliberately scoped
+  to "undo the last Clear," not a version-history feature, which would be far
+  more than this problem calls for.
+- New store field `lastCleared: Board | null` + `restoreLastCleared`/
+  `dismissLastCleared` actions. `restoreLastCleared` routes through the
+  normal `commitBoard`, so restoring is itself a normal undoable commit.
+  `hydrate()` now also checks for a last-cleared snapshot (decoding it the
+  same way it already decodes a normal autosave recovery) whenever the
+  regular autosave restore comes back empty; if it comes back non-empty
+  instead, the last-cleared snapshot is stale and gets wiped rather than
+  shown. `lastCleared`'s assets are included in every `reconcileAssets` call
+  alongside `past`/`future`, since a snapshot the UI is still offering can
+  outlive its place in the 50-entry undo cap.
+- `src/ui/ClearedBar.tsx` - "Board cleared · Restore" (plus dismiss),
+  mounted in `App.tsx` next to the existing `RecoveryBar`. Deliberately a
+  second small bar, not a merged/generalized one: the two answer different
+  questions ("you left with unsaved work" vs "you just cleared this, want it
+  back?") and the existing `RecoveryBar` had no natural way to express the
+  second without being misleading. `clear()` also nulls out any stale
+  `recoveredBoard` so the two banners can't both show for the same content.
+- **Test-suite side effect worth knowing about:** Playwright dismisses
+  `window.confirm` by default, which would have silently no-op'd every
+  existing `Clear board` click across the e2e suite. Fixed once, centrally,
+  in `tests/e2e/fixtures.ts`'s `page` fixture (`page.on('dialog', d =>
+  d.accept())`) rather than touching every call site.
+- `tests/e2e/clearedBoard.spec.ts` (new) covers confirm→restore in one
+  session, restoring-then-undoing, surviving a reload before restoring, and
+  dismiss (including that dismiss doesn't come back after a reload).
+  `tests/unit/persist.test.ts` and `tests/unit/boardStore.test.ts` cover the
+  IndexedDB layer and the store actions respectively, same split as item 8.
 
 ### Phase 2 item 1 — done: zoom, pan, zoom indicator, fit-to-view
 

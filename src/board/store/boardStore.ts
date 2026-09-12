@@ -16,7 +16,14 @@ import { AssetStore, type Asset } from '@/assets/assetStore'
 import type { Rejection } from '@/assets/validate'
 import type { RenderInput } from '@/board/render/renderScene'
 import { translate, type Rect } from '@/lib/geometry'
-import { restoreAutosave, scheduleAutosave, wipeAutosave } from '@/board/persist/autosave'
+import {
+  restoreAutosave,
+  restoreLastCleared as restoreLastClearedFromDB,
+  saveLastCleared,
+  scheduleAutosave,
+  wipeAutosave,
+  wipeLastCleared,
+} from '@/board/persist/autosave'
 
 /** Board-space offset applied to a duplicate so it's visibly distinct from
  * the original instead of sitting exactly on top of it. */
@@ -57,12 +64,26 @@ interface BoardState {
    * finishes, after the user dismisses it, or if there was nothing to
    * recover; it does not track whether recovered content is still present. */
   recoveredBoard: Board | null
+  /** The board `clear()` most recently emptied, still fully decoded and
+   * ready to restore in one click - a misclick safety net, distinct from
+   * `recoveredBoard`'s "you left with unsaved work" case. Set the instant
+   * `clear()` runs (no IndexedDB round trip needed - the assets are already
+   * decoded in memory) and re-populated from IndexedDB on the next `hydrate`
+   * if the user reloaded before restoring or dismissing it. Null once
+   * restored, dismissed, or superseded by a newer non-empty board. */
+  lastCleared: Board | null
   /** Reads the last autosaved board and its images back from IndexedDB and
    * makes them the starting board. Call once, at startup, before the user
    * can commit any action of their own. */
   hydrate: () => Promise<void>
   /** Hides the recovery bar without touching the board. */
   dismissRecovery: () => void
+  /** Brings back the board `clear()` most recently emptied, as a normal
+   * undoable commit (so undoing the restore just clears it again). */
+  restoreLastCleared: () => void
+  /** Hides the "board was cleared" bar and drops its IndexedDB snapshot -
+   * a conscious "no, I meant to clear it" decision. */
+  dismissLastCleared: () => void
   /** The recovery bar's "Start fresh" action: same empty board as `clear()`,
    * plus an immediate (non-debounced) wipe of autosave storage, since this
    * is a deliberate "throw it away" action, not a routine edit. */
@@ -153,12 +174,16 @@ function reconcileAssets(boards: Board[]): void {
  * "new action discards the redo branch" rule. */
 function commitBoard(s: BoardState, board: Board): Pick<BoardState, 'board' | 'past' | 'future'> {
   autosave(board)
+  // `lastCleared` can outlive its source board's place in `past` once
+  // MAX_HISTORY evicts it - it's still shown (and restorable) in the UI
+  // until dismissed, so it counts as reachable too.
+  const extra = s.lastCleared ? [s.lastCleared] : []
   if (s.adjustmentBase) {
-    reconcileAssets([board, s.adjustmentBase, ...s.past, ...s.future])
+    reconcileAssets([board, s.adjustmentBase, ...s.past, ...s.future, ...extra])
     return { board, past: s.past, future: s.future }
   }
   const past = [...s.past, s.board].slice(-MAX_HISTORY)
-  reconcileAssets([board, ...past])
+  reconcileAssets([board, ...past, ...extra])
   return { board, past, future: [] }
 }
 
@@ -167,6 +192,33 @@ function commitBoard(s: BoardState, board: Board): Pick<BoardState, 'board' | 'p
  * never has a mutation that silently skips it. */
 function autosave(board: Board): void {
   scheduleAutosave(board, (assetId) => assetStore.get(assetId)?.blob)
+}
+
+/** Shared by `hydrate`'s two IndexedDB-backed recovery paths (the normal
+ * autosave and the last-cleared snapshot): decodes a board's blobs back
+ * through the asset pipeline and drops any node whose image didn't survive,
+ * same as a corrupt store would be handled either way. Returns null if
+ * nothing decodable is left - not worth surfacing as a recovery option. */
+async function decodeBoardAssets(board: Board, blobs: Map<string, Blob>): Promise<Board | null> {
+  const uniqueIds = [...new Set(board.nodes.map((n) => n.assetId))]
+  const decoded = new Map<string, Asset>()
+  await Promise.all(
+    uniqueIds.map(async (id) => {
+      const blob = blobs.get(id)
+      if (!blob) return
+      const asset = await assetStore.restore(id, blob)
+      if (asset) decoded.set(id, asset)
+    }),
+  )
+  const nodes = board.nodes.filter((n) => decoded.has(n.assetId))
+  if (nodes.length === 0) return null
+  const result: Board =
+    nodes.length === board.nodes.length ? board : relayout({ ...board, nodes: nodes.map((n, i) => ({ ...n, order: i })) })
+  for (const n of result.nodes) {
+    const match = /^n(\d+)$/.exec(n.id)
+    if (match) nodeSeq = Math.max(nodeSeq, Number(match[1]) + 1)
+  }
+  return result
 }
 
 export const useBoardStore = create<BoardState>((set, get) => ({
@@ -178,46 +230,55 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   busy: null,
   toasts: [],
   recoveredBoard: null,
+  lastCleared: null,
 
   async hydrate() {
     const restored = await restoreAutosave()
-    if (!restored) return
-    const { board, assets } = restored
+    const recovered = restored ? await decodeBoardAssets(restored.board, restored.assets) : null
 
-    const uniqueIds = [...new Set(board.nodes.map((n) => n.assetId))]
-    const decoded = new Map<string, Asset>()
-    await Promise.all(
-      uniqueIds.map(async (id) => {
-        const blob = assets.get(id)
-        if (!blob) return
-        const asset = await assetStore.restore(id, blob)
-        if (asset) decoded.set(id, asset)
-      }),
-    )
-
-    // A node whose asset failed to come back (corrupt store) would otherwise
-    // render forever with no image - drop it rather than leave it broken.
-    const nodes = board.nodes.filter((n) => decoded.has(n.assetId))
-    const recovered: Board =
-      nodes.length === board.nodes.length
-        ? board
-        : relayout({ ...board, nodes: nodes.map((n, i) => ({ ...n, order: i })) })
-    if (recovered.nodes.length === 0) return
-
-    for (const n of recovered.nodes) {
-      const match = /^n(\d+)$/.exec(n.id)
-      if (match) nodeSeq = Math.max(nodeSeq, Number(match[1]) + 1)
+    if (recovered) {
+      reconcileAssets([recovered])
+      set({ board: recovered, recoveredBoard: recovered })
+      // A real (non-empty) board is back in play, so whatever `clear()`
+      // emptied before this reload is moot - drop the stale snapshot.
+      wipeLastCleared()
+      return
     }
-    reconcileAssets([recovered])
-    set({ board: recovered, recoveredBoard: recovered })
+
+    // Otherwise decode any last-cleared snapshot the same way and offer it
+    // through `lastCleared`, same as if the tab had never closed.
+    const clearedSnapshot = await restoreLastClearedFromDB()
+    const lastCleared = clearedSnapshot ? await decodeBoardAssets(clearedSnapshot.board, clearedSnapshot.assets) : null
+    if (lastCleared) {
+      reconcileAssets([get().board, lastCleared])
+      set({ lastCleared })
+    }
   },
 
   dismissRecovery: () => set({ recoveredBoard: null }),
 
+  restoreLastCleared: () =>
+    set((s) => {
+      const board = s.lastCleared
+      if (!board) return {}
+      wipeLastCleared()
+      return { ...commitBoard(s, board), lastCleared: null }
+    }),
+
+  dismissLastCleared: () => {
+    wipeLastCleared()
+    set({ lastCleared: null })
+  },
+
   startFresh: () =>
     set((s) => {
-      wipeAutosave()
-      return { ...commitBoard(s, { ...DEFAULT_BOARD, nodes: [] }), selectedIds: [], recoveredBoard: null }
+      wipeAutosave() // also wipes the last-cleared IndexedDB record (clearAllRecords)
+      return {
+        ...commitBoard(s, { ...DEFAULT_BOARD, nodes: [] }),
+        selectedIds: [],
+        recoveredBoard: null,
+        lastCleared: null,
+      }
     }),
 
   async addFiles(files) {
@@ -254,7 +315,24 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   setGap: (gap) => set((s) => commitBoard(s, relayout({ ...s.board, gap }))),
   setPadding: (padding) => set((s) => commitBoard(s, relayout({ ...s.board, padding }))),
 
-  clear: () => set((s) => ({ ...commitBoard(s, { ...DEFAULT_BOARD, nodes: [] }), selectedIds: [] })),
+  clear: () =>
+    set((s) => {
+      // Fire-and-forget, like autosave itself - the snapshot is a misclick
+      // safety net, not something Clear should ever wait on. Uses the assets
+      // already decoded in memory rather than a later IndexedDB read, since
+      // the autosave this same commit schedules will, 800ms from now, diff
+      // the emptied board and delete every asset this snapshot needs.
+      if (s.board.nodes.length > 0) {
+        void saveLastCleared(s.board, (assetId) => assetStore.get(assetId)?.blob)
+      }
+      return {
+        ...commitBoard(s, { ...DEFAULT_BOARD, nodes: [] }),
+        selectedIds: [],
+        lastCleared: s.board.nodes.length > 0 ? s.board : s.lastCleared,
+        // Superseded by the more specific "Board cleared" bar above.
+        recoveredBoard: null,
+      }
+    }),
 
   setSelection: (ids) => set({ selectedIds: ids }),
   toggleSelection: (id) =>
@@ -334,7 +412,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       if (!previous) return {}
       const past = s.past.slice(0, -1)
       const future = [...s.future, s.board]
-      reconcileAssets([previous, ...past, ...future])
+      reconcileAssets([previous, ...past, ...future, ...(s.lastCleared ? [s.lastCleared] : [])])
       autosave(previous)
       return {
         board: previous,
@@ -351,7 +429,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       if (!next) return {}
       const future = s.future.slice(0, -1)
       const past = [...s.past, s.board]
-      reconcileAssets([next, ...past, ...future])
+      reconcileAssets([next, ...past, ...future, ...(s.lastCleared ? [s.lastCleared] : [])])
       autosave(next)
       return {
         board: next,
@@ -369,7 +447,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       if (!base) return {}
       if (base === s.board) return { adjustmentBase: null }
       const past = [...s.past, base].slice(-MAX_HISTORY)
-      reconcileAssets([s.board, ...past])
+      reconcileAssets([s.board, ...past, ...(s.lastCleared ? [s.lastCleared] : [])])
       return { past, future: [], adjustmentBase: null }
     }),
 

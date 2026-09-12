@@ -3,6 +3,7 @@ import { TopBar } from '@/ui/TopBar'
 import { BoardCanvas } from '@/ui/BoardCanvas'
 import { EmptyState } from '@/ui/EmptyState'
 import { RecoveryBar } from '@/ui/RecoveryBar'
+import { ClearedBar } from '@/ui/ClearedBar'
 import { Toasts } from '@/ui/Toasts'
 import { useBoardStore } from '@/board/store/boardStore'
 import { usePasteImages, useDropImages } from '@/hooks/useImageInput'
@@ -45,6 +46,7 @@ export function App() {
     <div className="app">
       <TopBar copied={copied} onCopy={onCopy} />
       <RecoveryBar />
+      <ClearedBar />
       <div className="stage" ref={stageRef}>
         {board.nodes.length === 0 ? (
           <EmptyState onFiles={onFiles} />

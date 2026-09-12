@@ -23,6 +23,7 @@ export const en = {
   'toolbar.copied': 'Copied',
   'toolbar.download': 'Download',
   'toolbar.clear': 'Clear board',
+  'toolbar.clearConfirm': 'Clear the board? This can still be undone with {{mod}}+Z.',
 
   'layout.auto': 'Auto',
   'layout.rows': 'Rows',
@@ -74,6 +75,10 @@ export const en = {
   'recovery.message': 'Recovered your last board',
   'recovery.startFresh': 'Start fresh',
   'recovery.dismiss': 'Dismiss',
+
+  'cleared.message': 'Board cleared',
+  'cleared.restore': 'Restore',
+  'cleared.dismiss': 'Dismiss',
 } as const
 
 export type MessageKey = keyof typeof en

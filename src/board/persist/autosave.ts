@@ -1,11 +1,14 @@
 import type { Board } from '@/board/model/types'
 import {
   clearAllRecords,
+  clearLastClearedRecord,
   deleteAssetRecord,
   getAssetRecord,
   getBoardRecord,
+  getLastClearedRecord,
   putAssetRecord,
   putBoardRecord,
+  putLastClearedRecord,
 } from './db'
 
 /** Product plan 8.2: debounce so a continuous gesture (the gap slider, a
@@ -109,4 +112,44 @@ export function wipeAutosave(): void {
   }
   knownAssetIds = new Set()
   if (available()) clearAllRecords().catch(() => {})
+}
+
+/** Snapshots the board `clear()` is about to empty, plus its images, into a
+ * one-off IndexedDB slot separate from the live autosave record - a misclick
+ * safety net. Written immediately (not debounced): the normal autosave that
+ * `clear()` also schedules will, on its own 800ms timer, diff the now-empty
+ * board and delete every asset this snapshot needs, so this has to land
+ * first, from real bytes still in memory, not from whatever IndexedDB has by
+ * the time either write actually runs. Best-effort, like the rest of this
+ * module - a storage failure here must not block the clear itself. */
+export async function saveLastCleared(board: Board, getBlob: (assetId: string) => Blob | undefined): Promise<void> {
+  if (!available() || board.nodes.length === 0) return
+  try {
+    const ids = [...new Set(board.nodes.map((n) => n.assetId))]
+    const assets = ids
+      .map((id) => ({ id, blob: getBlob(id) }))
+      .filter((a): a is { id: string; blob: Blob } => a.blob !== undefined)
+    await putLastClearedRecord(board, assets)
+  } catch {
+    // Best-effort: undo still covers the same-session case either way.
+  }
+}
+
+/** Mirrors `RestoredAutosave` - the board `clear()` most recently emptied,
+ * plus whichever of its images actually decoded back out of IndexedDB. */
+export async function restoreLastCleared(): Promise<RestoredAutosave | null> {
+  if (!available()) return null
+  try {
+    const record = await getLastClearedRecord()
+    if (!record || record.board.nodes.length === 0) return null
+    return { board: record.board, assets: new Map(record.assets.map((a) => [a.id, a.blob])) }
+  } catch {
+    return null
+  }
+}
+
+/** Drops the snapshot once it's no longer relevant: the user restored it,
+ * dismissed it, or a newer non-empty board has since been autosaved over it. */
+export function wipeLastCleared(): void {
+  if (available()) clearLastClearedRecord().catch(() => {})
 }

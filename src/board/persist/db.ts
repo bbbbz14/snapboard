@@ -9,10 +9,12 @@ import type { Board } from '@/board/model/types'
  */
 
 const DB_NAME = 'snapboard'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const BOARD_STORE = 'board'
 const ASSET_STORE = 'assets'
+const LAST_CLEARED_STORE = 'lastCleared'
 const BOARD_KEY = 'current'
+const LAST_CLEARED_KEY = 'snapshot'
 
 export interface StoredAsset {
   id: string
@@ -31,6 +33,17 @@ interface StoredAssetRecord {
   refs: number
 }
 
+/** A single one-shot snapshot of the board `clear()` just emptied, plus the
+ * bytes of every asset it referenced - stored separately from the live
+ * `board`/`assets` records so the normal autosave diff (which deletes any
+ * asset no longer referenced by the *current*, now-empty board) can't race
+ * it away. Bundled as one record, not the assets table's per-id rows: this
+ * only ever needs to hold exactly one snapshot, never a history. */
+interface LastClearedRecord {
+  board: Board
+  assets: { id: string; data: ArrayBuffer; type: string }[]
+}
+
 let dbPromise: Promise<IDBDatabase> | null = null
 
 function openDB(): Promise<IDBDatabase> {
@@ -40,6 +53,7 @@ function openDB(): Promise<IDBDatabase> {
       const db = req.result
       if (!db.objectStoreNames.contains(BOARD_STORE)) db.createObjectStore(BOARD_STORE)
       if (!db.objectStoreNames.contains(ASSET_STORE)) db.createObjectStore(ASSET_STORE, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(LAST_CLEARED_STORE)) db.createObjectStore(LAST_CLEARED_STORE)
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -101,8 +115,44 @@ export async function deleteAssetRecord(id: string): Promise<void> {
 
 export async function clearAllRecords(): Promise<void> {
   const db = await openDB()
-  const tx = db.transaction([BOARD_STORE, ASSET_STORE], 'readwrite')
+  const tx = db.transaction([BOARD_STORE, ASSET_STORE, LAST_CLEARED_STORE], 'readwrite')
   tx.objectStore(BOARD_STORE).delete(BOARD_KEY)
   tx.objectStore(ASSET_STORE).clear()
+  tx.objectStore(LAST_CLEARED_STORE).delete(LAST_CLEARED_KEY)
+  await done(tx)
+}
+
+export interface StoredLastCleared {
+  board: Board
+  assets: { id: string; blob: Blob }[]
+}
+
+export async function putLastClearedRecord(board: Board, assets: { id: string; blob: Blob }[]): Promise<void> {
+  const data = await Promise.all(
+    assets.map(async (a) => ({ id: a.id, data: await a.blob.arrayBuffer(), type: a.blob.type })),
+  )
+  const db = await openDB()
+  const tx = db.transaction(LAST_CLEARED_STORE, 'readwrite')
+  tx.objectStore(LAST_CLEARED_STORE).put({ board, assets: data } satisfies LastClearedRecord, LAST_CLEARED_KEY)
+  await done(tx)
+}
+
+export async function getLastClearedRecord(): Promise<StoredLastCleared | null> {
+  const db = await openDB()
+  const tx = db.transaction(LAST_CLEARED_STORE, 'readonly')
+  const result = (await wrap(tx.objectStore(LAST_CLEARED_STORE).get(LAST_CLEARED_KEY))) as
+    | LastClearedRecord
+    | undefined
+  if (!result) return null
+  return {
+    board: result.board,
+    assets: result.assets.map((a) => ({ id: a.id, blob: new Blob([a.data], { type: a.type }) })),
+  }
+}
+
+export async function clearLastClearedRecord(): Promise<void> {
+  const db = await openDB()
+  const tx = db.transaction(LAST_CLEARED_STORE, 'readwrite')
+  tx.objectStore(LAST_CLEARED_STORE).delete(LAST_CLEARED_KEY)
   await done(tx)
 }

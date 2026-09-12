@@ -257,6 +257,61 @@ describe('recovery', () => {
   })
 })
 
+describe('clear / lastCleared', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, nodes: [node('a', { x: 0, y: 0, w: 10, h: 10 })] },
+      selectedIds: ['a'],
+      recoveredBoard: null,
+      lastCleared: null,
+      past: [],
+      future: [],
+    })
+  })
+
+  it('clear() sets lastCleared to the board it just emptied', () => {
+    useBoardStore.getState().clear()
+    expect(useBoardStore.getState().board.nodes).toHaveLength(0)
+    expect(useBoardStore.getState().lastCleared?.nodes.map((n) => n.id)).toEqual(['a'])
+  })
+
+  it('clear() on an already-empty board leaves lastCleared untouched', () => {
+    useBoardStore.getState().clear()
+    const first = useBoardStore.getState().lastCleared
+    useBoardStore.getState().clear()
+    expect(useBoardStore.getState().lastCleared).toBe(first)
+  })
+
+  it('clear() supersedes any stale "recovered your last board" banner', () => {
+    useBoardStore.setState({ recoveredBoard: useBoardStore.getState().board })
+    useBoardStore.getState().clear()
+    expect(useBoardStore.getState().recoveredBoard).toBeNull()
+  })
+
+  it('restoreLastCleared brings the board back, as an undoable commit', () => {
+    useBoardStore.getState().clear()
+    useBoardStore.getState().restoreLastCleared()
+    expect(useBoardStore.getState().board.nodes.map((n) => n.id)).toEqual(['a'])
+    expect(useBoardStore.getState().lastCleared).toBeNull()
+
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.nodes).toHaveLength(0)
+  })
+
+  it('dismissLastCleared hides the banner without touching the board', () => {
+    useBoardStore.getState().clear()
+    useBoardStore.getState().dismissLastCleared()
+    expect(useBoardStore.getState().lastCleared).toBeNull()
+    expect(useBoardStore.getState().board.nodes).toHaveLength(0)
+  })
+
+  it('startFresh also clears any pending lastCleared banner', () => {
+    useBoardStore.getState().clear()
+    useBoardStore.getState().startFresh()
+    expect(useBoardStore.getState().lastCleared).toBeNull()
+  })
+})
+
 describe('bringToFront', () => {
   beforeEach(() => {
     useBoardStore.setState({

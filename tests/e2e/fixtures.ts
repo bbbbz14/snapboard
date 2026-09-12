@@ -11,6 +11,14 @@ export interface Fixtures {
 }
 
 export const test = base.extend<Fixtures>({
+  // Clear board now confirms first (misclick safety net); Playwright dismisses
+  // dialogs by default, which would silently no-op every existing `Clear
+  // board` click in the suite. Auto-accept everywhere so tests keep the old
+  // "Clear board" == "board is now empty" behavior.
+  page: async ({ page }, use) => {
+    page.on('dialog', (d) => void d.accept())
+    await use(page)
+  },
   images: async ({}, use) => {
     const dir = mkdtempSync(join(tmpdir(), 'snapboard-'))
     let n = 0
