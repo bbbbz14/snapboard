@@ -9,21 +9,23 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 # START HERE — what this session should do next
 
 **Current state:** Phase 1 complete, manual test checklist gate cleared (see
-below). **Phase 2 is complete — all 9 items done**, see
+below). **Phase 2 is complete — all 9 items done, shipped (`69cc234`), pushed
+to `main`, and deployed to the live site** — see
 [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full writeup.
 `npm run verify` green (typecheck + 140 unit + 27 renderer parity on 3 engines
 + 118 e2e passed, 5 skipped by design — clipboard round-trip on headless
-Firefox/WebKit for both the Copy button and the new Ctrl/Cmd+Shift+C shortcut
+Firefox/WebKit for both the Copy button and the Ctrl/Cmd+Shift+C shortcut
 (ADR-003), plus the reorder pixel-swap assertion on headless WebKit only, see
 the WebKit rasterisation gotcha below — none of these are failures).
-Item 9's commit has **not** been pushed to `main` or deployed to the live site
-yet — the live site still serves through item 8 only, see "Live site status"
-below. Next session should confirm with the user whether to
-push/deploy item 9, then start **Phase 3 (export hardening)** — see "After
-Phase 2" below — or close the two open manual-testing gaps phase-2.md flags
-first (real Windows/Chrome + macOS/Safari testing, and confirming
-Ctrl/Cmd+Shift+C doesn't lose to Chrome/Edge's DevTools accelerator on a real
-desktop build).
+
+**Next session should start Phase 3 (export hardening: 1x/2x/3x, JPG,
+cross-browser fallbacks)** — see "After Phase 2" below for the full Phase list
+— unless the user asks to close the two open manual-testing gaps first (real
+Windows/Chrome + macOS/Safari testing per the manual test checklist, and
+confirming `Ctrl/Cmd+Shift+C` doesn't lose to Chrome/Edge's DevTools
+inspect-element accelerator on a real desktop build - untestable in headless
+Playwright, see item 9's note below). Neither gap blocks starting Phase 3; ask
+if unsure which the user wants prioritized.
 
 ### Phase 2 item 1 — done: zoom, pan, zoom indicator, fit-to-view
 
@@ -385,8 +387,7 @@ Shipped as its own commit. Not yet pushed/deployed - see below.
 
 ### Phase 2 item 9 — done: full keyboard shortcut set
 
-Shipped as its own commit. **Not yet pushed/deployed** - see "Live site
-status" below.
+Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 
 - **`Ctrl/Cmd+Shift+C` for copy** - the one shortcut the product plan names
   explicitly. Wiring it needed the design decision this item's own note
@@ -435,18 +436,18 @@ status" below.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with item 8
+## Live site status — up to date with item 9, Phase 2 complete
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved, all assets verified 200 from the command
 line. Source push (`git push origin master:main`) and
-`bash scripts/deploy-pages.sh` were last run together after Phase 2 item 8
-(`b6b634d`), and both worked cleanly again on the first try (no re-auth, no
+`bash scripts/deploy-pages.sh` were last run together after Phase 2 item 9
+(`69cc234`), and both worked cleanly again on the first try (no re-auth, no
 DNS re-check needed) — the earlier "Workflows: Read and write" token-scope fix
-from a prior session is holding. Live site now serves items 1–8. (The custom
-domain sits behind a CDN edge cache with a 10-minute `max-age`, so a stale
-bundle hash can be observed for a few minutes right after a deploy — not a
-deploy failure, just propagation.)
+from a prior session is holding. Live site now serves items 1–9, i.e. all of
+Phase 2. (The custom domain sits behind a CDN edge cache with a 10-minute
+`max-age`, so a stale bundle hash can be observed for a few minutes right
+after a deploy — not a deploy failure, just propagation.)
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:

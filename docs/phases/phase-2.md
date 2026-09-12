@@ -78,7 +78,7 @@ clipboard round-trip บน headless Firefox/WebKit — เหตุผลเด
 | 7 | ทุกสถานะมี feedback, error เป็นภาษาคน | ✅ |
 | 8 | ไม่มี network request ใหม่, ไม่มี input ผู้ใช้เข้า DOM เป็น HTML | ✅ |
 | 9 | เอกสารสรุป phase | ✅ ไฟล์นี้ |
-| 10 | Deploy ขึ้น preview และลองใช้งานจริงอย่างน้อย 1 งาน | ⚠️ **ยังไม่ push/deploy รอบนี้** — โค้ด commit แล้วในเครื่องเท่านั้น |
+| 10 | Deploy ขึ้น preview และลองใช้งานจริงอย่างน้อย 1 งาน | ✅ push ขึ้น `main` และ deploy ขึ้น live site แล้ว (`69cc234`) — ยังไม่ได้ลองงานจริงกับคนอื่น |
 | 11 | แจ้งสรุปและระบุขั้นต่อไป แล้วรอไฟเขียว | ✅ ดูหัวข้อถัดไป |
 
 Phase 2's เกณฑ์เพิ่มเติมที่ CLAUDE.md ตั้งไว้เอง — "ลาก 10 รูปยังลื่นที่ 60fps"
@@ -87,24 +87,25 @@ Phase 2's เกณฑ์เพิ่มเติมที่ CLAUDE.md ตั�
 
 ## สิ่งที่ยังทำไม่ได้ และต้องพูดให้ชัด
 
-1. **ยังไม่ได้ push source ขึ้น `main` และยังไม่ได้ deploy ขึ้น live site**
-   สำหรับงานของ session นี้ (item 9) — ทั้งสองคำสั่งพร้อมใช้
-   (`git push origin master:main` / `bash scripts/deploy-pages.sh`) แต่เป็นงาน
-   ที่กระทบคนนอกจึงรอให้ผู้ใช้สั่งก่อนตามกฎเดิม
-2. **ยังไม่ได้ยืนยัน `Ctrl/Cmd+Shift+C` บนเบราว์เซอร์เดสก์ท็อปจริง** ว่าชนะ
+1. **ยังไม่ได้ยืนยัน `Ctrl/Cmd+Shift+C` บนเบราว์เซอร์เดสก์ท็อปจริง** ว่าชนะ
    DevTools inspect-element accelerator ของ Chrome/Edge หรือไม่ — จุดนี้ควร
    เป็นส่วนหนึ่งของรอบทดสอบมือที่ยังไม่ได้ทำ (ดูข้อถัดไป)
-3. **Manual test checklist ส่วน E (robustness) และ F (privacy) ยังไม่ได้รัน**
+2. **Manual test checklist ส่วน E (robustness) และ F (privacy) ยังไม่ได้รัน**
    (บันทึกไว้ตั้งแต่ก่อน Phase 2 เริ่ม) และ Real Safari/Firefox/มือถือยังไม่ได้
    ยืนยันทีละตัว — ทั้งหมดนี้เป็นเงื่อนไขเดิมที่ค้างมาตั้งแต่ต้น Phase 2
    ไม่ใช่สิ่งใหม่จาก item 9
-4. **มือถือยังต้อง scroll แนวนอนเพื่อกด top bar** — พบระหว่าง manual test
+3. **มือถือยังต้อง scroll แนวนอนเพื่อกด top bar** — พบระหว่าง manual test
    ก่อน Phase 2 เริ่ม ยังไม่ถูกแก้ (ตั้งใจเก็บไว้ทำพร้อม/หลัง Phase 5 polish)
+
+Push (`git push origin master:main`) และ deploy (`bash scripts/deploy-pages.sh`)
+สำหรับ item 9 ทำเสร็จแล้วหลัง commit `69cc234` — ทำงานได้ราบรื่นในครั้งเดียว
+เหมือนทุกรอบก่อนหน้า ไม่ต้อง re-auth หรือเช็ค DNS ใหม่ Live site serve item
+1–9 ครบแล้ว (ดู "Live site status" ใน CLAUDE.md)
 
 ## ขั้นต่อไป — Phase 3
 
 ตามลำดับที่ CLAUDE.md วางไว้: **Export hardening** — 1x/2x/3x, JPG,
-cross-browser fallback ก่อนเริ่ม Phase 3 ควรให้ผู้ใช้ยืนยันว่าจะ push/deploy
-งาน Phase 2 (item 9) ขึ้น live site ก่อนหรือไม่ และพิจารณาว่าจะปิดช่องว่างข้อ 2–3
-ด้านบน (ทดสอบมือจริง) ก่อนเริ่มงานใหม่หรือไม่ เพราะเป็นเงื่อนไขเดียวที่ยังค้าง
-จาก Definition of Done ข้อ 4/10
+cross-browser fallback ก่อนเริ่มงานใหม่ ควรถามผู้ใช้ว่าจะปิดช่องว่างข้อ 1–2
+ด้านบน (ทดสอบมือจริงบน Windows/Chrome และ macOS/Safari) ก่อนหรือไม่ เพราะเป็น
+เงื่อนไขเดียวที่ยังค้างจาก Definition of Done ข้อ 4 — ไม่ได้บล็อกการเริ่ม
+Phase 3 แต่ควรทำให้ชัดว่าใครเป็นคนตัดสินใจเรื่องลำดับ
