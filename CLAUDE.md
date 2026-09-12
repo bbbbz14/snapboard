@@ -376,19 +376,18 @@ Shipped as its own commit. Not yet pushed/deployed - see below.
   polls from the Node side instead (`expect.poll(() => page.evaluate(...))`),
   which round-trips per attempt and actually waits for the resolved value.
 
-## ⚠️ The live site is behind `master` again — item 8 isn't pushed or deployed
+## Live site status — up to date with item 8
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved, all assets verified 200 from the command
 line. Source push (`git push origin master:main`) and
-`bash scripts/deploy-pages.sh` were last run together after Phase 2 item 7
-(`2502c15`), and both worked cleanly again on the first try (no re-auth, no
+`bash scripts/deploy-pages.sh` were last run together after Phase 2 item 8
+(`b6b634d`), and both worked cleanly again on the first try (no re-auth, no
 DNS re-check needed) — the earlier "Workflows: Read and write" token-scope fix
-from a prior session is holding. Live site still only serves items 1–7; item
-8 (autosave) is committed locally but neither command below has been run for
-it yet. (The custom domain sits behind a CDN edge cache with a 10-minute
-`max-age`, so a stale bundle hash can be observed for a few minutes right
-after a deploy — not a deploy failure, just propagation.)
+from a prior session is holding. Live site now serves items 1–8. (The custom
+domain sits behind a CDN edge cache with a 10-minute `max-age`, so a stale
+bundle hash can be observed for a few minutes right after a deploy — not a
+deploy failure, just propagation.)
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:
