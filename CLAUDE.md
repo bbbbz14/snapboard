@@ -14,8 +14,8 @@ to `main`, and deployed to the live site — see
 [docs/phases/phase-2.md](docs/phases/phase-2.md). A small unplanned addition —
 the "Clear board" misclick safety net (confirm dialog + a one-snapshot
 restore, see the note right below) — also shipped, pushed, and deployed
-(`4df51c6`). **Phase 3 (export hardening) is now feature-complete and
-committed locally, but not yet pushed or deployed** — see
+(`4df51c6`). **Phase 3 (export hardening) is now feature-complete, shipped
+(`1de8743`), pushed to `main`, and deployed to the live site** — see
 [docs/phases/phase-3.md](docs/phases/phase-3.md) for the full writeup. Most of
 Phase 3's feature list (scale/format/quality plumbing, the canvas-size guard,
 transparent-background handling, meaningful filenames, clipboard fallback,
@@ -29,17 +29,16 @@ Firefox/WebKit for both the Copy button and the Ctrl/Cmd+Shift+C shortcut
 (ADR-003), plus the reorder pixel-swap assertion on headless WebKit only, see
 the WebKit rasterisation gotcha below — none of these are failures).
 
-**Next session should ask the user whether to push/deploy Phase 3 first**
-(outward-facing commands, not yet run this session), then either close the
-open manual-testing gaps (see below) or start Phase 4 (annotations: arrow,
-box, text, number, redact, crop) — see "After Phase 3" below for the full
-Phase list.
+**Next session should either close the open manual-testing gaps (see below)
+or start Phase 4** (annotations: arrow, box, text, number, redact, crop) —
+see "After Phase 3" below for the full Phase list. Neither gap blocks
+starting Phase 4; ask if unsure which the user wants prioritized.
 
 ### Phase 3 — done: export options (scale/format/quality) UI
 
-Shipped as its own commit. Not yet pushed/deployed — ask the user first (both
-commands are outward-facing). See
-[docs/phases/phase-3.md](docs/phases/phase-3.md) for the full writeup.
+Shipped as its own commit (`1de8743`). Pushed to `main` and deployed to the
+live site. See [docs/phases/phase-3.md](docs/phases/phase-3.md) for the full
+writeup.
 
 - Almost all of Phase 3's feature list already existed from Phase 1:
   `exportBoard.ts` already had `scale: 1|2|3`, PNG/JPEG with `quality`, the
@@ -552,23 +551,22 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — behind by one commit: Phase 3 not yet pushed/deployed
+## Live site status — up to date with Phase 3 (export options)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
-HTTPS enforced, certificate approved. Last confirmed push+deploy was the
-unplanned "Clear board" misclick safety net (`4df51c6`) — see the git log
-above for the exact commit. **Phase 3's export-options UI is committed
-locally on top of that but has not been pushed to `main` or deployed** —
-both commands are outward-facing (see below), and this session didn't get an
-explicit go-ahead to run them. Live site currently still serves Phase 2
-(items 1–9) plus the Clear board addition, without Phase 3.
-Deploy script itself last reported success (`Published.` + the live URL); a
-same-session `curl` for the new JS bundle hash still 404ed right after, which
+HTTPS enforced, certificate approved. Source push (`git push origin
+master:main`) and `bash scripts/deploy-pages.sh` were last run together right
+after Phase 3's export-options commit (`1de8743`), and both worked cleanly
+again on the first try (no re-auth, no DNS re-check needed). Live site now
+serves all of Phase 2 (items 1–9), the Clear board addition, and Phase 3.
+Deploy script itself reported success (`Published.` + the live URL); a
+same-session `curl` for the new JS bundle hash still 404ed right after
+(the page itself served a fresh `200` with today's `last-modified`), which
 matches the documented CDN caveat below rather than a failed deploy — not
-re-confirmed with a fresh 200 since, worth a quick check next session if in
-doubt. (The custom domain sits behind a CDN edge cache with a 10-minute
-`max-age`, so a stale bundle hash can be observed for a few minutes right
-after a deploy — not a deploy failure, just propagation.)
+re-confirmed with a fresh 200 for the bundle itself, worth a quick check next
+session if in doubt. (The custom domain sits behind a CDN edge cache with a
+10-minute `max-age`, so a stale bundle hash can be observed for a few minutes
+right after a deploy — not a deploy failure, just propagation.)
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:
@@ -679,8 +677,7 @@ gracefully · pasting the exported file into Slack, LINE, Jira, Gmail, Word,
 Figma, and Google Docs is confirmed with a results table. **The first three
 are true** (see [docs/phases/phase-3.md](docs/phases/phase-3.md) for the
 Definition of Done table); **the fourth needs a human with real accounts and
-screens in those apps** — not doable from inside this environment. Push/deploy
-also still need the user's go-ahead (see "Live site status" above).
+screens in those apps** — not doable from inside this environment.
 
 ## After Phase 3
 
