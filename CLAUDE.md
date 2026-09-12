@@ -33,20 +33,24 @@ the WebKit rasterisation gotcha below — none of these are failures).
 [docs/manual-test-checklist.md](docs/manual-test-checklist.md) run against
 the live site — see the Gate section below for the full results).
 
-**Phase 4 (annotations) is now complete - all 6 items done.** Items 1
-(arrow), 2 (box/rectangle), 3 (text), and 4 (auto-numbered marker) were
-already pushed to `main` (`cad4471`) and deployed before this session. **Item
-5 (redact, solid fill only) and item 6 (crop, per-image) were both built and
-shipped in this session** - item 5 had been sitting done-but-uncommitted in
-the working tree since the prior session; the user explicitly approved
+**Phase 4 (annotations) is now complete - all 6 items done, pushed to
+`main`, and deployed to the live site.** Items 1 (arrow), 2 (box/rectangle),
+3 (text), and 4 (auto-numbered marker) were already pushed (`cad4471`) and
+deployed before this session. **Item 5 (redact, solid fill only) and item 6
+(crop, per-image) were both built and shipped in this session, in one
+combined commit (`1276962`), push, and deploy** - item 5 had been sitting
+done-but-uncommitted since the prior session; the user explicitly approved
 building item 6 first and then committing, pushing, and deploying both
-together in one pass, which is what the commit this paragraph describes did.
-See "Phase 4 item 5" and "Phase 4 item 6" below for what each one built, and
-[docs/phases/phase-4.md](docs/phases/phase-4.md) for the full Phase 4 writeup
-and Definition of Done table. `npm run verify` green (typecheck + 218 unit +
-27 renderer parity on 3 engines + 234 e2e - 229 passed, 5 skipped by design -
-same 5 as always, see the note above; item 6's e2e file added 5 test cases
-(15 counting all 3 browser engines) and no new skips).
+together in one pass, exactly as described here. Push and deploy both
+worked cleanly on the first try (no re-auth, no DNS re-check needed); a
+same-session `curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh
+`200`. See "Phase 4 item 5" and "Phase 4 item 6" below for what each one
+built, and [docs/phases/phase-4.md](docs/phases/phase-4.md) for the full
+Phase 4 writeup and Definition of Done table. `npm run verify` green
+(typecheck + 218 unit + 27 renderer parity on 3 engines + 234 e2e - 229
+passed, 5 skipped by design - same 5 as always, see the note above; item 6's
+e2e file added 5 test cases (15 counting all 3 browser engines) and no new
+skips).
 
 **Next up: Phase 5 (polish, dark mode, Thai UI)** - see "After Phase 4"
 below. Before diving in, consider closing the manual-testing gaps that have
@@ -57,10 +61,10 @@ is doable from inside this environment and both need the user.
 ### Phase 4 item 6 — done: crop (per-image, not the whole board)
 
 Built this session, on top of item 5 (redact) which had been sitting done
-but uncommitted since the prior session - both shipped together in the same
-commit, push, and deploy, per the user's explicit go-ahead this session. Full
-detail lives in [docs/phases/phase-4.md](docs/phases/phase-4.md); the
-highlights:
+but uncommitted since the prior session - both shipped together in one
+commit (`1276962`), pushed to `main`, and deployed to the live site, per the
+user's explicit go-ahead this session. Full detail lives in
+[docs/phases/phase-4.md](docs/phases/phase-4.md); the highlights:
 
 - **The first thing this item needed was a scope question, not code:**
   CLAUDE.md's own item-6 line said "crop the board itself," but the product
@@ -112,8 +116,8 @@ highlights:
 
 ### Phase 4 item 5 — done: redact (solid fill only)
 
-Shipped in the same commit, push, and deploy as item 6 above - see that
-note for why the two went out together.
+Shipped in the same commit (`1276962`), push, and deploy as item 6 above -
+see that note for why the two went out together.
 
 - **Scoped to solid fill only before any code was written** - the user
   explicitly cut blur and pixelate ahead of implementation, not as a
@@ -1091,17 +1095,21 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — being brought up to date with Phase 4 items 5–6 (redact, crop) this session
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
-HTTPS enforced, certificate approved. As of the feature commit this
-paragraph ships alongside, the source push and deploy for Phase 4 items 5
-(redact) and 6 (crop) had not yet run — see the follow-up commit right after
-this one (or, if there isn't one yet, treat this as still outstanding and
-check with the user before running either) for the actual result. Before
-this session, the live site served all of Phase 2 (items 1–9), the Clear
-board addition, Phase 3, and Phase 4 items 1–4, last confirmed after Phase 4
-item 4's commit (`1e6578d`, plus its CLAUDE.md follow-up `cad4471`).
+HTTPS enforced, certificate approved. Source push (`git push origin
+master:main`) and `bash scripts/deploy-pages.sh` were last run together
+right after Phase 4 items 5-6's combined commit (`1276962`, redact + crop),
+and both worked cleanly again on the first try (no re-auth, no DNS re-check
+needed). Live site now serves all of Phase 2 (items 1–9), the Clear board
+addition, Phase 3, and the complete Phase 4 (items 1–6). Deploy script
+itself reported success (`Published.` + the live URL); a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. (The
+custom domain sits behind a CDN edge cache with a 10-minute `max-age`, so a
+stale bundle hash can be observed for a few minutes right after a deploy —
+not a deploy failure, just propagation - worth a re-check next session if in
+doubt about the *bundle* specifically, as opposed to the page.)
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:
