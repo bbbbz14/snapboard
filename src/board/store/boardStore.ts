@@ -12,6 +12,7 @@ import {
   type BoxNode,
   type ImageNode,
   type LayoutMode,
+  type MarkerNode,
   type NodeId,
   type StylePreset,
   type TextNode,
@@ -20,6 +21,7 @@ import { moveToFront } from '@/board/model/zorder'
 import { AssetStore, type Asset } from '@/assets/assetStore'
 import type { Rejection } from '@/assets/validate'
 import { arrowFrame } from '@/board/render/arrow'
+import { markerFrame } from '@/board/render/marker'
 import type { RenderInput } from '@/board/render/renderScene'
 import { rectFromPoints, translate, translatePoint, type Point, type Rect } from '@/lib/geometry'
 import {
@@ -119,13 +121,14 @@ interface BoardState {
   /** Copies the selected nodes, offset so they read as distinct from the
    * originals, and selects the copies. */
   duplicateSelected: () => void
-  /** Which pointer gesture on the board canvas means "draw a new arrow/box"
-   * or "place a new text box" instead of "select/move/marquee" - not part of
-   * `Board` for the same reason `selectedIds` isn't: it's what the user is
-   * about to do, not arranged content. Reverts to `'select'` the instant an
-   * arrow, box, or text placement commits. */
-  tool: 'select' | 'arrow' | 'box' | 'text'
-  setTool: (tool: 'select' | 'arrow' | 'box' | 'text') => void
+  /** Which pointer gesture on the board canvas means "draw a new arrow/box",
+   * "place a new text box", or "drop a numbered marker" instead of
+   * "select/move/marquee" - not part of `Board` for the same reason
+   * `selectedIds` isn't: it's what the user is about to do, not arranged
+   * content. Reverts to `'select'` the instant an arrow, box, text, or
+   * marker placement commits. */
+  tool: 'select' | 'arrow' | 'box' | 'text' | 'marker'
+  setTool: (tool: 'select' | 'arrow' | 'box' | 'text' | 'marker') => void
   /** Commits a new arrow from `start` to `end` (board-space) and switches
    * back to the select tool - same one-shot pattern a stamp tool would use.
    * Locks the board to `layout: 'free'` like `setFrames` does: an arrow's
@@ -150,6 +153,13 @@ interface BoardState {
    * BoardCanvas already reverts to `'select'` the instant the text draft is
    * placed, before the user has typed anything. */
   commitText: (id: NodeId | null, frame: Rect, text: string) => void
+  /** Commits a new marker at `point` (board-space) and switches back to the
+   * select tool - same one-shot pattern as `addArrow`/`addBox`, but for a
+   * plain click instead of a drag: a marker has no meaningful "size" the
+   * user draws, just a place to point. Its visible number is derived at
+   * render time (see `toRenderInput`), not stored here - so deleting one
+   * marker just renumbers the rest, no separate counter to keep in sync. */
+  addMarker: (point: Point) => void
   /** Moves the selected nodes to the top of z-order (drawn last). Also
    * relayouts, since `order` doubles as layout position for auto boards -
    * same overload `reorder` already relies on for drag-to-reorder. */
@@ -533,6 +543,22 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       })
     }),
 
+  addMarker: (point) =>
+    set((s) => {
+      const marker: MarkerNode = {
+        kind: 'marker',
+        id: `n${nodeSeq++}`,
+        frame: markerFrame(point),
+        order: s.board.nodes.length,
+        color: DEFAULT_ANNOTATION_COLOR,
+      }
+      return {
+        ...commitBoard(s, { ...s.board, layout: 'free', nodes: [...s.board.nodes, marker] }),
+        selectedIds: [marker.id],
+        tool: 'select',
+      }
+    }),
+
   bringToFront: () =>
     set((s) => {
       if (s.selectedIds.length === 0) return {}
@@ -636,5 +662,10 @@ export function toRenderInput(board: Board): RenderInput {
     texts: sorted
       .filter((n): n is TextNode => n.kind === 'text')
       .map((n) => ({ id: n.id, frame: n.frame, text: n.text, color: n.color })),
+    // Numbered by placement order among markers only, same "index among
+    // same-kind nodes" rule the image step badges above already use.
+    markers: sorted
+      .filter((n): n is MarkerNode => n.kind === 'marker')
+      .map((n, i) => ({ id: n.id, frame: n.frame, number: i + 1, color: n.color })),
   }
 }

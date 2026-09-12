@@ -74,7 +74,25 @@ export interface TextNode {
   color: string
 }
 
-export type BoardNode = ImageNode | ArrowNode | BoxNode | TextNode
+/** A standalone numbered marker - "ตัวเลขกำกับอัตโนมัติ" in the product plan's
+ * Phase 4 list. Deliberately named `MarkerNode`/`'marker'`, not "badge",
+ * to avoid confusion with the unrelated per-image step-sequence badge the
+ * `'steps'` auto-layout already draws (`RenderItem.badge`/`drawBadge` in
+ * renderScene.ts) - that one numbers images by layout position; this one is
+ * a node the user places by hand, numbered by placement order among markers
+ * only (see `toRenderInput`). Like `BoxNode`, `frame` is not derived - it's
+ * a fixed-size square centered on the click that placed it - so every
+ * generic frame-based helper (move, duplicate, hitTest) needs no per-kind
+ * branch, same reasoning box/text already established. */
+export interface MarkerNode {
+  kind: 'marker'
+  id: NodeId
+  frame: Rect
+  order: number
+  color: string
+}
+
+export type BoardNode = ImageNode | ArrowNode | BoxNode | TextNode | MarkerNode
 
 /** Shared by every annotation kind - red, visible on any background, per
  * the product plan's "สีอัตโนมัติ (แดงเป็นค่าเริ่มต้น)". */

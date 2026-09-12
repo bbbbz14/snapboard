@@ -325,6 +325,88 @@ describe('commitText', () => {
   })
 })
 
+describe('addMarker', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', nodes: [node('img', { x: 0, y: 0, w: 10, h: 10 })] },
+      selectedIds: [],
+      tool: 'marker',
+    })
+  })
+
+  it('adds a marker centered on the click point, selects it, switches layout to free, and returns to the select tool', () => {
+    useBoardStore.getState().addMarker({ x: 20, y: 20 })
+    const board = useBoardStore.getState().board
+    const marker = board.nodes.find((n) => n.kind === 'marker')
+    expect(marker).toBeDefined()
+    expect(marker!.frame.x + marker!.frame.w / 2).toBeCloseTo(20, 5)
+    expect(marker!.frame.y + marker!.frame.h / 2).toBeCloseTo(20, 5)
+    expect(board.layout).toBe('free')
+    expect(useBoardStore.getState().selectedIds).toEqual([marker!.id])
+    expect(useBoardStore.getState().tool).toBe('select')
+  })
+
+  it('does not disturb the existing image node', () => {
+    useBoardStore.getState().addMarker({ x: 20, y: 20 })
+    const board = useBoardStore.getState().board
+    expect(board.nodes.find((n) => n.id === 'img')?.frame).toEqual({ x: 0, y: 0, w: 10, h: 10 })
+  })
+
+  it('moving a marker (setFrames) just sets the new frame directly, same as an image', () => {
+    useBoardStore.getState().addMarker({ x: 20, y: 20 })
+    const marker = useBoardStore.getState().board.nodes.find((n) => n.kind === 'marker')!
+    useBoardStore.getState().setFrames([{ id: marker.id, frame: { x: 100, y: 5, w: marker.frame.w, h: marker.frame.h } }])
+    const moved = useBoardStore.getState().board.nodes.find((n) => n.id === marker.id)
+    expect(moved?.frame).toEqual({ x: 100, y: 5, w: marker.frame.w, h: marker.frame.h })
+  })
+
+  it('duplicating a marker offsets its frame like an image', () => {
+    useBoardStore.getState().addMarker({ x: 20, y: 20 })
+    const marker = useBoardStore.getState().board.nodes.find((n) => n.kind === 'marker')!
+    useBoardStore.setState({ selectedIds: [marker.id] })
+    useBoardStore.getState().duplicateSelected()
+    const copyId = useBoardStore.getState().selectedIds[0]!
+    const copy = useBoardStore.getState().board.nodes.find((n) => n.id === copyId)
+    expect(copy?.frame).toEqual({ x: marker.frame.x + 16, y: marker.frame.y + 16, w: marker.frame.w, h: marker.frame.h })
+  })
+
+  it('is excluded from toRenderInput.items and step badge numbering, and appears numbered in .markers', () => {
+    useBoardStore.setState({ board: { ...useBoardStore.getState().board, layout: 'steps', resolvedLayout: 'steps' } })
+    useBoardStore.getState().addMarker({ x: 20, y: 20 })
+    useBoardStore.setState({ tool: 'marker' })
+    useBoardStore.getState().addMarker({ x: 60, y: 60 })
+    const input = toRenderInput(useBoardStore.getState().board)
+    expect(input.items.map((i) => i.id)).toEqual(['img'])
+    expect(input.items[0]?.badge).toBe(1)
+    expect(input.markers).toHaveLength(2)
+    expect(input.markers!.map((m) => m.number)).toEqual([1, 2])
+  })
+
+  it('renumbers the remaining markers after one is deleted', () => {
+    useBoardStore.getState().addMarker({ x: 20, y: 20 })
+    const firstId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'marker')!.id
+    useBoardStore.setState({ tool: 'marker' })
+    useBoardStore.getState().addMarker({ x: 60, y: 60 })
+
+    useBoardStore.setState({ selectedIds: [firstId] })
+    useBoardStore.getState().deleteSelected()
+    const input = toRenderInput(useBoardStore.getState().board)
+    expect(input.markers).toHaveLength(1)
+    expect(input.markers![0]?.number).toBe(1)
+  })
+
+  it('can be deleted and undone like any other node', () => {
+    useBoardStore.getState().addMarker({ x: 20, y: 20 })
+    const markerId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'marker')!.id
+    useBoardStore.setState({ selectedIds: [markerId] })
+    useBoardStore.getState().deleteSelected()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === markerId)).toBeUndefined()
+
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === markerId)).toBeDefined()
+  })
+})
+
 describe('undo/redo', () => {
   beforeEach(() => {
     useBoardStore.setState({

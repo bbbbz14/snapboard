@@ -69,6 +69,8 @@ export const en = {
   'annotate.boxTitle': 'Box (R)',
   'annotate.text': 'Text',
   'annotate.textTitle': 'Text (T)',
+  'annotate.marker': 'Number',
+  'annotate.markerTitle': 'Number (N)',
 
   'zoom.out': 'Zoom out',
   'zoom.in': 'Zoom in',

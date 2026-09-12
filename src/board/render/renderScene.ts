@@ -2,6 +2,7 @@ import type { Point, Rect, Size } from '@/lib/geometry'
 import { STYLE_PRESETS, type Background, type StylePreset } from '@/board/model/types'
 import { ARROW_STROKE_WIDTH, strokeArrow } from './arrow'
 import { BOX_STROKE_WIDTH, strokeBox } from './box'
+import { drawMarker } from './marker'
 import { drawText } from './text'
 
 export interface RenderItem {
@@ -32,6 +33,14 @@ export interface RenderText {
   color: string
 }
 
+export interface RenderMarker {
+  id: string
+  frame: Rect
+  /** 1-based, derived from placement order among markers only - see `toRenderInput`. */
+  number: number
+  color: string
+}
+
 export interface RenderInput {
   size: Size
   background: Background
@@ -46,6 +55,8 @@ export interface RenderInput {
    * BoardCanvas currently has open in its textarea overlay - see invariant 1's
    * note there about why that can't drift, it just never reaches this input. */
   texts?: RenderText[]
+  /** Optional for the same reason `arrows` is. */
+  markers?: RenderMarker[]
 }
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
@@ -121,7 +132,13 @@ export function renderScene(ctx: Ctx2D, input: RenderInput, { scale, tiles, offs
     drawText(ctx, text.frame, text.text, text.color)
   }
 
-  // Badges are drawn after the images (and arrows/boxes/text) so they are never clipped by a tile.
+  // Markers are a numbered pin meant to flag a spot on top of whatever's
+  // already there, so they draw last of all four annotation kinds.
+  for (const marker of input.markers ?? []) {
+    drawMarker(ctx, marker.frame, marker.number, marker.color)
+  }
+
+  // Badges are drawn after the images (and arrows/boxes/text/markers) so they are never clipped by a tile.
   for (const item of input.items) {
     if (item.badge !== undefined) drawBadge(ctx, item, input.background)
   }

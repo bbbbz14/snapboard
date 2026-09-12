@@ -129,6 +129,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   const addArrow = useBoardStore((s) => s.addArrow)
   const addBox = useBoardStore((s) => s.addBox)
   const commitText = useBoardStore((s) => s.commitText)
+  const addMarker = useBoardStore((s) => s.addMarker)
 
   useEffect(() => {
     void ensureAnnotationFont().then(() => setFontReady(true))
@@ -544,6 +545,14 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         return
       }
 
+      if (tool === 'marker') {
+        // No drag to track and nothing to type - a marker's whole
+        // interaction is a single click, so it commits directly on
+        // pointerdown, same one-shot-then-select pattern as arrow/box/text.
+        addMarker(toBoardPoint(e))
+        return
+      }
+
       const handle = hitTestHandle(board.nodes, selectedIds, cameraRef.current, viewport, toScreenPoint(e))
       if (handle) {
         resizeRef.current = { id: handle.id, corner: handle.corner, startFrame: handle.frame }
@@ -738,7 +747,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction, tool, addArrow, addBox, setTool, setEditingText])
+  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction, tool, addArrow, addBox, addMarker, setTool, setEditingText])
 
   // Keyboard shortcuts (Phase 2 item 9 completes this set). Undo/redo and
   // copy are the deliberate exceptions to "no modifier keys": Ctrl/Cmd+Z is
@@ -825,6 +834,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       } else if (e.key.toLowerCase() === 't') {
         e.preventDefault()
         setTool(tool === 'text' ? 'select' : 'text')
+      } else if (e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        setTool(tool === 'marker' ? 'select' : 'marker')
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -933,6 +945,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         onToggleArrow={() => setTool(tool === 'arrow' ? 'select' : 'arrow')}
         onToggleBox={() => setTool(tool === 'box' ? 'select' : 'box')}
         onToggleText={() => setTool(tool === 'text' ? 'select' : 'text')}
+        onToggleMarker={() => setTool(tool === 'marker' ? 'select' : 'marker')}
       />
     </div>
   )
