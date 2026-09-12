@@ -33,24 +33,21 @@ the WebKit rasterisation gotcha below — none of these are failures).
 [docs/manual-test-checklist.md](docs/manual-test-checklist.md) run against
 the live site — see the Gate section below for the full results).
 
-**Phase 4 (annotations) is underway. Items 1 (arrow), 2 (box/rectangle), and
-3 (text) are done, pushed to `main` (`70ff0bc`), and deployed to the live
-site. Item 4 (auto-numbered marker) is also done, shipped as its own commit
-(`1e6578d`), but is not yet pushed to `main` or deployed** - source push and
-the deploy script are outward-facing (see "Live site status" below) and
-need a check-in with the user first, per the project's own standing rule.
-**Next session should push `1e6578d` and deploy it (after checking with the
-user), then start Phase 4 item 5** (redact) — see "Phase 4 — Annotations"
-below for the full item list.
+**Phase 4 (annotations) is underway. Items 1 (arrow), 2 (box/rectangle), 3
+(text), and 4 (auto-numbered marker) are all done, pushed to `main`
+(`cad4471`), and deployed to the live site.** **Next session should start
+Phase 4 item 5** (redact) — see "Phase 4 — Annotations" below for the full
+item list.
 `npm run verify` green (typecheck + 198 unit + 27 renderer parity on 3
 engines + 196 e2e passed, 5 skipped by design — same 5 as before, see the
-note above; the new marker e2e file added 5 test cases (15 counting all 3
+note above; the marker e2e file added 5 test cases (15 counting all 3
 browser engines) and no new skips).
 
 ### Phase 4 item 4 — done: auto-numbered marker annotation
 
-Shipped as its own commit (`1e6578d`). Not yet pushed to `main` or deployed
-- check with the user first (see "Live site status" below).
+Shipped as its own commit (`1e6578d`). Pushed to `main` and deployed to the
+live site (`cad4471`, the CLAUDE.md follow-up commit, went out in the same
+push+deploy).
 
 - A floating "Number" tool button in the same bottom-left `AnnotationToolbar`
   (icon: `①`), plus a plain `N` keyboard shortcut - the simplest of the four
@@ -937,19 +934,15 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with Phase 4 items 1–3 (arrow, box, text); item 4 (marker) committed locally but not yet pushed or deployed
+## Live site status — up to date with Phase 4 items 1–4 (arrow, box, text, marker)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together right
-after Phase 4 item 3's text-annotation commit (`70ff0bc`, which also carried
-items 1/2's arrow and box commits that had been sitting un-pushed since
-their own sessions), and both worked cleanly again on the first try (no
-re-auth, no DNS re-check needed). Live site now serves all of Phase 2 (items
-1–9), the Clear board addition, Phase 3, and Phase 4 items 1–3 - **not yet**
-item 4 (`1e6578d`, auto-numbered marker), which is sitting committed on
-`master` only, waiting on a user check-in before the next push/deploy (see
-the note under START HERE). Deploy
+after Phase 4 item 4's auto-numbered-marker commit (`1e6578d`, plus its
+CLAUDE.md follow-up `cad4471`), and both worked cleanly again on the first
+try (no re-auth, no DNS re-check needed). Live site now serves all of Phase 2
+(items 1–9), the Clear board addition, Phase 3, and Phase 4 items 1–4. Deploy
 script itself reported success (`Published.` + the live URL); a same-session
 `curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. (The
 custom domain sits behind a CDN edge cache with a 10-minute `max-age`, so a
