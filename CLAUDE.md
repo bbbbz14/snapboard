@@ -35,12 +35,96 @@ the live site — see the Gate section below for the full results).
 
 **Phase 4 (annotations) is underway. Items 1 (arrow), 2 (box/rectangle), and
 3 (text) are done, pushed to `main` (`70ff0bc`), and deployed to the live
-site.** `npm run verify` green (typecheck + 189 unit + 27 renderer parity on
-3 engines + 181 e2e passed, 5 skipped by design — same 5 as before, see the
-note above; the new text e2e file added 5 test cases (15 counting all 3
-browser engines) and no new skips). **Next session should do Phase 4 item 4**
-(auto-numbered badge) — see "Phase 4 — Annotations" below for the full item
-list.
+site. Item 4 (auto-numbered marker) is also done, shipped as its own commit
+(`1e6578d`), but is not yet pushed to `main` or deployed** - source push and
+the deploy script are outward-facing (see "Live site status" below) and
+need a check-in with the user first, per the project's own standing rule.
+**Next session should push `1e6578d` and deploy it (after checking with the
+user), then start Phase 4 item 5** (redact) — see "Phase 4 — Annotations"
+below for the full item list.
+`npm run verify` green (typecheck + 198 unit + 27 renderer parity on 3
+engines + 196 e2e passed, 5 skipped by design — same 5 as before, see the
+note above; the new marker e2e file added 5 test cases (15 counting all 3
+browser engines) and no new skips).
+
+### Phase 4 item 4 — done: auto-numbered marker annotation
+
+Shipped as its own commit (`1e6578d`). Not yet pushed to `main` or deployed
+- check with the user first (see "Live site status" below).
+
+- A floating "Number" tool button in the same bottom-left `AnnotationToolbar`
+  (icon: `①`), plus a plain `N` keyboard shortcut - the simplest of the four
+  Phase 4 tools shipped so far: a marker has no meaningful "size" to draw or
+  content to type, just a place to point, so a single click on the canvas
+  commits it immediately (on `pointerdown`, same as every other one-shot
+  tool reverting to `'select'` the instant it commits). No drag-preview ref
+  was needed on the interaction canvas either, unlike arrow/box - there's no
+  in-progress gesture to preview.
+- Deliberately named `MarkerNode`/`kind: 'marker'`/`tool: 'marker'`
+  throughout the code, not "badge" - the codebase already uses "badge" for
+  the unrelated per-image step-sequence number the `'steps'` auto-layout
+  draws (`RenderItem.badge`/`drawBadge` in `renderScene.ts`, numbers images
+  by layout position). This is a different concept: a node the user places
+  by hand, anywhere, on top of anything. The user-facing label is "Number"
+  (matching the product plan's own "ตัวเลขกำกับอัตโนมัติ" wording) - the
+  naming split is deliberate: "marker" avoids an internal collision,
+  "Number" is the plainer word for what the button visibly does.
+- `BoardNode` is now `ImageNode | ArrowNode | BoxNode | TextNode |
+  MarkerNode`. Like `BoxNode`/`TextNode`, `MarkerNode.frame` is not derived -
+  it's a fixed-size square (`MARKER_DIAMETER` = 36 board px,
+  `src/board/render/marker.ts`) centered on the point the user clicked, so
+  every generic frame-based helper (`setFrames`'s move, `duplicateSelected`'s
+  offset-copy, `hitTest`, `handles.ts`'s resize-handle exclusion) already did
+  the right thing with zero new per-kind branches - the same reasoning
+  box/text already established, and the smallest diff of the four for
+  exactly that reason (no new store-level special case anywhere, unlike
+  arrow's `setFrames`/`duplicateSelected` start/end translation).
+- Numbering is **not** stored on the node - `toRenderInput` derives each
+  marker's visible number from its placement order among markers only
+  (`sorted.filter(kind === 'marker').map((n, i) => ({ ..., number: i + 1
+  }))`), the exact same "index among same-kind nodes" rule the pre-existing
+  per-image step badges already use one line above it in the same function.
+  This means deleting a marker out of the middle renumbers the rest for
+  free - there's no separate counter that could drift out of sync with the
+  actual node list.
+- `src/board/render/marker.ts` - `drawMarker`, a filled circle (the node's
+  own `color`, shared `DEFAULT_ANNOTATION_COLOR` red, same as arrow/box/text)
+  with a fixed white ring (not a background-matching one like the per-image
+  step badge's ring - a marker sits on top of arbitrary image content, not
+  next to it in the page background, so a background-matching ring would be
+  the wrong contrast choice here) and a centered digit in the plain
+  `ui-sans-serif` system-font stack - unlike text annotations, a marker's
+  content is always a plain digit, so it has no need for the self-hosted
+  Thai-capable `'Snapboard Annotation'` font pairing item 3 built. Called
+  identically by `renderScene` (committed marker, board-space, invariant 1)
+  and drawn from the same `frame`/`number`/`color` shape either way - no
+  interaction-canvas preview variant exists because there's no drag to
+  preview.
+- Markers never expose a resize handle, for the same reason arrows/boxes
+  don't - `handles.ts`'s existing `n.kind !== 'image'` guard already covers
+  it, so this needed no new code. Dragging a marker's circle moves it
+  instead, through the same generic `setFrames` path box/text already use
+  (no arrow-style start/end to translate).
+- `tests/unit/marker.test.ts` covers `markerFrame`'s centering directly.
+  `tests/unit/boardStore.test.ts` gained an `addMarker` block mirroring
+  `addBox`'s shape (centered frame from a point instead of two drag corners,
+  free-layout switch, tool reverting to `'select'`, move/duplicate on the
+  frame directly, exclusion from `toRenderInput.items`/step-badge numbering
+  plus numbered presence in `.markers`, a renumber-after-delete case, and
+  delete+undo). `tests/unit/hitTest.test.ts` gained one marker mixed-kind
+  case. `tests/e2e/marker.spec.ts` (new) covers placing one (and export
+  survival, invariant 1), the `N` shortcut arming/Escape-cancelling, placing
+  two and deleting one (the actual renumbered-digit assertion is left to the
+  unit suite - a pixel scan can tell a marker is present or gone but can't
+  reliably read which digit is drawn), select→delete→undo, and that dragging
+  the circle moves it (no resize handle).
+- **Deliberately not done, scoped to what "a numbered marker" alone needs:**
+  no manual renumbering or drag-to-reorder-the-sequence UI (numbering is
+  pure placement order, full stop - same "don't add a decision nothing asked
+  for yet" reasoning arrow's color-picker cut and box's no-fill cut already
+  used), no size/color choice (shared `DEFAULT_ANNOTATION_COLOR`, same as
+  every other annotation kind so far), no resize handle (move it, or delete
+  and re-place it - same as arrow/box/text).
 
 ### Phase 4 item 3 — done: text annotation
 
@@ -853,7 +937,7 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with Phase 4 items 1–3 (arrow, box, text)
+## Live site status — up to date with Phase 4 items 1–3 (arrow, box, text); item 4 (marker) committed locally but not yet pushed or deployed
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
@@ -862,7 +946,10 @@ after Phase 4 item 3's text-annotation commit (`70ff0bc`, which also carried
 items 1/2's arrow and box commits that had been sitting un-pushed since
 their own sessions), and both worked cleanly again on the first try (no
 re-auth, no DNS re-check needed). Live site now serves all of Phase 2 (items
-1–9), the Clear board addition, Phase 3, and Phase 4 items 1–3. Deploy
+1–9), the Clear board addition, Phase 3, and Phase 4 items 1–3 - **not yet**
+item 4 (`1e6578d`, auto-numbered marker), which is sitting committed on
+`master` only, waiting on a user check-in before the next push/deploy (see
+the note under START HERE). Deploy
 script itself reported success (`Published.` + the live URL); a same-session
 `curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. (The
 custom domain sits behind a CDN edge cache with a 10-minute `max-age`, so a
@@ -1022,10 +1109,11 @@ order; each item is independently shippable, same as Phase 2/3.
 2. ✅ **Box/rectangle** outline to frame a region of interest. Done — see
    "Phase 4 item 2" under START HERE above.
 3. ✅ **Text** - done — see "Phase 4 item 3" under START HERE above.
-4. ⬜ **Auto-numbered badge** - a standalone annotation, distinct from the
-   step-sequence badges `'steps'` layout already draws (see
-   `BADGE_DIAMETER`/`drawBadge` in `renderScene.ts`); likely needs its own
-   name to avoid confusion with that existing concept.
+4. ✅ **Auto-numbered marker** - done — see "Phase 4 item 4" under START HERE
+   above. Named `MarkerNode`/`'marker'` (user-facing label "Number"), not
+   "badge", to avoid confusion with the unrelated per-image step-sequence
+   badge `'steps'` layout already draws (`BADGE_DIAMETER`/`drawBadge` in
+   `renderScene.ts`).
 5. ⬜ **Redact** (blur/pixelate/solid fill) over a region - the product
    plan's own risk note applies here: a light blur can be reversible, so a
    safe minimum pixelation strength should be enforced, and "solid" should be
