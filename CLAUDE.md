@@ -462,8 +462,35 @@ wanted. Build in this order; each item is independently shippable.
 8. ✅ **Autosave to IndexedDB.** Done — see the note under START HERE above,
    including a real WebKit-only IndexedDB bug it surfaced (storing a `Blob`
    directly fails there; store bytes instead).
-9. **Full keyboard shortcut set** — see section 14 of the product plan. Avoid
-   shortcuts the browser owns.
+9. **Full keyboard shortcut set.** The product plan has no dedicated
+   shortcuts section (its own §14 is Deployment Strategy, not this - don't
+   follow that old pointer); what it does specify is scattered across the
+   user-journey narrative and the DoD line below. Concretely:
+   - **`Ctrl/Cmd+Shift+C` to copy is the one explicitly named shortcut in the
+     product plan** (docs/00-product-plan.md, appears five times in the
+     journey narrative, e.g. line 771: `... → Ctrl+Shift+C → สลับไป Slack →
+     Ctrl+V`) and it is **not bound yet** - today Copy is mouse/tap-only
+     (`TopBar.tsx`'s `onCopy`). Wiring it needs a small design decision
+     first: `onCopy` and its "copied" button-state/toast timer currently
+     live as local state inside `TopBar.tsx`, not the store, so a global
+     `keydown` listener (which lives in `BoardCanvas.tsx`, per every other
+     shortcut so far) can't call it directly - move the copy action (or at
+     least a callback) somewhere both components can reach, rather than
+     duplicating the clipboard call.
+   - Already shipped, for reference (all in `BoardCanvas.tsx`'s `onKeyDown`):
+     `+`/`-`/`0`/`1` (zoom, item 1), Escape (deselect, item 2),
+     Delete/Backspace (delete selection, item 6), Ctrl/Cmd+Z /
+     Ctrl/Cmd+Shift+Z (undo/redo, item 7, the one exception to the
+     no-modifier rule below).
+   - Still unbound and explicitly deferred here by item 6's own note:
+     Duplicate and Bring to front (toolbar-only today) - item 6 flagged
+     Ctrl/Cmd+D for duplicate as "browser-reserved in places," so this item
+     is where that trade-off actually gets decided, not assumed.
+   - **Avoid shortcuts the browser owns** (the standing rule every item so
+     far has followed) - verify any new binding against real browser
+     reserved shortcuts, not just "seems free in a quick local check."
+   - Out of scope here: the `?` shortcuts-help screen is Phase 5 (product
+     plan's polish phase), not Phase 2.
 
 **Phase 2 is done when:** dragging 10 images holds 60fps · undo goes back 50
 steps · closing and reopening the tab preserves the board · every action has a
