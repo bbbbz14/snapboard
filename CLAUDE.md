@@ -721,7 +721,9 @@ Shipped as its own commit (`ecdc42e`). Pushed and deployed to the live site.
 
 ### Phase 2 item 8 — done: autosave to IndexedDB
 
-Shipped as its own commit. Not yet pushed/deployed - see below.
+Shipped as its own commit. Pushed to `main` and deployed to the live site,
+along with the rest of Phase 2 (see "Current state" above) - this note
+predates that push and was never corrected until now.
 
 - `src/board/persist/db.ts` - the only file that touches `indexedDB` directly.
   Two object stores: `board` (one record, key `"current"`) and `assets`
