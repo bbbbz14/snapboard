@@ -34,22 +34,20 @@ the WebKit rasterisation gotcha below — none of these are failures).
 the live site — see the Gate section below for the full results).
 
 **Phase 4 (annotations) is underway. Items 1 (arrow), 2 (box/rectangle), and
-3 (text) are done. Not yet pushed to `main` or deployed** — see the notes
-right below for all three. `npm run verify` green (typecheck + 189 unit + 27
-renderer parity on 3 engines + 181 e2e passed, 5 skipped by design — same 5
-as before, see the note above; the new text e2e file added 5 test cases (15
-counting all 3 browser engines) and no new skips). **Next session should do
-Phase 4 item 4** (auto-numbered badge) — see "Phase 4 — Annotations" below
-for the full item list.
+3 (text) are done, pushed to `main` (`70ff0bc`), and deployed to the live
+site.** `npm run verify` green (typecheck + 189 unit + 27 renderer parity on
+3 engines + 181 e2e passed, 5 skipped by design — same 5 as before, see the
+note above; the new text e2e file added 5 test cases (15 counting all 3
+browser engines) and no new skips). **Next session should do Phase 4 item 4**
+(auto-numbered badge) — see "Phase 4 — Annotations" below for the full item
+list.
 
 ### Phase 4 item 3 — done: text annotation
 
-Shipped as its own commit. Committed to `master`, **not yet pushed to `main`
-or deployed** - same as items 1/2, ask the user before doing either (see the
-live-site section below for the usual two commands). The user explicitly
-asked for a "premium" font that covers Thai and English well, comparable to
-Apple's system font - not the default `ui-sans-serif` stack the rest of the
-app's chrome uses.
+Shipped as its own commit (`70ff0bc`). Pushed to `main` and deployed to the
+live site. The user explicitly asked for a "premium" font that covers Thai
+and English well, comparable to Apple's system font - not the default
+`ui-sans-serif` stack the rest of the app's chrome uses.
 
 - **Self-hosted font pairing, not a system-font stack:** `Inter` (Latin,
   weight 600) + `Anuphan` (Thai, weight 600 - drawn by Cadson Demak
@@ -187,9 +185,8 @@ app's chrome uses.
 
 ### Phase 4 item 1 — done: arrow annotation
 
-Shipped as its own commit (`9a63829`). Committed to `master`, **not yet
-pushed to `main` or deployed** - ask the user before doing either (see the
-live-site section below for the usual two commands).
+Shipped as its own commit (`9a63829`). Pushed to `main` and deployed to the
+live site (alongside items 2 and 3, in one combined push+deploy - `70ff0bc`).
 
 - A floating "Arrow" tool button, bottom-left (mirrors `ZoomControls`'
   bottom-right placement), plus a plain `A` keyboard shortcut - press once to
@@ -268,9 +265,8 @@ live-site section below for the usual two commands).
 
 ### Phase 4 item 2 — done: box/rectangle annotation
 
-Shipped as its own commit (`e122ee0`). Committed to `master`, **not yet
-pushed to `main` or deployed** - same as item 1, ask the user before doing
-either (see the live-site section below for the usual two commands).
+Shipped as its own commit (`e122ee0`). Pushed to `main` and deployed to the
+live site (alongside items 1 and 3, in one combined push+deploy - `70ff0bc`).
 
 - Mirrors item 1's arrow tool exactly, down to the interaction shape: a
   floating "Box" tool button in the same bottom-left `AnnotationToolbar`
@@ -855,22 +851,22 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with Phase 3 (export options)
+## Live site status — up to date with Phase 4 items 1–3 (arrow, box, text)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together right
-after Phase 3's export-options commit (`1de8743`), and both worked cleanly
-again on the first try (no re-auth, no DNS re-check needed). Live site now
-serves all of Phase 2 (items 1–9), the Clear board addition, and Phase 3.
-Deploy script itself reported success (`Published.` + the live URL); a
-same-session `curl` for the new JS bundle hash still 404ed right after
-(the page itself served a fresh `200` with today's `last-modified`), which
-matches the documented CDN caveat below rather than a failed deploy — not
-re-confirmed with a fresh 200 for the bundle itself, worth a quick check next
-session if in doubt. (The custom domain sits behind a CDN edge cache with a
-10-minute `max-age`, so a stale bundle hash can be observed for a few minutes
-right after a deploy — not a deploy failure, just propagation.)
+after Phase 4 item 3's text-annotation commit (`70ff0bc`, which also carried
+items 1/2's arrow and box commits that had been sitting un-pushed since
+their own sessions), and both worked cleanly again on the first try (no
+re-auth, no DNS re-check needed). Live site now serves all of Phase 2 (items
+1–9), the Clear board addition, Phase 3, and Phase 4 items 1–3. Deploy
+script itself reported success (`Published.` + the live URL); a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. (The
+custom domain sits behind a CDN edge cache with a 10-minute `max-age`, so a
+stale bundle hash can be observed for a few minutes right after a deploy —
+not a deploy failure, just propagation - worth a re-check next session if in
+doubt about the *bundle* specifically, as opposed to the page.)
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:
