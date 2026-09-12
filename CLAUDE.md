@@ -12,11 +12,9 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 below). **Phase 2 is complete — all 9 items done, shipped (`69cc234`), pushed
 to `main`, and deployed to the live site** — see
 [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full writeup. On top
-of that, a small unplanned addition shipped locally but **not yet pushed or
-deployed**: a "Clear board" misclick safety net (confirm dialog + a
-one-snapshot restore, see the note right below) — ask the user before running
-`git push origin master:main` / `bash scripts/deploy-pages.sh` for it, same as
-any other push/deploy.
+of that, a small unplanned addition — a "Clear board" misclick safety net
+(confirm dialog + a one-snapshot restore, see the note right below) — has
+also shipped, been pushed to `main`, and been deployed (`4df51c6`).
 `npm run verify` green (typecheck + 151 unit + 27 renderer parity on 3 engines
 + 130 e2e passed, 5 skipped by design — clipboard round-trip on headless
 Firefox/WebKit for both the Copy button and the Ctrl/Cmd+Shift+C shortcut
@@ -36,8 +34,8 @@ if unsure which the user wants prioritized.
 
 Not a numbered Phase 2/3 item - a small standalone fix requested mid-session
 because `clear()` had no confirmation and no way back once the 800ms autosave
-overwrote the board record. Shipped locally, `npm run verify` green; **not
-pushed or deployed yet**.
+overwrote the board record. `npm run verify` green, pushed to `main` and
+deployed to the live site (`4df51c6`).
 
 - `TopBar.tsx`'s Clear button now confirms (`window.confirm`, no new modal
   component - the codebase had no existing dialog primitive and this is a
@@ -496,16 +494,20 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with item 9, Phase 2 complete
+## Live site status — up to date with the Clear board safety net (post-Phase-2)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
-HTTPS enforced, certificate approved, all assets verified 200 from the command
-line. Source push (`git push origin master:main`) and
-`bash scripts/deploy-pages.sh` were last run together after Phase 2 item 9
-(`69cc234`), and both worked cleanly again on the first try (no re-auth, no
-DNS re-check needed) — the earlier "Workflows: Read and write" token-scope fix
-from a prior session is holding. Live site now serves items 1–9, i.e. all of
-Phase 2. (The custom domain sits behind a CDN edge cache with a 10-minute
+HTTPS enforced, certificate approved. Source push (`git push origin
+master:main`) and `bash scripts/deploy-pages.sh` were last run together after
+the unplanned "Clear board" misclick safety net (`4df51c6`), and both worked
+cleanly again on the first try (no re-auth, no DNS re-check needed) — the
+earlier "Workflows: Read and write" token-scope fix from a prior session is
+holding. Live site now serves all of Phase 2 (items 1–9) plus that addition.
+Deploy script itself reported success (`Published.` + the live URL); a
+same-session `curl` for the new JS bundle hash still 404ed right after, which
+matches the documented CDN caveat below rather than a failed deploy — not
+re-confirmed with a fresh 200 this session, worth a quick check next session
+if in doubt. (The custom domain sits behind a CDN edge cache with a 10-minute
 `max-age`, so a stale bundle hash can be observed for a few minutes right
 after a deploy — not a deploy failure, just propagation.)
 
