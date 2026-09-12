@@ -52,11 +52,15 @@ passed, 5 skipped by design - same 5 as always, see the note above; item 6's
 e2e file added 5 test cases (15 counting all 3 browser engines) and no new
 skips).
 
-**Next up: Phase 5 (polish, dark mode, Thai UI)** - see "After Phase 4"
-below. Before diving in, consider closing the manual-testing gaps that have
-carried over since Phase 2/3 (real Safari/Firefox confirmation, and the
-Slack/LINE/Jira/Gmail/Word/Figma/Google Docs paste results table) - neither
-is doable from inside this environment and both need the user.
+**Next up: Phase 5 (polish)** - see "Phase 5 — Polish" below for the full,
+ordered 10-item list this guide broke the product plan's flat feature list
+into. **Start with item 1, design system cleanup** - items 2+ (dark mode,
+gradients, mobile lite) build on its tokens, so doing it first avoids
+redoing earlier work. Before diving in, consider closing the manual-testing
+gaps that have carried over since Phase 2/3 (real Safari/Firefox
+confirmation, and the Slack/LINE/Jira/Gmail/Word/Figma/Google Docs paste
+results table) - neither is doable from inside this environment and both
+need the user; check with them whether to close those first or start Phase 5.
 
 ### Phase 4 item 6 — done: crop (per-image, not the whole board)
 
@@ -1281,11 +1285,73 @@ preview) · the product plan's own Definition of Done (section 12) is met.
 **All three are now true** - see [docs/phases/phase-4.md](docs/phases/phase-4.md)
 for the full Definition of Done table and everything item 6 (crop) shipped.
 
-## After Phase 4
+## Phase 5 — Polish
 
-Phase 5 polish, dark mode, Thai UI · Phase 6 persistence and PWA · Phase 7
-Chrome extension. Full definitions in
-[docs/00-product-plan.md](docs/00-product-plan.md) section 12.
+Objective: per the product plan's own framing, make the app feel "premium,"
+not "a free tool on the web." Unlike Phase 2–4, the product plan (§12) lists
+Phase 5's features as a flat set with no prescribed build order and no
+mockups for most of them - the order below is this guide's own judgment
+call (each item still independently shippable, same as every prior phase),
+made so later items can build on earlier ones instead of redoing them:
+
+1. ⬜ **Design system cleanup.** Audit `src/app/styles.css` for ad-hoc
+   colors/spacing and pull them into consistent tokens (CSS custom
+   properties) - do this first so dark mode (item 2) is a token swap, not a
+   second pass over every rule.
+2. ⬜ **Dark mode.** Builds directly on item 1's tokens. Remember the
+   existing manual-test finding (Gate section below): the board's own
+   *content* background (white/black/slate/transparent/gradient) is export
+   content and must never follow the OS theme - only the UI chrome does,
+   exactly as already confirmed for the existing light-mode chrome vs.
+   board-background distinction.
+3. ⬜ **6 gradient backgrounds.** `Background` (`src/board/model/types.ts`)
+   is currently `{ type: 'solid' } | { type: 'transparent' }` - this item
+   needs a third variant and a `renderScene.ts` fill path for it. No
+   concrete 6 gradients are specified anywhere in the product plan; picking
+   them is part of this item's own work, not something to look up.
+4. ⬜ **Accessibility pass** (focus rings, ARIA, full keyboard
+   operability). Partly already true by construction (every Phase 2–4
+   tool has a keyboard shortcut, canvas already gets an `aria-live` status
+   region - see item 2's own note under Phase 2 above) - this item is the
+   dedicated audit that finds what's still missing, plus the Lighthouse a11y
+   > 95 acceptance check.
+5. ⬜ **Friendly error messages everywhere.** Audit every existing
+   toast/rejection message (`src/i18n/en.ts`'s `toast.rejected.*` etc.) for
+   tone, not just correctness - most already exist from Phase 1, so this is
+   a review pass, not new plumbing.
+6. ⬜ **Right-click context menu.** A second entry point to the same
+   selection actions `SelectionToolbar` already exposes (Crop/Duplicate/
+   Bring to front/Delete) - no new store actions needed, just a new UI
+   surface over existing ones.
+7. ⬜ **Help page / shortcut cheatsheet, opened with `?`.** By this point
+   every shortcut across Phase 2–4 is known and stable, so this is a single
+   static reference, not something that needs updating per-item going
+   forward.
+8. ⬜ **Animation / micro-interactions.** Deliberately late - polish on top
+   of UI that's already visually settled (dark mode, gradients, a11y) costs
+   less rework than polishing first and having items 1–4 change underneath it.
+9. ⬜ **i18n: Thai/English.** `src/i18n/en.ts` is already the single source
+   of every user-facing string (no hardcoded strings in components, per
+   "Where things live" below) specifically so this item is "add `th.ts` +
+   a switch," not a hunt through components.
+10. ⬜ **Mobile lite mode.** Last, and the biggest single item - directly
+    addresses the standing "top bar/toolbar needs horizontal scrolling on
+    mobile" finding (Gate section below), which every Phase 2–4 UI addition
+    was explicitly warned not to make worse. Wants the rest of Phase 5
+    (dark mode, tokens, a11y) already in place rather than done in parallel.
+
+**Phase 5 is done when:** 5 new users understand the app within 10 seconds
+with no explanation (needs real people, same category as Phase 1's
+Time-To-Copy measurement - not doable from inside this environment) ·
+Lighthouse a11y score > 95 · the product plan's own Definition of Done
+(section 12) is met.
+
+## After Phase 5
+
+Phase 6 persistence and PWA · Phase 7 Chrome extension. Neither has a
+detailed item breakdown in this guide yet (unlike Phase 2–5) - write one the
+same way this file's own history shows, once Phase 5 actually finishes. Full
+definitions in [docs/00-product-plan.md](docs/00-product-plan.md) section 12.
 
 ## When a phase finishes
 
