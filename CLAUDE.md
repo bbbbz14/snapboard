@@ -52,19 +52,24 @@ passed, 5 skipped by design - same 5 as always, see the note above; item 6's
 e2e file added 5 test cases (15 counting all 3 browser engines) and no new
 skips).
 
-**Phase 5 (polish) is in progress. Item 1 (design system cleanup) is done -
-see "Phase 5 item 1" below; not yet committed, pushed, or deployed as of
-this note.** `npm run verify` green after it. **Next up: item 2 (dark
+**Phase 5 (polish) is in progress. Item 1 (design system cleanup) is done,
+shipped (`132126d`), pushed to `main`, and deployed to the live site** -
+see "Phase 5 item 1" below for the full writeup. `npm run verify` green
+(typecheck + 218 unit + 27 renderer parity on 3 engines + 234 e2e - 229
+passed, 5 skipped by design, same 5 as always). Push and deploy both
+worked cleanly on the first try; a same-session `curl -o /dev/null -w
+'%{http_code}'` for `/` returned a fresh `200`. **Next up: item 2 (dark
 mode)**, which item 1 deliberately reduced to a verification pass rather
 than new plumbing - read item 1's note first, especially the two token
 groups and why board-content colors must stay unthemed.
 
 **One ordering change was approved this session** (see item 1's note and the
 Phase 5 list below): the minimum top-bar overflow fix moves *ahead* of item
-3 (6 gradient backgrounds), because item 3 grows the background swatch row
-from 4 controls to 10 in a bar already confirmed to need horizontal
-scrolling on mobile. It is not the whole of item 10 (mobile lite) - just
-enough that item 3 does not make a known finding worse.
+4 (6 gradient backgrounds), because that item grows the background swatch
+row from 4 controls to 10 in a bar already confirmed to need horizontal
+scrolling on mobile. It is not the whole of item 11 (mobile lite) - just
+enough that item 4 does not make a known finding worse. This is now item 3
+in the numbered list below (items renumbered accordingly).
 
 Still open and still needing the user (carried over since Phase 2/3): real
 Safari/Firefox confirmation, the Slack/LINE/Jira/Gmail/Word/Figma/Google
@@ -1197,21 +1202,23 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and Phase 5 item 1 (design system cleanup)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after Phase 4 items 5-6's combined commit (`1276962`, redact + crop),
-and both worked cleanly again on the first try (no re-auth, no DNS re-check
+right after Phase 5 item 1's commit (`132126d`, design system cleanup —
+token split + three contrast fixes, see the START HERE note above), and
+both worked cleanly again on the first try (no re-auth, no DNS re-check
 needed). Live site now serves all of Phase 2 (items 1–9), the Clear board
-addition, Phase 3, and the complete Phase 4 (items 1–6). Deploy script
-itself reported success (`Published.` + the live URL); a same-session
-`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. (The
-custom domain sits behind a CDN edge cache with a 10-minute `max-age`, so a
-stale bundle hash can be observed for a few minutes right after a deploy —
-not a deploy failure, just propagation - worth a re-check next session if in
-doubt about the *bundle* specifically, as opposed to the page.)
+addition, Phase 3, the complete Phase 4 (items 1–6), and Phase 5 item 1.
+Deploy script itself reported success (`Published.` + the live URL); a
+same-session `curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh
+`200`. (The custom domain sits behind a CDN edge cache with a 10-minute
+`max-age`, so a stale bundle hash can be observed for a few minutes right
+after a deploy — not a deploy failure, just propagation - worth a re-check
+next session if in doubt about the *bundle* specifically, as opposed to the
+page.)
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:
