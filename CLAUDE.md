@@ -229,7 +229,7 @@ Shipped as its own commit (`4a72ead`). Pushed and deployed to the live site.
 
 ### Phase 2 item 7 — done: undo/redo
 
-Shipped as its own commit. Not yet pushed/deployed - see below.
+Shipped as its own commit (`ecdc42e`). Pushed and deployed to the live site.
 
 - `board/store/boardStore.ts` gained `past`/`future: Board[]` and a single
   `commitBoard(s, board)` helper that every mutating action now routes
@@ -295,17 +295,18 @@ Shipped as its own commit. Not yet pushed/deployed - see below.
   the AssetStore interaction above is the e2e test's job specifically, not
   something the fast unit suite can see.
 
-## ⚠️ The live site is behind `master` again — item 7 isn't pushed or deployed
+## Live site status — up to date with item 7
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved, all assets verified 200 from the command
 line. Source push (`git push origin master:main`) and
-`bash scripts/deploy-pages.sh` were last run together after Phase 2 item 6
-(`6c5eb95`), and both worked cleanly again on the first try (no re-auth, no
+`bash scripts/deploy-pages.sh` were last run together after Phase 2 item 7
+(`2502c15`), and both worked cleanly again on the first try (no re-auth, no
 DNS re-check needed) — the earlier "Workflows: Read and write" token-scope fix
-from a prior session is holding. Live site still only serves items 1–6; item
-7 (undo/redo) is committed locally but neither command below has been run
-for it yet.
+from a prior session is holding. Live site now serves items 1–7. (The custom
+domain sits behind a CDN edge cache with a 10-minute `max-age`, so a stale
+bundle hash can be observed for a few minutes right after a deploy — not a
+deploy failure, just propagation.)
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:
