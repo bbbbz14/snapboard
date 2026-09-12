@@ -1,19 +1,20 @@
 import { t } from '@/i18n/t'
 
 interface Props {
-  tool: 'select' | 'arrow' | 'box'
+  tool: 'select' | 'arrow' | 'box' | 'text'
   onToggleArrow: () => void
   onToggleBox: () => void
+  onToggleText: () => void
 }
 
 /**
  * Bottom-left, mirroring `ZoomControls`' bottom-right placement - a floating
  * button outside the top bar, per the same standing mobile-overflow note
  * (see CLAUDE.md) that already kept zoom and selection actions out of it.
- * Arrow and box for now; the rest of Phase 4's annotation tools land here
- * too as they ship.
+ * Arrow, box, and text for now; the rest of Phase 4's annotation tools land
+ * here too as they ship.
  */
-export function AnnotationToolbar({ tool, onToggleArrow, onToggleBox }: Props) {
+export function AnnotationToolbar({ tool, onToggleArrow, onToggleBox, onToggleText }: Props) {
   return (
     <div className="annotation-toolbar">
       <button
@@ -33,6 +34,15 @@ export function AnnotationToolbar({ tool, onToggleArrow, onToggleBox }: Props) {
         aria-pressed={tool === 'box'}
       >
         ▢
+      </button>
+      <button
+        className={`annotation-toolbar__btn${tool === 'text' ? ' is-active' : ''}`}
+        onClick={onToggleText}
+        title={t('annotate.textTitle')}
+        aria-label={t('annotate.text')}
+        aria-pressed={tool === 'text'}
+      >
+        T
       </button>
     </div>
   )

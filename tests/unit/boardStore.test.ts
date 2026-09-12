@@ -255,6 +255,76 @@ describe('addBox', () => {
   })
 })
 
+describe('commitText', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', nodes: [node('img', { x: 0, y: 0, w: 10, h: 10 })] },
+      selectedIds: [],
+    })
+  })
+
+  it('creates a new text node, selects it, and switches layout to free', () => {
+    useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
+    const board = useBoardStore.getState().board
+    const text = board.nodes.find((n) => n.kind === 'text')
+    expect(text).toBeDefined()
+    expect(text).toMatchObject({ text: 'hello', frame: { x: 0, y: 0, w: 240, h: 40 } })
+    expect(board.layout).toBe('free')
+    expect(useBoardStore.getState().selectedIds).toEqual([text!.id])
+  })
+
+  it('creates nothing for trimmed-empty text (a stray click)', () => {
+    useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, '   ')
+    const board = useBoardStore.getState().board
+    expect(board.nodes.find((n) => n.kind === 'text')).toBeUndefined()
+    expect(board.nodes).toHaveLength(1)
+  })
+
+  it('does not disturb the existing image node', () => {
+    useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
+    const board = useBoardStore.getState().board
+    expect(board.nodes.find((n) => n.id === 'img')?.frame).toEqual({ x: 0, y: 0, w: 10, h: 10 })
+  })
+
+  it('re-editing an existing text node updates its frame and text in place', () => {
+    useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
+    const textId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'text')!.id
+    useBoardStore.getState().commitText(textId, { x: 0, y: 0, w: 240, h: 70 }, 'hello world')
+    const text = useBoardStore.getState().board.nodes.find((n) => n.id === textId)
+    expect(text).toMatchObject({ text: 'hello world', frame: { x: 0, y: 0, w: 240, h: 70 } })
+  })
+
+  it('re-editing to trimmed-empty text deletes the node instead of leaving a blank annotation', () => {
+    useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
+    const textId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'text')!.id
+    useBoardStore.setState({ selectedIds: [textId] })
+    useBoardStore.getState().commitText(textId, { x: 0, y: 0, w: 240, h: 40 }, '   ')
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === textId)).toBeUndefined()
+    expect(useBoardStore.getState().selectedIds).toEqual([])
+  })
+
+  it('is excluded from toRenderInput.items and step badge numbering, and appears in .texts', () => {
+    useBoardStore.setState({ board: { ...useBoardStore.getState().board, layout: 'steps', resolvedLayout: 'steps' } })
+    useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
+    const input = toRenderInput(useBoardStore.getState().board)
+    expect(input.items.map((i) => i.id)).toEqual(['img'])
+    expect(input.items[0]?.badge).toBe(1)
+    expect(input.texts).toHaveLength(1)
+    expect(input.texts![0]).toMatchObject({ text: 'hello', frame: { x: 0, y: 0, w: 240, h: 40 } })
+  })
+
+  it('can be deleted and undone like any other node', () => {
+    useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
+    const textId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'text')!.id
+    useBoardStore.setState({ selectedIds: [textId] })
+    useBoardStore.getState().deleteSelected()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === textId)).toBeUndefined()
+
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === textId)).toBeDefined()
+  })
+})
+
 describe('undo/redo', () => {
   beforeEach(() => {
     useBoardStore.setState({

@@ -14,6 +14,7 @@ import {
   type LayoutMode,
   type NodeId,
   type StylePreset,
+  type TextNode,
 } from '@/board/model/types'
 import { moveToFront } from '@/board/model/zorder'
 import { AssetStore, type Asset } from '@/assets/assetStore'
@@ -119,12 +120,12 @@ interface BoardState {
    * originals, and selects the copies. */
   duplicateSelected: () => void
   /** Which pointer gesture on the board canvas means "draw a new arrow/box"
-   * instead of "select/move/marquee" - not part of `Board` for the same
-   * reason `selectedIds` isn't: it's what the user is about to do, not
-   * arranged content. Reverts to `'select'` the instant an arrow or box
-   * commits. */
-  tool: 'select' | 'arrow' | 'box'
-  setTool: (tool: 'select' | 'arrow' | 'box') => void
+   * or "place a new text box" instead of "select/move/marquee" - not part of
+   * `Board` for the same reason `selectedIds` isn't: it's what the user is
+   * about to do, not arranged content. Reverts to `'select'` the instant an
+   * arrow, box, or text placement commits. */
+  tool: 'select' | 'arrow' | 'box' | 'text'
+  setTool: (tool: 'select' | 'arrow' | 'box' | 'text') => void
   /** Commits a new arrow from `start` to `end` (board-space) and switches
    * back to the select tool - same one-shot pattern a stamp tool would use.
    * Locks the board to `layout: 'free'` like `setFrames` does: an arrow's
@@ -136,6 +137,19 @@ interface BoardState {
    * as `addArrow`, for the same reason (a box's frame is an absolute
    * board-space rect the user placed by hand). */
   addBox: (start: Point, end: Point) => void
+  /** Creates a new text node (`id: null`) or re-commits an existing one after
+   * a re-edit, in both cases with `frame` already reflecting the final
+   * wrapped height - BoardCanvas computes that via `wrapText`/`textHeight`
+   * (render/text.ts) using the same measurement `drawText` uses, since the
+   * store itself stays free of any canvas/DOM dependency (unlike geometry,
+   * text layout needs a real `measureText`, which only the caller has).
+   * Trimmed-empty text creates nothing (`id: null`) or deletes the node
+   * (`id` given) - same "a stray click creates nothing" rule arrow/box use,
+   * extended to "an emptied-out text box doesn't linger as a blank
+   * annotation." Does not switch `tool` - unlike `addArrow`/`addBox`,
+   * BoardCanvas already reverts to `'select'` the instant the text draft is
+   * placed, before the user has typed anything. */
+  commitText: (id: NodeId | null, frame: Rect, text: string) => void
   /** Moves the selected nodes to the top of z-order (drawn last). Also
    * relayouts, since `order` doubles as layout position for auto boards -
    * same overload `reorder` already relies on for drag-to-reorder. */
@@ -488,6 +502,37 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }
     }),
 
+  commitText: (id, frame, text) =>
+    set((s) => {
+      const trimmed = text.trim()
+      if (id === null) {
+        if (trimmed === '') return {}
+        const node: TextNode = {
+          kind: 'text',
+          id: `n${nodeSeq++}`,
+          frame,
+          order: s.board.nodes.length,
+          text,
+          color: DEFAULT_ANNOTATION_COLOR,
+        }
+        return {
+          ...commitBoard(s, { ...s.board, layout: 'free', nodes: [...s.board.nodes, node] }),
+          selectedIds: [node.id],
+        }
+      }
+      if (trimmed === '') {
+        const remaining = [...s.board.nodes].filter((n) => n.id !== id).sort((a, b) => a.order - b.order)
+        return {
+          ...commitBoard(s, relayout({ ...s.board, nodes: remaining.map((n, i) => ({ ...n, order: i })) })),
+          selectedIds: s.selectedIds.filter((x) => x !== id),
+        }
+      }
+      return commitBoard(s, {
+        ...s.board,
+        nodes: s.board.nodes.map((n) => (n.id === id && n.kind === 'text' ? { ...n, frame, text } : n)),
+      })
+    }),
+
   bringToFront: () =>
     set((s) => {
       if (s.selectedIds.length === 0) return {}
@@ -588,5 +633,8 @@ export function toRenderInput(board: Board): RenderInput {
     boxes: sorted
       .filter((n): n is BoxNode => n.kind === 'box')
       .map((n) => ({ id: n.id, frame: n.frame, color: n.color })),
+    texts: sorted
+      .filter((n): n is TextNode => n.kind === 'text')
+      .map((n) => ({ id: n.id, frame: n.frame, text: n.text, color: n.color })),
   }
 }

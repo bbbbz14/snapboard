@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { renderScene } from '@/board/render/renderScene'
 import { TileCache } from '@/board/render/tileCache'
 import { toRenderInput, useBoardStore } from '@/board/store/boardStore'
@@ -8,6 +8,7 @@ import { resizeKeepingAspect } from '@/board/interact/resize'
 import { snapMove, type SnapGuide } from '@/board/interact/snap'
 import { ARROW_STROKE_WIDTH, strokeArrow } from '@/board/render/arrow'
 import { BOX_STROKE_WIDTH, strokeBox } from '@/board/render/box'
+import { TEXT_DEFAULT_WIDTH, TEXT_FONT_SIZE, TEXT_LINE_HEIGHT, TEXT_PADDING, ensureAnnotationFont, textFont, textHeight, wrapText } from '@/board/render/text'
 import type { Board, NodeId } from '@/board/model/types'
 import { DEFAULT_ANNOTATION_COLOR } from '@/board/model/types'
 import { boardToScreen, fitCamera, panBy, screenToBoard, zoomAt, type Camera } from '@/board/view/camera'
@@ -87,6 +88,19 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // Box-tool drag in progress - same shape as `arrowDraftRef`, just for the
   // other one-shot annotation tool.
   const boxDraftRef = useRef<{ start: Point; current: Point; screenStart: { x: number; y: number } } | null>(null)
+  // The text tool's editing session - a brand-new placement (`id: null`) or
+  // a re-edit of an existing node (dblclick), live only in this component's
+  // state until committed on blur/Cmd+Enter or discarded on Escape. Unlike
+  // arrow/box, text has no interaction-canvas preview: the textarea overlay
+  // below *is* the preview, so the node it's editing is filtered out of
+  // `draw()`'s render input instead (see the `editingText` reads there).
+  const [editingText, setEditingText] = useState<{ id: NodeId | null; point: Point; width: number; text: string } | null>(null)
+  const textEditRef = useRef<HTMLTextAreaElement>(null)
+  // Flips once after the self-hosted annotation font finishes loading -
+  // canvas `fillText` has no `font-display` equivalent, so a board restored
+  // from autosave that already has text nodes needs one extra forced
+  // redraw once the real face is ready (see render/text.ts's `ensureAnnotationFont`).
+  const [fontReady, setFontReady] = useState(false)
   // Drag-to-reorder in progress (any layout mode except 'free'): the dragged
   // node floats to follow the pointer without reflowing the rest of the
   // board (computeLayout is too slow to call every pointermove - see
@@ -114,6 +128,45 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   const setTool = useBoardStore((s) => s.setTool)
   const addArrow = useBoardStore((s) => s.addArrow)
   const addBox = useBoardStore((s) => s.addBox)
+  const commitText = useBoardStore((s) => s.commitText)
+
+  useEffect(() => {
+    void ensureAnnotationFont().then(() => setFontReady(true))
+  }, [])
+
+  /** Wraps `editingText.text` with the same measurement `drawText` uses, and
+   * commits it - a fresh node if it's a new placement, or the existing
+   * node's frame/text if it's a re-edit. Trimmed-empty text is handled by
+   * the store (`commitText`): creates nothing, or deletes the node being
+   * re-edited. */
+  const finishEditingText = useCallback(() => {
+    if (!editingText) return
+    const ctx = canvasRef.current?.getContext('2d')
+    if (ctx) {
+      ctx.font = textFont()
+      const maxWidth = Math.max(1, editingText.width - TEXT_PADDING * 2)
+      const lines = wrapText((s) => ctx.measureText(s).width, editingText.text, maxWidth)
+      const frame = { x: editingText.point.x, y: editingText.point.y, w: editingText.width, h: textHeight(lines.length) }
+      commitText(editingText.id, frame, editingText.text)
+    }
+    setEditingText(null)
+  }, [editingText, commitText])
+
+  const cancelEditingText = useCallback(() => setEditingText(null), [])
+
+  // Autofocus (and select any existing text, for a re-edit) exactly once
+  // when a new editing session opens - `point`/`id` are fixed for the whole
+  // session (only `text` changes per keystroke), so they're safe dependencies
+  // that don't refire on every character typed.
+  useEffect(() => {
+    if (!editingText) return
+    const el = textEditRef.current
+    if (!el) return
+    el.focus()
+    el.select()
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [editingText?.id, editingText?.point.x, editingText?.point.y])
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -150,6 +203,15 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       }
     }
     tiles.retain(input.items.map((i) => i.id))
+    // The node currently open in the textarea overlay is drawn there, not
+    // here - showing it on both at once would double it up (and the two
+    // could visibly disagree the moment the user types past what's already
+    // committed). A brand-new draft (`id: null`) was never in `input.texts`
+    // to begin with; this only matters for a re-edit.
+    const editingId = editingText?.id
+    if (editingId != null && input.texts) {
+      input.texts = input.texts.filter((t) => t.id !== editingId)
+    }
     renderScene(ctx, input, { scale: renderScale, tiles, offset: { x: origin.x * dpr, y: origin.y * dpr } })
     // Forces rasterization to finish before this function returns. WebKit's
     // canvas rasterization is asynchronous (see the timing gotcha in
@@ -167,7 +229,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       page.style.width = `${board.size.w * camera.zoom}px`
       page.style.height = `${board.size.h * camera.zoom}px`
     }
-  }, [board, viewport])
+  }, [board, viewport, editingText?.id, fontReady])
 
   /**
    * Selection outlines, corner handles, and the marquee rect - drawn on a
@@ -224,6 +286,21 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       const a = boardToScreen(camera, viewport, boxDraft.start)
       const b = boardToScreen(camera, viewport, boxDraft.current)
       strokeBox(ctx, rectFromPoints(a, b), DEFAULT_ANNOTATION_COLOR, BOX_STROKE_WIDTH * camera.zoom)
+    }
+
+    // The text tool's own "preview" is the textarea overlay itself (see the
+    // .text-edit element below), not anything drawn on this canvas - only
+    // its screen position/size needs to track pan/zoom while it's open,
+    // same ref-first reasoning as .board-page and the selection toolbar.
+    const editBox = textEditRef.current
+    if (editBox && editingText) {
+      const topLeft = boardToScreen(camera, viewport, editingText.point)
+      editBox.style.left = `${topLeft.x}px`
+      editBox.style.top = `${topLeft.y}px`
+      editBox.style.width = `${editingText.width * camera.zoom}px`
+      editBox.style.fontSize = `${TEXT_FONT_SIZE * camera.zoom}px`
+      editBox.style.lineHeight = `${TEXT_LINE_HEIGHT * camera.zoom}px`
+      editBox.style.padding = `${TEXT_PADDING * camera.zoom}px`
     }
 
     // Positions the floating selection toolbar imperatively, same ref-first
@@ -288,7 +365,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
     }
     ctx.restore()
-  }, [board.nodes, selectedIds, viewport])
+  }, [board.nodes, selectedIds, viewport, editingText])
 
   useEffect(() => {
     if (autoFitRef.current) {
@@ -444,6 +521,26 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         const point = toBoardPoint(e)
         boxDraftRef.current = { start: point, current: point, screenStart: { x: e.clientX, y: e.clientY } }
         canvas.setPointerCapture(e.pointerId)
+        return
+      }
+
+      if (tool === 'text') {
+        // No drag to track - a single click is enough to place a fixed-width
+        // box (see TEXT_DEFAULT_WIDTH); the tool reverts to 'select'
+        // immediately, same one-shot pattern as arrow/box, but the actual
+        // store commit waits until editing finishes (see finishEditingText).
+        // `preventDefault` matters here in a way it doesn't for arrow/box:
+        // a plain mousedown's own default action is to shift focus to
+        // document.body (canvas isn't focusable) once this event finishes
+        // dispatching. Left alone, that default action fires *after* the
+        // textarea below has already been created and focused (React flushes
+        // the state update before the click's own trailing pointerup/mouseup
+        // land), so the browser immediately blurs it again - the textarea
+        // would exist for a single frame and then vanish, having "committed"
+        // itself with whatever (empty) text it had at that instant.
+        e.preventDefault()
+        setEditingText({ id: null, point: toBoardPoint(e), width: TEXT_DEFAULT_WIDTH, text: '' })
+        setTool('select')
         return
       }
 
@@ -641,7 +738,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction, tool, addArrow, addBox, setTool])
+  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction, tool, addArrow, addBox, setTool, setEditingText])
 
   // Keyboard shortcuts (Phase 2 item 9 completes this set). Undo/redo and
   // copy are the deliberate exceptions to "no modifier keys": Ctrl/Cmd+Z is
@@ -725,6 +822,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       } else if (e.key.toLowerCase() === 'r') {
         e.preventDefault()
         setTool(tool === 'box' ? 'select' : 'box')
+      } else if (e.key.toLowerCase() === 't') {
+        e.preventDefault()
+        setTool(tool === 'text' ? 'select' : 'text')
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -745,6 +845,47 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     setTool,
   ])
 
+  // Double-click re-opens an existing text node for editing - the only way
+  // to fix a typo without deleting and redrawing it (arrow/box deliberately
+  // have no equivalent - see their own scope-cut notes - but text's whole
+  // point is its content, so being unable to correct it is a much bigger
+  // everyday loss). Only in 'select' mode, so a double-click while another
+  // tool is armed can't accidentally hijack it.
+  const onCanvasDoubleClick = useCallback(
+    (e: ReactMouseEvent<HTMLCanvasElement>) => {
+      if (tool !== 'select') return
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const point = screenToBoard(cameraRef.current, viewport, { x: e.clientX - rect.left, y: e.clientY - rect.top })
+      const hitId = hitTest(board.nodes, point)
+      const node = hitId ? board.nodes.find((n) => n.id === hitId) : null
+      if (!node || node.kind !== 'text') return
+      setSelection([node.id])
+      setEditingText({ id: node.id, point: { x: node.frame.x, y: node.frame.y }, width: node.frame.w, text: node.text })
+    },
+    [tool, board.nodes, viewport, setSelection],
+  )
+
+  const onTextEditKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        cancelEditingText()
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        finishEditingText()
+      }
+    },
+    [cancelEditingText, finishEditingText],
+  )
+
+  const onTextEditChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
+    setEditingText((current) => (current ? { ...current, text: e.target.value } : current))
+    e.target.style.height = 'auto'
+    e.target.style.height = `${e.target.scrollHeight}px`
+  }, [])
+
   // Arrows now share `board.nodes` with images (see model/types.ts), so this
   // count - used only for the a11y label below - must not count them too.
   const imageCount = board.nodes.filter((n) => n.kind === 'image').length
@@ -757,8 +898,20 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         className={`board-canvas${tool !== 'select' ? ' board-canvas--annotate' : ''}`}
         role="img"
         aria-label={`Board with ${imageCount} image${imageCount === 1 ? '' : 's'}`}
+        onDoubleClick={onCanvasDoubleClick}
       />
       <canvas ref={interactionCanvasRef} className="board-interaction" aria-hidden="true" />
+      {editingText && (
+        <textarea
+          ref={textEditRef}
+          className="text-edit"
+          value={editingText.text}
+          onChange={onTextEditChange}
+          onKeyDown={onTextEditKeyDown}
+          onBlur={finishEditingText}
+          aria-label={t('annotate.text')}
+        />
+      )}
       <div className="selection-status visually-hidden" role="status" aria-live="polite">
         {selectedIds.length > 0 ? t('selection.count', { count: selectedIds.length }) : ''}
       </div>
@@ -779,6 +932,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         tool={tool}
         onToggleArrow={() => setTool(tool === 'arrow' ? 'select' : 'arrow')}
         onToggleBox={() => setTool(tool === 'box' ? 'select' : 'box')}
+        onToggleText={() => setTool(tool === 'text' ? 'select' : 'text')}
       />
     </div>
   )

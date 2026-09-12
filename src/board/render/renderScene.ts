@@ -2,6 +2,7 @@ import type { Point, Rect, Size } from '@/lib/geometry'
 import { STYLE_PRESETS, type Background, type StylePreset } from '@/board/model/types'
 import { ARROW_STROKE_WIDTH, strokeArrow } from './arrow'
 import { BOX_STROKE_WIDTH, strokeBox } from './box'
+import { drawText } from './text'
 
 export interface RenderItem {
   id: string
@@ -24,6 +25,13 @@ export interface RenderBox {
   color: string
 }
 
+export interface RenderText {
+  id: string
+  frame: Rect
+  text: string
+  color: string
+}
+
 export interface RenderInput {
   size: Size
   background: Background
@@ -34,6 +42,10 @@ export interface RenderInput {
   arrows?: RenderArrow[]
   /** Optional for the same reason `arrows` is. */
   boxes?: RenderBox[]
+  /** Optional for the same reason `arrows` is. Excludes whichever text node
+   * BoardCanvas currently has open in its textarea overlay - see invariant 1's
+   * note there about why that can't drift, it just never reaches this input. */
+  texts?: RenderText[]
 }
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
@@ -103,8 +115,13 @@ export function renderScene(ctx: Ctx2D, input: RenderInput, { scale, tiles, offs
   for (const arrow of input.arrows ?? []) {
     strokeArrow(ctx, arrow.start, arrow.end, arrow.color, ARROW_STROKE_WIDTH)
   }
+  // Text last of the three annotation kinds - it often labels an arrow or a
+  // box, so it must stay on top of both to stay legible.
+  for (const text of input.texts ?? []) {
+    drawText(ctx, text.frame, text.text, text.color)
+  }
 
-  // Badges are drawn after the images (and arrows/boxes) so they are never clipped by a tile.
+  // Badges are drawn after the images (and arrows/boxes/text) so they are never clipped by a tile.
   for (const item of input.items) {
     if (item.badge !== undefined) drawBadge(ctx, item, input.background)
   }

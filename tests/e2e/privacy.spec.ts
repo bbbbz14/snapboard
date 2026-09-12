@@ -42,10 +42,16 @@ test('a whole session runs without a single network request', async ({ page, ima
   expect(afterLoad.filter((r) => !r.url.startsWith('http://localhost:4173/'))).toEqual([])
   expect(afterLoad.filter((r) => r.method !== 'GET')).toEqual([])
 
-  // The only thing fetched mid-session is our own decode worker, loaded lazily
-  // on the first image. Anything else appearing here needs justifying.
+  // The decode worker loads lazily on the first image. The two self-hosted
+  // annotation font files (Phase 4 item 3 - see render/text.ts) load once
+  // BoardCanvas mounts, warming up before any text/arrow node needs them -
+  // same-origin, bundled with the app, not a Google Fonts CDN request (see
+  // product plan 9.2 and CLAUDE.md invariant 6). Anything else appearing
+  // here needs justifying.
   expect(afterLoad.map((r) => r.url.replace(/-[A-Za-z0-9_]{8,}\./, '.'))).toEqual([
     'http://localhost:4173/assets/decode.worker.js',
+    'http://localhost:4173/assets/Inter-Latin-600.woff2',
+    'http://localhost:4173/assets/Anuphan-Thai-600.woff2',
   ])
 })
 

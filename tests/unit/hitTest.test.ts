@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { containsPoint, hitTest, intersectsRect, marqueeSelect } from '@/board/interact/hitTest'
-import type { ArrowNode, BoxNode, ImageNode } from '@/board/model/types'
+import type { ArrowNode, BoxNode, ImageNode, TextNode } from '@/board/model/types'
 
 function node(id: string, frame: { x: number; y: number; w: number; h: number }, order: number): ImageNode {
   return { kind: 'image', id, assetId: `a-${id}`, frame, order }
@@ -12,6 +12,10 @@ function arrow(id: string, frame: { x: number; y: number; w: number; h: number }
 
 function box(id: string, frame: { x: number; y: number; w: number; h: number }, order: number): BoxNode {
   return { kind: 'box', id, frame, order, color: '#dc2626' }
+}
+
+function text(id: string, frame: { x: number; y: number; w: number; h: number }, order: number): TextNode {
+  return { kind: 'text', id, frame, order, text: 'hi', color: '#dc2626' }
 }
 
 describe('containsPoint', () => {
@@ -71,6 +75,14 @@ describe('hitTest', () => {
       box('bx', { x: 0, y: 0, w: 20, h: 20 }, 1),
     ]
     expect(hitTest(nodes, { x: 5, y: 5 })).toBe('bx')
+  })
+
+  it('is generic across node kinds - a text node hits like any other frame', () => {
+    const nodes: (ImageNode | TextNode)[] = [
+      node('img', { x: 0, y: 0, w: 20, h: 20 }, 0),
+      text('txt', { x: 0, y: 0, w: 20, h: 20 }, 1),
+    ]
+    expect(hitTest(nodes, { x: 5, y: 5 })).toBe('txt')
   })
 })
 

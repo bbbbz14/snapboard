@@ -33,13 +33,157 @@ the WebKit rasterisation gotcha below — none of these are failures).
 [docs/manual-test-checklist.md](docs/manual-test-checklist.md) run against
 the live site — see the Gate section below for the full results).
 
-**Phase 4 (annotations) is underway. Items 1 (arrow) and 2 (box/rectangle)
-are done. Not yet pushed to `main` or deployed** — see the notes right below
-for both. `npm run verify` green (typecheck + 171 unit + 27 renderer parity
-on 3 engines + 166 e2e passed, 5 skipped by design — same 5 as before, see
-the note above; the new box e2e file added 5 test cases (15 counting all 3
-browser engines) and no new skips). **Next session should do Phase 4 item 3**
-(text) — see "Phase 4 — Annotations" below for the full item list.
+**Phase 4 (annotations) is underway. Items 1 (arrow), 2 (box/rectangle), and
+3 (text) are done. Not yet pushed to `main` or deployed** — see the notes
+right below for all three. `npm run verify` green (typecheck + 189 unit + 27
+renderer parity on 3 engines + 181 e2e passed, 5 skipped by design — same 5
+as before, see the note above; the new text e2e file added 5 test cases (15
+counting all 3 browser engines) and no new skips). **Next session should do
+Phase 4 item 4** (auto-numbered badge) — see "Phase 4 — Annotations" below
+for the full item list.
+
+### Phase 4 item 3 — done: text annotation
+
+Shipped as its own commit. Committed to `master`, **not yet pushed to `main`
+or deployed** - same as items 1/2, ask the user before doing either (see the
+live-site section below for the usual two commands). The user explicitly
+asked for a "premium" font that covers Thai and English well, comparable to
+Apple's system font - not the default `ui-sans-serif` stack the rest of the
+app's chrome uses.
+
+- **Self-hosted font pairing, not a system-font stack:** `Inter` (Latin,
+  weight 600) + `Anuphan` (Thai, weight 600 - drawn by Cadson Demak
+  specifically to pair with Inter, sharing its x-height and modern
+  grotesque feel) under one `@font-face` family, `'Snapboard Annotation'`,
+  declared in `styles.css`. Both files are bundled in `src/assets/fonts/`
+  (Vite processes them like any other imported asset, so `base: './'`
+  keeps working under a subpath) - **not** fetched from Google Fonts at
+  runtime, per the product plan's own 9.2 line ("ฟอนต์ self-host - ไม่งั้น
+  IP ผู้ใช้รั่วไปหา Google") and invariant 6. `docs/licenses/OFL-*.txt` carry
+  the OFL attribution for both. A system-font stack (`-apple-system` etc.)
+  was rejected: it would render Latin as actual San Francisco on a Mac but
+  something else entirely on Windows/Linux/Android, and worse, would depend
+  on whatever (if anything) the visitor's OS ships for Thai - self-hosting
+  one deliberately-chosen pairing gives every visitor the same premium,
+  legible result regardless of OS, which is a stronger version of "premium"
+  than merely matching one platform's default.
+- **`tests/e2e/privacy.spec.ts` needed a real update, not a workaround:**
+  the two font files load as soon as `BoardCanvas` mounts (see
+  `ensureAnnotationFont` below), so they show up in that test's
+  exact-request-list assertion even in a session that never places a
+  single text/arrow node. This is expected and correct - same-origin,
+  bundled, not a third-party request - so the fix was adding both URLs to
+  the expected list, the same way `decode.worker.js` already sits there,
+  not loosening the assertion.
+- **Real, subtle bug caught only by a real headless-browser click, not by
+  eye or by the unit suite:** a plain click's own default action is to shift
+  focus to `document.body` once the click finishes dispatching (a `<canvas>`
+  isn't focusable). Left alone, that default action fires *after* React has
+  already inserted and auto-focused the new textarea overlay in response to
+  the very same click's `pointerdown` (state flushes before the click's own
+  trailing `pointerup`/`mouseup`/`click` land) - so the browser immediately
+  blurred the textarea it had just focused, which triggered `onBlur` →
+  `finishEditingText()` → committed (empty) text and closed the overlay,
+  all within the same click. The symptom was "the text tool silently does
+  nothing," reproducible on every engine, and invisible to `console.log`
+  reasoning alone - only caught by instrumenting an actual Playwright click
+  and reading the render log line by line. Fixed with one `e.preventDefault()`
+  on the `pointerdown` in `BoardCanvas.tsx`'s `tool === 'text'` branch, which
+  arrow/box never needed since neither creates a focusable element mid-
+  gesture. Worth remembering for any future one-shot tool that also hands
+  off focus to a new DOM element from inside a pointer handler.
+- Mirrors arrow/box's one-shot placement shape where it can, but text's
+  whole point is editable content, so it diverges in two ways neither arrow
+  nor box needed: a `T` keyboard shortcut (free - checked against every
+  other binding) plus a "Text" button in `AnnotationToolbar`, and a
+  **textarea overlay for the actual typing**, per the product plan's own
+  7.1 note ("DOM overlay ใช้เฉพาะ... textarea ตอนแก้ข้อความ... เหมือนที่
+  Excalidraw ทำ") and invariant 7 (the overlay reads only `.value`, never
+  becomes innerHTML). A single click (not a drag) places a fixed-width
+  (`TEXT_DEFAULT_WIDTH`, 240 board px), one-line-tall draft and opens the
+  overlay immediately; the tool reverts to `'select'` at that instant, same
+  as arrow/box, well before the user has typed anything. Committing
+  (blur, or the explicit Ctrl/Cmd+Enter shortcut) or cancelling (Escape) are
+  both handled locally on the textarea's own `onKeyDown`/`onBlur` - the
+  global `BoardCanvas` keydown handler already bails out for any real
+  text-entry target (see item 7's `isTextEntry` note), so the two listeners
+  never fight over the same keystroke.
+- **Unlike arrow and box, text is re-editable** - double-clicking an
+  existing text node (only while `tool === 'select'`) re-opens the same
+  overlay, seeded with its current text/frame. This is a deliberate
+  scope *addition* against the arrow/box precedent ("no post-hoc editing -
+  delete and redraw"): for arrow/box that cut was about geometry, which
+  isn't the point of either node, but text's content *is* the entire
+  point, so being unable to fix a typo without delete-and-retype would be a
+  much bigger everyday loss for this tool specifically.
+- `src/board/render/text.ts` - `wrapText`, a pure line-wrap function (no
+  `Ctx2D` dependency, just an injected `measure: (s: string) => number`, so
+  it's directly unit-testable in Node - see `tests/unit/text.test.ts`) built
+  on `Intl.Segmenter`, not `.split(' ')`. **Thai has no spaces between
+  words** - a space-only wrapper would never break a long Thai sentence and
+  it would run straight off the box. Word-granularity segmentation handles
+  normal wrapping (works for Thai *and* English with no per-script branch);
+  a grapheme-granularity fallback (`breakToWidth`) handles the rare
+  over-wide single token (a long word or URL) *without* ever splitting a
+  Thai base consonant from its own combining vowel/tone-mark codepoint,
+  which a naive `[...str]` character-by-character break risks doing.
+  `TextNode.frame.w` is fixed at creation (same "not resizable" scope cut as
+  box); `frame.h` is the one field that isn't fixed - `wrapText` +
+  `textHeight` recompute it from the real wrapped line count every time the
+  node commits, using the exact same `ctx.measureText` the interactive
+  overlay's live auto-grow only approximates (the overlay's own resize is
+  just the browser's native textarea reflow, close enough for a live
+  preview; only the committed `frame.h` needs to be exactly right, since
+  that's what hit-testing/export/selection-outline all use afterwards).
+- **`ensureAnnotationFont`** (`render/text.ts`) loads both font files via
+  `document.fonts.load(...)` once, memoized. Canvas `fillText` has no
+  `font-display` equivalent - a frame drawn before a face finishes loading
+  silently falls back to a system font *forever*, with no automatic
+  repaint once the real face becomes ready (unlike DOM text). Called eagerly
+  in `BoardCanvas`'s mount effect (so a board restored from autosave that
+  already has text nodes still gets the right font, not just a board where
+  the user places new text after the fonts were already warm) with a
+  `fontReady` state flip that forces exactly one extra redraw once loading
+  finishes, and again in `exportBoard.ts` (awaited, since export is async
+  and can't afford even that one wrong frame in a downloaded file).
+- `BoardNode` is now `ImageNode | ArrowNode | BoxNode | TextNode`. Like
+  `BoxNode`, `TextNode.frame` is not derived/padded - every generic
+  frame-based helper (`setFrames`'s move, `duplicateSelected`'s offset-copy,
+  `hitTest`, `handles.ts`'s resize-handle exclusion) already does the right
+  thing with zero new per-kind branches, the same "box needed no new
+  branches either" reasoning item 2 already established. The store's new
+  `commitText(id, frame, text)` action deliberately takes an
+  already-computed `frame` (not raw text + a callback) so `boardStore.ts`
+  stays free of any canvas/DOM dependency, unlike geometry, text layout
+  needs a real `measureText`, which only `BoardCanvas` (the caller) has;
+  the store stays exactly as unit-testable in plain Node as it always was.
+  Trimmed-empty text creates nothing (`id: null`) or deletes the node
+  (`id` given) - the same "a stray click creates nothing" rule arrow/box
+  use, extended to "an emptied-out text box doesn't linger as a blank
+  annotation."
+- `tests/unit/text.test.ts` covers `wrapText`/`textHeight` directly,
+  including the no-spaces-in-Thai case, the combining-mark-safe grapheme
+  fallback, and mixed Thai/English on one line. `tests/unit/boardStore.test.ts`
+  gained a `commitText` block mirroring `addBox`'s (create, trimmed-empty
+  no-ops, re-edit updates in place, re-edit-to-empty deletes, exclusion from
+  `toRenderInput.items`/badge numbering plus presence in `.texts`, delete
+  +undo). `tests/unit/hitTest.test.ts` gained one text mixed-kind case.
+  `tests/e2e/text.spec.ts` (new) covers placing and typing Thai+English (and
+  export survival, invariant 1), the `T` shortcut, Escape-cancels-a-fresh-
+  placement, committing empty creates nothing, select→delete→undo, and the
+  double-click-to-re-edit round trip (re-opening twice, to prove the first
+  edit actually committed and wasn't just shown transiently) - using the
+  same reddish-pixel-region scan technique `arrow.spec.ts`/`box.spec.ts`
+  already established.
+- **Deliberately not done, scoped to what "text" alone needs:** no font
+  size/weight/color choice (still the shared `DEFAULT_ANNOTATION_COLOR` red,
+  same "no decision nothing asked for yet" cut arrow/box already made), no
+  resize handle (move the whole box, or delete and redraw - same as
+  arrow/box), no rich text (bold/italic runs, bullet lists) - a plain
+  wrapped label is everything the product plan's "ข้อความ" line item asks
+  for. No auto-shrinking font to fit a fixed box either - height grows to
+  fit the text instead, which is the same trade-off `TEXT_DEFAULT_WIDTH`'s
+  "fixed width, grows down" already makes.
 
 ### Phase 4 item 1 — done: arrow annotation
 
@@ -879,10 +1023,7 @@ order; each item is independently shippable, same as Phase 2/3.
    see "Phase 4 item 1" under START HERE above.
 2. ✅ **Box/rectangle** outline to frame a region of interest. Done — see
    "Phase 4 item 2" under START HERE above.
-3. ⬜ **Text** - needs a shared `measureText`-based line-wrap used by both
-   preview and export (invariant 1), and a `textarea` overlay for editing
-   that reads only `.value` (invariant 7 - never let user text become DOM
-   HTML).
+3. ✅ **Text** - done — see "Phase 4 item 3" under START HERE above.
 4. ⬜ **Auto-numbered badge** - a standalone annotation, distinct from the
    step-sequence badges `'steps'` layout already draws (see
    `BADGE_DIAMETER`/`drawBadge` in `renderScene.ts`); likely needs its own
@@ -1016,6 +1157,21 @@ tests/render/         renderer parity harness (imports src directly, dev server 
   it, so `tests/e2e/reorder.spec.ts`'s pixel-swap assertion skips on WebKit
   (`browserName === 'webkit'`) rather than retrying forever. Not reproduced on
   Chromium or Firefox; real Safari is unconfirmed either way.
+- **A click's own default action can steal focus back from something that
+  click just created.** Found building the text tool (Phase 4 item 3): a
+  plain mousedown's default action shifts focus to `document.body` once the
+  click finishes dispatching, since a bare `<canvas>` isn't focusable. If a
+  `pointerdown` handler on that canvas reacts by inserting and auto-focusing
+  a new DOM element (a textarea, say) in response to the *same* click,
+  React flushes that before the click's own trailing `pointerup`/`mouseup`/
+  `click` land - so the browser's still-pending default action blurs the
+  element it was just given, one click after it was focused. Symptom: the
+  new element appears to work, then instantly closes/commits itself, on
+  every engine, invisible to reasoning alone (only caught by logging the
+  actual render sequence around a real Playwright click). Fix: call
+  `e.preventDefault()` on that `pointerdown` before handing off focus. Worth
+  checking first for any future tool that also creates a focusable element
+  from inside a pointer handler.
 - **`clipboard.write()` resolving is not proof.** Firefox resolves it with an
   empty clipboard. Never gate the "Copied" message on the promise alone, and
   never hide the Download button (ADR-003).

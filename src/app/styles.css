@@ -15,6 +15,32 @@
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Thai", sans-serif;
 }
 
+/* Self-hosted, per product plan 9.2 ("font self-host, no Google Fonts" -
+   otherwise the user's IP leaks to Google) and invariant 6 (no network at
+   runtime) - these files ship in the bundle, nothing is fetched from a CDN.
+   Inter covers Latin; Anuphan (drawn to pair with Inter - same modern,
+   clean grotesque feel) covers Thai. Declaring Inter first means it wins
+   for every Latin codepoint even though both faces share a unicode-range
+   fallback story - only Thai script codepoints ever reach Anuphan. Used by
+   the text annotation tool only (`TEXT_FONT_FAMILY` in `render/text.ts`),
+   not the app's own UI chrome (`--font` above) - Phase 5 owns that. See
+   docs/licenses/OFL-Inter.txt and OFL-Anuphan.txt. */
+@font-face {
+  font-family: 'Snapboard Annotation';
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+  src: url('../assets/fonts/Inter-Latin-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Snapboard Annotation';
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+  src: url('../assets/fonts/Anuphan-Thai-600.woff2') format('woff2');
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0d1117;
@@ -364,6 +390,30 @@ body {
   inset: 0;
   display: block;
   pointer-events: none;
+}
+
+/* The text-tool editing overlay - per the product plan's 7.1 "DOM overlay
+   used only for... textarea while editing text" note, styled after
+   Excalidraw's own text editor: a plain textarea, not an attempt to make it
+   invisible against the board (the board's background can be solid,
+   gradient, or transparent, so exactly matching it isn't worth the fragility
+   - see BoardCanvas's note on why the node being edited is hidden from the
+   canvas entirely instead). Position/size/font-size are written directly by
+   BoardCanvas's drawInteraction (ref-first, same as .board-page), so it
+   tracks pan/zoom while open. */
+.text-edit {
+  position: absolute;
+  resize: none;
+  overflow: hidden;
+  box-sizing: border-box;
+  min-height: 1.35em;
+  border: 1px dashed var(--accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: #dc2626;
+  font-family: 'Snapboard Annotation', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  outline: none;
 }
 
 /* Floating above the current selection, per the product plan's 4.2 mockup -

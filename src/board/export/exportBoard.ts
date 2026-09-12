@@ -1,5 +1,6 @@
 import type { Size } from '@/lib/geometry'
 import { renderScene, type RenderInput } from '@/board/render/renderScene'
+import { ensureAnnotationFont } from '@/board/render/text'
 
 export type ExportFormat = 'image/png' | 'image/jpeg'
 
@@ -50,6 +51,12 @@ export async function exportBoard(input: RenderInput, opts: ExportOptions): Prom
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, pixels.w, pixels.h)
   }
+
+  // Canvas fillText has no font-display equivalent - a face still loading
+  // when this draws would silently fall back to a system font in the
+  // exported file. Cheap once loaded (see render/text.ts): resolves
+  // instantly on every export after the first.
+  if ((input.texts?.length ?? 0) > 0) await ensureAnnotationFont()
 
   // No tile cache here: tiles are display-resolution, export must be full quality.
   renderScene(ctx, input, { scale })
