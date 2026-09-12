@@ -47,6 +47,8 @@ export function boundsOf(rects: Rect[]): Rect {
 
 export const translate = (r: Rect, dx: number, dy: number): Rect => ({ ...r, x: r.x + dx, y: r.y + dy })
 
+export const translatePoint = (p: Point, dx: number, dy: number): Point => ({ x: p.x + dx, y: p.y + dy })
+
 /** Normalizes two corners (dragged in any direction) into a positive-size rect. */
 export function rectFromPoints(a: Point, b: Point): Rect {
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) }

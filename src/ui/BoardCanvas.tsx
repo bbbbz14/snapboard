@@ -6,13 +6,20 @@ import { hitTest, marqueeSelect } from '@/board/interact/hitTest'
 import { CORNERS, cornerPoint, HANDLE_SIZE, hitTestHandle } from '@/board/interact/handles'
 import { resizeKeepingAspect } from '@/board/interact/resize'
 import { snapMove, type SnapGuide } from '@/board/interact/snap'
+import { ARROW_STROKE_WIDTH, strokeArrow } from '@/board/render/arrow'
 import type { Board, NodeId } from '@/board/model/types'
+import { DEFAULT_ARROW_COLOR } from '@/board/model/types'
 import { boardToScreen, fitCamera, panBy, screenToBoard, zoomAt, type Camera } from '@/board/view/camera'
 import type { Point, Rect } from '@/lib/geometry'
 import { boundsOf, rectFromPoints, translate } from '@/lib/geometry'
 import { ZoomControls } from '@/ui/ZoomControls'
 import { SelectionToolbar } from '@/ui/SelectionToolbar'
+import { AnnotationToolbar } from '@/ui/AnnotationToolbar'
 import { t } from '@/i18n/t'
+
+/** Screen-px drag distance below which an arrow-tool drag is treated as a
+ * stray click, not a deliberate zero-length arrow. */
+const ARROW_MIN_DRAG = 4
 
 /** Screen-px movement below this counts as a click, not a marquee drag. */
 const MARQUEE_THRESHOLD = 3
@@ -71,6 +78,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     startPoint: Point
   } | null>(null)
   const resizeRef = useRef<{ id: NodeId; corner: (typeof CORNERS)[number]; startFrame: Rect } | null>(null)
+  // Arrow-tool drag in progress: board-space start/current end point, drawn
+  // as a live preview on the interaction canvas until pointer-up commits it.
+  const arrowDraftRef = useRef<{ start: Point; current: Point; screenStart: { x: number; y: number } } | null>(null)
   // Drag-to-reorder in progress (any layout mode except 'free'): the dragged
   // node floats to follow the pointer without reflowing the rest of the
   // board (computeLayout is too slow to call every pointermove - see
@@ -94,6 +104,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   const bringToFront = useBoardStore((s) => s.bringToFront)
   const undo = useBoardStore((s) => s.undo)
   const redo = useBoardStore((s) => s.redo)
+  const tool = useBoardStore((s) => s.tool)
+  const setTool = useBoardStore((s) => s.setTool)
+  const addArrow = useBoardStore((s) => s.addArrow)
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -181,11 +194,22 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       const w = frame.w * camera.zoom
       const h = frame.h * camera.zoom
       ctx.strokeRect(topLeft.x, topLeft.y, w, h)
+      // Arrows have no resize handle (see handles.ts - dragging one moves
+      // the whole arrow instead), so drawing corner squares on it would
+      // advertise an interaction that doesn't exist.
+      if (n.kind !== 'image') continue
       ctx.fillStyle = SELECTION_COLOR
       for (const corner of CORNERS) {
         const p = boardToScreen(camera, viewport, cornerPoint(frame, corner))
         ctx.fillRect(p.x - HANDLE_SIZE / 2, p.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE)
       }
+    }
+
+    const arrowDraft = arrowDraftRef.current
+    if (arrowDraft) {
+      const a = boardToScreen(camera, viewport, arrowDraft.start)
+      const b = boardToScreen(camera, viewport, arrowDraft.current)
+      strokeArrow(ctx, a, b, DEFAULT_ARROW_COLOR, ARROW_STROKE_WIDTH * camera.zoom)
     }
 
     // Positions the floating selection toolbar imperatively, same ref-first
@@ -395,6 +419,13 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0 || spaceHeldRef.current) return
 
+      if (tool === 'arrow') {
+        const point = toBoardPoint(e)
+        arrowDraftRef.current = { start: point, current: point, screenStart: { x: e.clientX, y: e.clientY } }
+        canvas.setPointerCapture(e.pointerId)
+        return
+      }
+
       const handle = hitTestHandle(board.nodes, selectedIds, cameraRef.current, viewport, toScreenPoint(e))
       if (handle) {
         resizeRef.current = { id: handle.id, corner: handle.corner, startFrame: handle.frame }
@@ -434,6 +465,13 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     }
 
     const onPointerMove = (e: PointerEvent) => {
+      const arrowDraft = arrowDraftRef.current
+      if (arrowDraft) {
+        arrowDraftRef.current = { ...arrowDraft, current: toBoardPoint(e) }
+        drawInteraction()
+        return
+      }
+
       const resize = resizeRef.current
       if (resize) {
         dragFramesRef.current = { [resize.id]: resizeKeepingAspect(resize.startFrame, resize.corner, toBoardPoint(e)) }
@@ -482,6 +520,16 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
 
     const onPointerUp = (e: PointerEvent) => {
       if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
+
+      const arrowDraft = arrowDraftRef.current
+      if (arrowDraft) {
+        arrowDraftRef.current = null
+        const dragged = Math.hypot(e.clientX - arrowDraft.screenStart.x, e.clientY - arrowDraft.screenStart.y) > ARROW_MIN_DRAG
+        if (dragged) addArrow(arrowDraft.start, arrowDraft.current)
+        else setTool('select')
+        drawInteraction()
+        return
+      }
 
       if (resizeRef.current) {
         const { id } = resizeRef.current
@@ -555,7 +603,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction])
+  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction, tool, addArrow, setTool])
 
   // Keyboard shortcuts (Phase 2 item 9 completes this set). Undo/redo and
   // copy are the deliberate exceptions to "no modifier keys": Ctrl/Cmd+Z is
@@ -616,6 +664,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         e.preventDefault()
         resetTo100()
       } else if (e.key === 'Escape') {
+        if (tool === 'arrow') setTool('select')
         setSelection([])
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedIds.length > 0) {
@@ -632,6 +681,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
           e.preventDefault()
           bringToFront()
         }
+      } else if (e.key.toLowerCase() === 'a') {
+        e.preventDefault()
+        setTool(tool === 'arrow' ? 'select' : 'arrow')
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -648,16 +700,22 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     undo,
     redo,
     onCopy,
+    tool,
+    setTool,
   ])
+
+  // Arrows now share `board.nodes` with images (see model/types.ts), so this
+  // count - used only for the a11y label below - must not count them too.
+  const imageCount = board.nodes.filter((n) => n.kind === 'image').length
 
   return (
     <div className="board-stage">
       <div ref={pageRef} className="board-page" />
       <canvas
         ref={canvasRef}
-        className="board-canvas"
+        className={`board-canvas${tool === 'arrow' ? ' board-canvas--arrow' : ''}`}
         role="img"
-        aria-label={`Board with ${board.nodes.length} image${board.nodes.length === 1 ? '' : 's'}`}
+        aria-label={`Board with ${imageCount} image${imageCount === 1 ? '' : 's'}`}
       />
       <canvas ref={interactionCanvasRef} className="board-interaction" aria-hidden="true" />
       <div className="selection-status visually-hidden" role="status" aria-live="polite">
@@ -676,6 +734,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         onReset={resetTo100}
         onFit={fitToView}
       />
+      <AnnotationToolbar tool={tool} onToggleArrow={() => setTool(tool === 'arrow' ? 'select' : 'arrow')} />
     </div>
   )
 }

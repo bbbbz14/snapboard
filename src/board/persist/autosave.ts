@@ -1,4 +1,4 @@
-import type { Board } from '@/board/model/types'
+import type { Board, ImageNode } from '@/board/model/types'
 import {
   clearAllRecords,
   clearLastClearedRecord,
@@ -48,7 +48,10 @@ export function scheduleAutosave(board: Board, getBlob: (assetId: string) => Blo
 async function persist(board: Board, getBlob: (assetId: string) => Blob | undefined): Promise<void> {
   try {
     const counts = new Map<string, number>()
-    for (const n of board.nodes) counts.set(n.assetId, (counts.get(n.assetId) ?? 0) + 1)
+    for (const n of board.nodes) {
+      if (n.kind !== 'image') continue
+      counts.set(n.assetId, (counts.get(n.assetId) ?? 0) + 1)
+    }
 
     await putBoardRecord(board)
 
@@ -88,7 +91,7 @@ export async function restoreAutosave(): Promise<RestoredAutosave | null> {
     const board = await getBoardRecord()
     if (!board || board.nodes.length === 0) return null
 
-    const ids = [...new Set(board.nodes.map((n) => n.assetId))]
+    const ids = [...new Set(board.nodes.filter((n): n is ImageNode => n.kind === 'image').map((n) => n.assetId))]
     const assets = new Map<string, Blob>()
     for (const id of ids) {
       const record = await getAssetRecord(id)
@@ -125,7 +128,7 @@ export function wipeAutosave(): void {
 export async function saveLastCleared(board: Board, getBlob: (assetId: string) => Blob | undefined): Promise<void> {
   if (!available() || board.nodes.length === 0) return
   try {
-    const ids = [...new Set(board.nodes.map((n) => n.assetId))]
+    const ids = [...new Set(board.nodes.filter((n): n is ImageNode => n.kind === 'image').map((n) => n.assetId))]
     const assets = ids
       .map((id) => ({ id, blob: getBlob(id) }))
       .filter((a): a is { id: string; blob: Blob } => a.blob !== undefined)

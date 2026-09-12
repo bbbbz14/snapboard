@@ -63,6 +63,9 @@ export const en = {
   'selection.bringToFrontTitle': 'Bring to front (F)',
   'selection.delete': 'Delete',
 
+  'annotate.arrow': 'Arrow',
+  'annotate.arrowTitle': 'Arrow (A)',
+
   'zoom.out': 'Zoom out',
   'zoom.in': 'Zoom in',
   'zoom.reset': 'Reset zoom to 100%',

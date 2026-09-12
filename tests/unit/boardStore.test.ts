@@ -117,6 +117,72 @@ describe('duplicateSelected', () => {
   })
 })
 
+describe('addArrow', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', nodes: [node('img', { x: 0, y: 0, w: 10, h: 10 })] },
+      selectedIds: [],
+      tool: 'arrow',
+    })
+  })
+
+  it('adds an arrow node, selects it, switches layout to free, and returns to the select tool', () => {
+    useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const board = useBoardStore.getState().board
+    const arrow = board.nodes.find((n) => n.kind === 'arrow')
+    expect(arrow).toBeDefined()
+    expect(arrow).toMatchObject({ start: { x: 0, y: 0 }, end: { x: 40, y: 0 } })
+    expect(board.layout).toBe('free')
+    expect(useBoardStore.getState().selectedIds).toEqual([arrow!.id])
+    expect(useBoardStore.getState().tool).toBe('select')
+  })
+
+  it('does not disturb the existing image node', () => {
+    useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const board = useBoardStore.getState().board
+    expect(board.nodes.find((n) => n.id === 'img')?.frame).toEqual({ x: 0, y: 0, w: 10, h: 10 })
+  })
+
+  it('moving an arrow (setFrames) translates its start/end, not just the bounding frame', () => {
+    useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const arrow = useBoardStore.getState().board.nodes.find((n) => n.kind === 'arrow')!
+    useBoardStore.getState().setFrames([{ id: arrow.id, frame: { ...arrow.frame, x: arrow.frame.x + 100, y: arrow.frame.y + 5 } }])
+    const moved = useBoardStore.getState().board.nodes.find((n) => n.id === arrow.id)
+    expect(moved).toMatchObject({ start: { x: 100, y: 5 }, end: { x: 140, y: 5 } })
+  })
+
+  it('duplicating an arrow offsets its start/end along with the frame', () => {
+    useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const arrow = useBoardStore.getState().board.nodes.find((n) => n.kind === 'arrow')!
+    useBoardStore.setState({ selectedIds: [arrow.id] })
+    useBoardStore.getState().duplicateSelected()
+    const copyId = useBoardStore.getState().selectedIds[0]!
+    const copy = useBoardStore.getState().board.nodes.find((n) => n.id === copyId)
+    expect(copy).toMatchObject({ start: { x: 16, y: 16 }, end: { x: 56, y: 16 } })
+  })
+
+  it('is excluded from toRenderInput.items and step badge numbering, and appears in .arrows', () => {
+    useBoardStore.setState({ board: { ...useBoardStore.getState().board, layout: 'steps', resolvedLayout: 'steps' } })
+    useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const input = toRenderInput(useBoardStore.getState().board)
+    expect(input.items.map((i) => i.id)).toEqual(['img'])
+    expect(input.items[0]?.badge).toBe(1)
+    expect(input.arrows).toHaveLength(1)
+    expect(input.arrows![0]).toMatchObject({ start: { x: 0, y: 0 }, end: { x: 40, y: 0 } })
+  })
+
+  it('can be deleted and undone like any other node', () => {
+    useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const arrowId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'arrow')!.id
+    useBoardStore.setState({ selectedIds: [arrowId] })
+    useBoardStore.getState().deleteSelected()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === arrowId)).toBeUndefined()
+
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === arrowId)).toBeDefined()
+  })
+})
+
 describe('undo/redo', () => {
   beforeEach(() => {
     useBoardStore.setState({

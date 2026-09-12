@@ -1,4 +1,4 @@
-import type { Rect, Size } from '@/lib/geometry'
+import type { Point, Rect, Size } from '@/lib/geometry'
 
 export type NodeId = string
 export type AssetId = string
@@ -29,7 +29,24 @@ export interface ImageNode {
   order: number
 }
 
-export type BoardNode = ImageNode
+/** A gently curved connector, per the product plan's Phase 4 annotations.
+ * `frame` is a derived, padded bounding box - kept only so the generic
+ * hitTest/marquee/zorder code (which knows nothing about node kinds) works
+ * for arrows exactly like it does for images; `start`/`end` are the source
+ * of truth for where it's actually drawn. */
+export interface ArrowNode {
+  kind: 'arrow'
+  id: NodeId
+  frame: Rect
+  order: number
+  start: Point
+  end: Point
+  color: string
+}
+
+export type BoardNode = ImageNode | ArrowNode
+
+export const DEFAULT_ARROW_COLOR = '#dc2626'
 
 export interface Board {
   version: 1

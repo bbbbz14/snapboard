@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { containsPoint, hitTest, intersectsRect, marqueeSelect } from '@/board/interact/hitTest'
-import type { ImageNode } from '@/board/model/types'
+import type { ArrowNode, ImageNode } from '@/board/model/types'
 
 function node(id: string, frame: { x: number; y: number; w: number; h: number }, order: number): ImageNode {
   return { kind: 'image', id, assetId: `a-${id}`, frame, order }
+}
+
+function arrow(id: string, frame: { x: number; y: number; w: number; h: number }, order: number): ArrowNode {
+  return { kind: 'arrow', id, frame, order, start: { x: frame.x, y: frame.y }, end: { x: frame.x + frame.w, y: frame.y + frame.h }, color: '#dc2626' }
 }
 
 describe('containsPoint', () => {
@@ -47,6 +51,14 @@ describe('hitTest', () => {
   it('returns the topmost (highest order) node when frames overlap', () => {
     const nodes = [node('back', { x: 0, y: 0, w: 20, h: 20 }, 0), node('front', { x: 0, y: 0, w: 20, h: 20 }, 1)]
     expect(hitTest(nodes, { x: 5, y: 5 })).toBe('front')
+  })
+
+  it('is generic across node kinds - an arrow hits like any other frame', () => {
+    const nodes: (ImageNode | ArrowNode)[] = [
+      node('img', { x: 0, y: 0, w: 20, h: 20 }, 0),
+      arrow('arr', { x: 0, y: 0, w: 20, h: 20 }, 1),
+    ]
+    expect(hitTest(nodes, { x: 5, y: 5 })).toBe('arr')
   })
 })
 

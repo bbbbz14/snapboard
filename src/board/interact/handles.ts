@@ -28,6 +28,10 @@ export function hitTestHandle(
 ): { id: NodeId; corner: Corner; frame: Rect } | null {
   const reach = HANDLE_SIZE / 2 + HANDLE_TOLERANCE
   for (const n of nodes) {
+    // Arrows have no aspect ratio to keep, and `resizeKeepingAspect` only
+    // makes sense for images - dragging an arrow's selection corner moves it
+    // instead (see BoardCanvas's onPointerDown falling through to `moveRef`).
+    if (n.kind !== 'image') continue
     if (!selectedIds.includes(n.id)) continue
     for (const corner of CORNERS) {
       const p = boardToScreen(camera, viewport, cornerPoint(n.frame, corner))

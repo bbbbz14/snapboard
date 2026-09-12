@@ -2,10 +2,13 @@ import { create } from 'zustand'
 import { computeLayout } from '@/board/layout/computeLayout'
 import {
   BACKGROUNDS,
+  DEFAULT_ARROW_COLOR,
   DEFAULT_BOARD,
+  type ArrowNode,
   type Background,
   type BackgroundName,
   type Board,
+  type BoardNode,
   type ImageNode,
   type LayoutMode,
   type NodeId,
@@ -14,8 +17,9 @@ import {
 import { moveToFront } from '@/board/model/zorder'
 import { AssetStore, type Asset } from '@/assets/assetStore'
 import type { Rejection } from '@/assets/validate'
+import { arrowFrame } from '@/board/render/arrow'
 import type { RenderInput } from '@/board/render/renderScene'
-import { translate, type Rect } from '@/lib/geometry'
+import { translate, translatePoint, type Point, type Rect } from '@/lib/geometry'
 import {
   restoreAutosave,
   restoreLastCleared as restoreLastClearedFromDB,
@@ -113,6 +117,18 @@ interface BoardState {
   /** Copies the selected nodes, offset so they read as distinct from the
    * originals, and selects the copies. */
   duplicateSelected: () => void
+  /** Which pointer gesture on the board canvas means "draw a new arrow"
+   * instead of "select/move/marquee" - not part of `Board` for the same
+   * reason `selectedIds` isn't: it's what the user is about to do, not
+   * arranged content. Reverts to `'select'` the instant an arrow commits. */
+  tool: 'select' | 'arrow'
+  setTool: (tool: 'select' | 'arrow') => void
+  /** Commits a new arrow from `start` to `end` (board-space) and switches
+   * back to the select tool - same one-shot pattern a stamp tool would use.
+   * Locks the board to `layout: 'free'` like `setFrames` does: an arrow's
+   * `start`/`end` are absolute board-space points, so a later relayout that
+   * moves images around would silently leave it pointing at nothing. */
+  addArrow: (start: Point, end: Point) => void
   /** Moves the selected nodes to the top of z-order (drawn last). Also
    * relayouts, since `order` doubles as layout position for auto boards -
    * same overload `reorder` already relies on for drag-to-reorder. */
@@ -133,10 +149,16 @@ interface BoardState {
 let nodeSeq = 0
 let toastSeq = 0
 
-/** Recomputes frames and canvas size from the current nodes. */
+/** Recomputes frames and canvas size from the current image nodes. Arrows
+ * are never part of the layout - their `start`/`end` are absolute board-
+ * space points the user placed by hand, same as a manually-moved image's
+ * frame, so they pass through untouched (only reachable at all when the
+ * board isn't `'free'` yet, i.e. before any arrow could exist, or after the
+ * user explicitly turns auto layout back on - see `addArrow`). */
 function relayout(board: Board): Board {
   if (board.layout === 'free') return board
-  const items = [...board.nodes]
+  const items = board.nodes
+    .filter((n): n is ImageNode => n.kind === 'image')
     .sort((a, b) => a.order - b.order)
     .map((n) => ({ id: n.id, natural: assetStore.get(n.assetId)?.natural ?? { w: 16, h: 9 } }))
 
@@ -151,16 +173,19 @@ function relayout(board: Board): Board {
     ...board,
     resolvedLayout: result.mode,
     size: result.size,
-    nodes: board.nodes.map((n) => ({ ...n, frame: result.frames[n.id] ?? n.frame })),
+    nodes: board.nodes.map((n) => (n.kind === 'image' ? { ...n, frame: result.frames[n.id] ?? n.frame } : n)),
   }
 }
 
 /** Every assetId used by any of these boards is "reachable" and must stay
- * decoded - see `AssetStore.reconcile`. */
+ * decoded - see `AssetStore.reconcile`. Arrows have no assetId. */
 function reconcileAssets(boards: Board[]): void {
   const counts = new Map<string, number>()
   for (const b of boards) {
-    for (const n of b.nodes) counts.set(n.assetId, (counts.get(n.assetId) ?? 0) + 1)
+    for (const n of b.nodes) {
+      if (n.kind !== 'image') continue
+      counts.set(n.assetId, (counts.get(n.assetId) ?? 0) + 1)
+    }
   }
   assetStore.reconcile(counts)
 }
@@ -200,7 +225,8 @@ function autosave(board: Board): void {
  * same as a corrupt store would be handled either way. Returns null if
  * nothing decodable is left - not worth surfacing as a recovery option. */
 async function decodeBoardAssets(board: Board, blobs: Map<string, Blob>): Promise<Board | null> {
-  const uniqueIds = [...new Set(board.nodes.map((n) => n.assetId))]
+  const imageNodes = board.nodes.filter((n): n is ImageNode => n.kind === 'image')
+  const uniqueIds = [...new Set(imageNodes.map((n) => n.assetId))]
   const decoded = new Map<string, Asset>()
   await Promise.all(
     uniqueIds.map(async (id) => {
@@ -210,7 +236,8 @@ async function decodeBoardAssets(board: Board, blobs: Map<string, Blob>): Promis
       if (asset) decoded.set(id, asset)
     }),
   )
-  const nodes = board.nodes.filter((n) => decoded.has(n.assetId))
+  // Arrows carry no asset to fail decoding - only images can drop out here.
+  const nodes = board.nodes.filter((n) => n.kind !== 'image' || decoded.has(n.assetId))
   if (nodes.length === 0) return null
   const result: Board =
     nodes.length === board.nodes.length ? board : relayout({ ...board, nodes: nodes.map((n, i) => ({ ...n, order: i })) })
@@ -231,6 +258,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   toasts: [],
   recoveredBoard: null,
   lastCleared: null,
+  tool: 'select',
 
   async hydrate() {
     const restored = await restoreAutosave()
@@ -348,7 +376,20 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       return commitBoard(s, {
         ...s.board,
         layout: 'free',
-        nodes: s.board.nodes.map((n) => (byId.has(n.id) ? { ...n, frame: byId.get(n.id)! } : n)),
+        nodes: s.board.nodes.map((n) => {
+          const frame = byId.get(n.id)
+          if (!frame) return n
+          // An arrow's frame is only ever moved wholesale (see handles.ts -
+          // arrows never expose a resize handle), so the delta between old
+          // and new frame origin is the same translation to apply to its
+          // actual start/end points.
+          if (n.kind === 'arrow') {
+            const dx = frame.x - n.frame.x
+            const dy = frame.y - n.frame.y
+            return { ...n, frame, start: translatePoint(n.start, dx, dy), end: translatePoint(n.end, dx, dy) }
+          }
+          return { ...n, frame }
+        }),
       })
     }),
 
@@ -378,16 +419,22 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       const ids = new Set(s.selectedIds)
       if (ids.size === 0) return {}
       const sorted = [...s.board.nodes].sort((a, b) => a.order - b.order)
-      const nodes: ImageNode[] = []
+      const nodes: BoardNode[] = []
       const newIds: NodeId[] = []
       for (const n of sorted) {
         nodes.push(n)
         if (ids.has(n.id)) {
-          const copy: ImageNode = {
-            ...n,
-            id: `n${nodeSeq++}`,
-            frame: translate(n.frame, DUPLICATE_OFFSET, DUPLICATE_OFFSET),
-          }
+          const frame = translate(n.frame, DUPLICATE_OFFSET, DUPLICATE_OFFSET)
+          const copy: BoardNode =
+            n.kind === 'arrow'
+              ? {
+                  ...n,
+                  id: `n${nodeSeq++}`,
+                  frame,
+                  start: translatePoint(n.start, DUPLICATE_OFFSET, DUPLICATE_OFFSET),
+                  end: translatePoint(n.end, DUPLICATE_OFFSET, DUPLICATE_OFFSET),
+                }
+              : { ...n, id: `n${nodeSeq++}`, frame }
           nodes.push(copy)
           newIds.push(copy.id)
         }
@@ -395,6 +442,26 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       return {
         ...commitBoard(s, relayout({ ...s.board, nodes: nodes.map((n, i) => ({ ...n, order: i })) })),
         selectedIds: newIds,
+      }
+    }),
+
+  setTool: (tool) => set({ tool }),
+
+  addArrow: (start, end) =>
+    set((s) => {
+      const arrow: ArrowNode = {
+        kind: 'arrow',
+        id: `n${nodeSeq++}`,
+        frame: arrowFrame(start, end),
+        order: s.board.nodes.length,
+        start,
+        end,
+        color: DEFAULT_ARROW_COLOR,
+      }
+      return {
+        ...commitBoard(s, { ...s.board, layout: 'free', nodes: [...s.board.nodes, arrow] }),
+        selectedIds: [arrow.id],
+        tool: 'select',
       }
     }),
 
@@ -475,19 +542,25 @@ function rejectionMessage(r: Rejection): string {
   }
 }
 
-/** Adapts board state into the renderer's input, using display-resolution bitmaps. */
+/** Adapts board state into the renderer's input, using display-resolution
+ * bitmaps. Step badges number only the images, in order - filtering before
+ * indexing keeps that true now that arrows can also live in `board.nodes`. */
 export function toRenderInput(board: Board): RenderInput {
+  const sorted = [...board.nodes].sort((a, b) => a.order - b.order)
   return {
     size: board.size,
     background: board.background,
     style: board.style,
-    items: [...board.nodes]
-      .sort((a, b) => a.order - b.order)
+    items: sorted
+      .filter((n): n is ImageNode => n.kind === 'image')
       .map((n, i) => ({
         id: n.id,
         frame: n.frame,
         image: assetStore.get(n.assetId)?.display ?? null,
         ...(board.resolvedLayout === 'steps' ? { badge: i + 1 } : {}),
       })),
+    arrows: sorted
+      .filter((n): n is ArrowNode => n.kind === 'arrow')
+      .map((n) => ({ id: n.id, start: n.start, end: n.end, color: n.color })),
   }
 }

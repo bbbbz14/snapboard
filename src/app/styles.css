@@ -407,6 +407,50 @@ body {
   background: color-mix(in srgb, #dc2626 10%, transparent);
 }
 
+/* Cursor hint while the arrow tool is armed - the canvas itself still owns
+   every pointer listener (see BoardCanvas.tsx), this is purely cosmetic. */
+.board-canvas--arrow {
+  cursor: crosshair;
+}
+
+/* Bottom-left, mirroring .zoom-controls' bottom-right placement. */
+.annotation-toolbar {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+}
+
+.annotation-toolbar__btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  border-radius: 7px;
+  width: 28px;
+  height: 28px;
+  color: var(--text-dim);
+}
+
+.annotation-toolbar__btn:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.annotation-toolbar__btn.is-active {
+  color: #fff;
+  background: #dc2626;
+}
+
 .zoom-controls {
   position: absolute;
   right: 16px;
