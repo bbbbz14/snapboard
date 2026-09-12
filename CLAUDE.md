@@ -9,14 +9,14 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 # START HERE — what this session should do next
 
 **Current state:** Phase 1 complete, manual test checklist gate cleared (see
-below). Phase 2 items 1–7 (zoom/pan, selection, move/resize, explicit
-free-layout switch, drag-to-reorder, delete/duplicate/z-order, undo/redo) are
-done; items 8–9 are not started — continue with item 8 (autosave to
-IndexedDB) next. `npm run verify` green (typecheck + 127 unit + 27 renderer
-parity on 3 engines + 102 e2e passed, 3 skipped by design — clipboard
-round-trip on headless Firefox/WebKit (ADR-003), plus the reorder pixel-swap
-assertion on headless WebKit only, see the WebKit rasterisation gotcha below
-— neither is a failure).
+below). Phase 2 items 1–8 (zoom/pan, selection, move/resize, explicit
+free-layout switch, drag-to-reorder, delete/duplicate/z-order, undo/redo,
+autosave to IndexedDB) are done; item 9 is not started — continue with the
+full keyboard shortcut set next. `npm run verify` green (typecheck + 140 unit
++ 27 renderer parity on 3 engines + 108 e2e passed, 3 skipped by design —
+clipboard round-trip on headless Firefox/WebKit (ADR-003), plus the reorder
+pixel-swap assertion on headless WebKit only, see the WebKit rasterisation
+gotcha below — neither is a failure).
 
 ### Phase 2 item 1 — done: zoom, pan, zoom indicator, fit-to-view
 
@@ -295,7 +295,88 @@ Shipped as its own commit (`ecdc42e`). Pushed and deployed to the live site.
   the AssetStore interaction above is the e2e test's job specifically, not
   something the fast unit suite can see.
 
-## Live site status — up to date with item 7
+### Phase 2 item 8 — done: autosave to IndexedDB
+
+Shipped as its own commit. Not yet pushed/deployed - see below.
+
+- `src/board/persist/db.ts` - the only file that touches `indexedDB` directly.
+  Two object stores: `board` (one record, key `"current"`) and `assets`
+  (keyed by assetId). No library (`idb`, despite the product plan's 7.2 stack
+  list naming it) - the codebase's own pattern for `AssetStore`/`TileCache`
+  is a bespoke, well-tested wrapper around the platform API, and IndexedDB's
+  surface here is small enough (get/put/delete/clear) that a library would
+  just be another thing to trust instead of test.
+- `src/board/persist/autosave.ts` - the actual autosave policy: an 800ms
+  debounce (product plan 8.2) so a continuous gesture (the gap slider, a
+  drag) doesn't write on every tick, plus a `knownAssetIds` diff cache that
+  makes a save write only assetIds newly referenced or no longer referenced,
+  never the unchanged ones - a direct analogue of `boardStore.reconcileAssets`
+  (item 7), just targeting IndexedDB instead of `AssetStore`'s in-memory
+  refcounts. `restoreAutosave()` returns null for "nothing saved" *and* for
+  "saved but empty" - an empty board isn't a "recovered your work" moment.
+- `boardStore.ts`'s `commitBoard` (item 7's single mutation choke point) now
+  also calls `scheduleAutosave` - the same side-effect shape it already uses
+  for `reconcileAssets`. `undo`/`redo` build their own return value instead
+  of calling `commitBoard` (unchanged from item 7), so they call it directly;
+  every other mutation goes through `commitBoard` and gets it for free.
+- New store field `recoveredBoard` and actions `hydrate`/`dismissRecovery`/
+  `startFresh`. `hydrate()` runs once from `App.tsx`'s mount effect, before
+  the user can commit any action of their own (a later hydrate could clobber
+  a real edit). It decodes each restored asset through the *existing*
+  decode-worker pipeline via a new `AssetStore.restore(id, blob)` (same
+  worker round-trip `ingest()` uses, but keyed by the *original* assetId
+  instead of a fresh one, and bumping `AssetStore`'s and `boardStore`'s own
+  id sequences past whatever it restores so a later `addFiles`/duplicate
+  can't mint a colliding id). A node whose asset fails to decode is dropped
+  rather than left rendering nothing forever.
+- `RecoveryBar.tsx` - "Recovered your last board · [Start fresh]" per
+  CLAUDE.md's exact wording, plus a dismiss (×). Dismissing keeps the
+  restored board; only "Start fresh" empties it. "Start fresh" reuses the
+  existing `clear()` shape (so it's undoable, same as the already-shipped
+  "Clear board" button) but also calls `wipeAutosave()` directly - an
+  explicit, deliberate "throw this away" action shouldn't wait out the 800ms
+  debounce before it takes effect, the same reasoning invariant 4 applies to
+  manual layout edits.
+- **Real, engine-specific bug this surfaced:** headless WebKit's IndexedDB
+  throws `UnknownError: Error preparing Blob/File data to be stored in
+  object store` when a `Blob` is put into an object store directly - every
+  restored node's asset silently failed to persist, so a reload always
+  produced an *empty* recovered board (dropped by the "asset didn't decode"
+  path above) even though the board record itself had saved fine. Fixed by
+  storing assets as `{ id, data: ArrayBuffer, type, refs }` instead of
+  `{ id, blob, refs }` - `db.ts` converts via `blob.arrayBuffer()` on the way
+  in and `new Blob([data], { type })` on the way out, so every caller above
+  it still deals only in `Blob`. Not reproduced on Chromium or Firefox; real
+  Safari is unconfirmed either way - same shape as the existing WebKit
+  rasterisation gotcha. Worth checking first if any *other* future feature
+  needs to put a `Blob`/`File` directly into IndexedDB.
+- Autosave is explicitly best-effort: `available()` no-ops the whole module
+  when `indexedDB` doesn't exist (Safari private browsing), and `persist()`/
+  `restoreAutosave()` swallow any storage error rather than throwing - this
+  runs fire-and-forget from a `setTimeout`, so an uncaught rejection there
+  would otherwise surface as an unhandled promise rejection with nothing
+  visibly wrong on screen. Same "nice-to-have, not a hard dependency"
+  treatment ADR-003 already gives `clipboard.write()`.
+- `tests/unit/persist.test.ts` exercises `db.ts`/`autosave.ts` for real
+  against `fake-indexeddb` (new devDependency - the product plan's own 13
+  section names "fake IndexedDB" as the intended test strategy) - debounce
+  timing, the add/delete asset diff, the shared-asset refcount, restore, and
+  wipe. Real timers, not `vi.useFakeTimers()`: fake timers don't reliably
+  interleave with fake-indexeddb's own internal scheduling (several tests
+  hung indefinitely before this was found) - worth remembering before
+  reaching for fake timers around *any* IndexedDB code, real or faked.
+  `tests/unit/boardStore.test.ts` covers `hydrate`/`dismissRecovery`/
+  `startFresh` against the plain-Node environment (no `fake-indexeddb`
+  import), which exercises the `available()` no-op path specifically.
+- **e2e gotcha worth remembering:** `page.waitForFunction(() => new
+  Promise(...))` does not reliably await an in-page promise - it can accept
+  the (always-truthy) Promise object itself as the poll result before it
+  resolves, so a predicate that's "true once IndexedDB actually has the
+  data" can pass instantly against stale/absent data. `tests/e2e/autosave.spec.ts`
+  polls from the Node side instead (`expect.poll(() => page.evaluate(...))`),
+  which round-trips per attempt and actually waits for the resolved value.
+
+## ⚠️ The live site is behind `master` again — item 8 isn't pushed or deployed
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved, all assets verified 200 from the command
@@ -303,10 +384,11 @@ line. Source push (`git push origin master:main`) and
 `bash scripts/deploy-pages.sh` were last run together after Phase 2 item 7
 (`2502c15`), and both worked cleanly again on the first try (no re-auth, no
 DNS re-check needed) — the earlier "Workflows: Read and write" token-scope fix
-from a prior session is holding. Live site now serves items 1–7. (The custom
-domain sits behind a CDN edge cache with a 10-minute `max-age`, so a stale
-bundle hash can be observed for a few minutes right after a deploy — not a
-deploy failure, just propagation.)
+from a prior session is holding. Live site still only serves items 1–7; item
+8 (autosave) is committed locally but neither command below has been run for
+it yet. (The custom domain sits behind a CDN edge cache with a 10-minute
+`max-age`, so a stale bundle hash can be observed for a few minutes right
+after a deploy — not a deploy failure, just propagation.)
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:
@@ -378,9 +460,9 @@ wanted. Build in this order; each item is independently shippable.
 7. ✅ **Undo/redo.** Done — see the note under START HERE above, including
    the asset-lifetime bug undo history surfaced in item 6's refcounting and
    the keyboard-guard bug the gap slider surfaced.
-8. **Autosave to IndexedDB** so closing the tab does not lose work. Restore with
-   a dismissible "Recovered your last board · [Start fresh]" bar. Assets are
-   Blobs in IDB, reference-counted.
+8. ✅ **Autosave to IndexedDB.** Done — see the note under START HERE above,
+   including a real WebKit-only IndexedDB bug it surfaced (storing a `Blob`
+   directly fails there; store bytes instead).
 9. **Full keyboard shortcut set** — see section 14 of the product plan. Avoid
    shortcuts the browser owns.
 
@@ -525,6 +607,20 @@ tests/render/         renderer parity harness (imports src directly, dev server 
   letting it fail (ADR-005).
 - **Safari is the worst case for everything.** Decoding is ~4x Chromium.
   Performance budgets are per-engine, not global.
+- **Headless WebKit cannot `put()` a `Blob` directly into IndexedDB** - throws
+  `UnknownError: Error preparing Blob/File data to be stored in object store`
+  every time (Phase 2 item 8). Store `{ data: ArrayBuffer, type }` instead and
+  reconstruct the `Blob` on read (`src/board/persist/db.ts`). Not reproduced
+  on Chromium or Firefox; real Safari is unconfirmed either way.
+- **`page.waitForFunction(() => new Promise(...))` does not reliably await an
+  in-page promise** - it can accept the (always-truthy) pending Promise object
+  itself as the poll result. Poll from the Node side instead:
+  `expect.poll(() => page.evaluate(...))`, which round-trips per attempt and
+  actually waits for the resolved value (`tests/e2e/autosave.spec.ts`).
+- **Fake timers and `fake-indexeddb` don't reliably interleave.** `vi.useFakeTimers()`
+  can leave IndexedDB requests never resolving (tests hang instead of failing).
+  Use real, short waits around code that touches IndexedDB instead (see
+  `tests/unit/persist.test.ts`).
 
 ## Product guardrails
 
