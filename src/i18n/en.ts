@@ -19,6 +19,7 @@ export const en = {
   'toolbar.style': 'Style',
   'toolbar.spacing': 'Spacing',
   'toolbar.copy': 'Copy',
+  'toolbar.copyTitle': 'Copy ({{mod}}+Shift+C)',
   'toolbar.copied': 'Copied',
   'toolbar.download': 'Download',
   'toolbar.clear': 'Clear board',
@@ -47,7 +48,9 @@ export const en = {
 
   'selection.count': '{{count}} selected',
   'selection.duplicate': 'Duplicate',
+  'selection.duplicateTitle': 'Duplicate (D)',
   'selection.bringToFront': 'Bring to front',
+  'selection.bringToFrontTitle': 'Bring to front (F)',
   'selection.delete': 'Delete',
 
   'zoom.out': 'Zoom out',

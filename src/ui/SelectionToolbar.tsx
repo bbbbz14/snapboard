@@ -22,10 +22,10 @@ export const SelectionToolbar = forwardRef<HTMLDivElement, Props>(function Selec
 ) {
   return (
     <div ref={ref} className="selection-toolbar" style={{ display: 'none' }}>
-      <button className="selection-toolbar__btn" title={t('selection.duplicate')} aria-label={t('selection.duplicate')} onClick={onDuplicate}>
+      <button className="selection-toolbar__btn" title={t('selection.duplicateTitle')} aria-label={t('selection.duplicate')} onClick={onDuplicate}>
         ⧉
       </button>
-      <button className="selection-toolbar__btn" title={t('selection.bringToFront')} aria-label={t('selection.bringToFront')} onClick={onBringToFront}>
+      <button className="selection-toolbar__btn" title={t('selection.bringToFrontTitle')} aria-label={t('selection.bringToFront')} onClick={onBringToFront}>
         ⤒
       </button>
       <button className="selection-toolbar__btn selection-toolbar__btn--danger" title={t('selection.delete')} aria-label={t('selection.delete')} onClick={onDelete}>

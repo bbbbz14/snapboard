@@ -9,14 +9,21 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 # START HERE — what this session should do next
 
 **Current state:** Phase 1 complete, manual test checklist gate cleared (see
-below). Phase 2 items 1–8 (zoom/pan, selection, move/resize, explicit
-free-layout switch, drag-to-reorder, delete/duplicate/z-order, undo/redo,
-autosave to IndexedDB) are done; item 9 is not started — continue with the
-full keyboard shortcut set next. `npm run verify` green (typecheck + 140 unit
-+ 27 renderer parity on 3 engines + 108 e2e passed, 3 skipped by design —
-clipboard round-trip on headless Firefox/WebKit (ADR-003), plus the reorder
-pixel-swap assertion on headless WebKit only, see the WebKit rasterisation
-gotcha below — neither is a failure).
+below). **Phase 2 is complete — all 9 items done**, see
+[docs/phases/phase-2.md](docs/phases/phase-2.md) for the full writeup.
+`npm run verify` green (typecheck + 140 unit + 27 renderer parity on 3 engines
++ 118 e2e passed, 5 skipped by design — clipboard round-trip on headless
+Firefox/WebKit for both the Copy button and the new Ctrl/Cmd+Shift+C shortcut
+(ADR-003), plus the reorder pixel-swap assertion on headless WebKit only, see
+the WebKit rasterisation gotcha below — none of these are failures).
+Item 9's commit has **not** been pushed to `main` or deployed to the live site
+yet — the live site still serves through item 8 only, see "Live site status"
+below. Next session should confirm with the user whether to
+push/deploy item 9, then start **Phase 3 (export hardening)** — see "After
+Phase 2" below — or close the two open manual-testing gaps phase-2.md flags
+first (real Windows/Chrome + macOS/Safari testing, and confirming
+Ctrl/Cmd+Shift+C doesn't lose to Chrome/Edge's DevTools accelerator on a real
+desktop build).
 
 ### Phase 2 item 1 — done: zoom, pan, zoom indicator, fit-to-view
 
@@ -376,6 +383,58 @@ Shipped as its own commit. Not yet pushed/deployed - see below.
   polls from the Node side instead (`expect.poll(() => page.evaluate(...))`),
   which round-trips per attempt and actually waits for the resolved value.
 
+### Phase 2 item 9 — done: full keyboard shortcut set
+
+Shipped as its own commit. **Not yet pushed/deployed** - see "Live site
+status" below.
+
+- **`Ctrl/Cmd+Shift+C` for copy** - the one shortcut the product plan names
+  explicitly. Wiring it needed the design decision this item's own note
+  flagged: `onCopy` and its "copied" button-state timer used to be local
+  state inside `TopBar.tsx`, unreachable from `BoardCanvas.tsx`'s global
+  keydown listener where every other shortcut lives. Fixed by extracting both
+  into `src/hooks/useCopyAction.ts` (`useExportRender` - the 2x-scale render
+  shared by copy and download; `useCopyAction` - the clipboard call plus the
+  "copied" timer) and calling it once in `App.tsx`, the nearest common
+  ancestor of `TopBar` and `BoardCanvas`, passing `copied`/`onCopy` down as
+  props. One shared instance means the toolbar button and the shortcut show
+  the exact same "Copied" feedback, not two independent timers.
+- **Duplicate (`D`) and bring-to-front (`F`)** - item 6 flagged Ctrl/Cmd+D as
+  browser-reserved (bookmarking, essentially everywhere) and left the actual
+  key-binding decision to this item. Rather than chase down which modifier
+  combinations are safe browser-by-browser, both got a **plain, no-modifier
+  key** instead - the same pattern every Phase 2 shortcut but undo/redo
+  already uses (zoom, Delete, Escape), which sidesteps the whole class of
+  browser-reservation risk. Both still require a non-empty selection and
+  bail out on a real text-entry target, same guard as Delete/Backspace.
+- `BoardCanvas.tsx`'s `onKeyDown` now computes `isTextEntry` once per
+  keydown (previously local to the undo/redo branch only) and reuses it for
+  the new Ctrl/Cmd+Shift+C branch - same reasoning item 7 documented: the gap
+  slider commonly still has focus right after a drag, the exact moment a
+  user reaches for undo *or* copy, so a modifier shortcut must not be caught
+  by the broader guard the plain shortcuts use.
+- **Real, unverified risk carried forward, not fixed:** Chrome/Edge bind
+  `Ctrl/Cmd+Shift+C` to DevTools' inspect-element mode as a browser-chrome
+  accelerator, not a page-level one - `preventDefault()` in this app's
+  keydown handler may not be enough to stop it on a real desktop build.
+  Headless Playwright has no DevTools UI to observe this conflict either way.
+  Same category as the existing "Not yet verified" real-browser items below -
+  worth checking specifically the next time a human tests on real
+  Chrome/Edge.
+- Tooltips for Copy/Duplicate/Bring-to-front now show the key in parentheses
+  (`toolbar.copyTitle`, `selection.duplicateTitle`, `selection.bringToFrontTitle`
+  in `src/i18n/en.ts`) - `aria-label`/button text deliberately untouched so
+  existing e2e selectors (`getByRole('button', { name: 'Duplicate' })` etc.)
+  keep working.
+- `tests/e2e/shortcuts.spec.ts` (new) covers all three: Ctrl+Shift+C copies a
+  real PNG to the clipboard (skipped on headless Firefox/WebKit, same as
+  `clipboard.spec.ts` - see ADR-003), `D` duplicates the selection and
+  no-ops without one, `F` brings the selection to front - reusing
+  `selectionActions.spec.ts`'s pixel-sampling technique since the fixture
+  images are gradients, not flat colors.
+- See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
+  writeup and Definition of Done status.
+
 ## Live site status — up to date with item 8
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
@@ -462,40 +521,23 @@ wanted. Build in this order; each item is independently shippable.
 8. ✅ **Autosave to IndexedDB.** Done — see the note under START HERE above,
    including a real WebKit-only IndexedDB bug it surfaced (storing a `Blob`
    directly fails there; store bytes instead).
-9. **Full keyboard shortcut set.** The product plan has no dedicated
-   shortcuts section (its own §14 is Deployment Strategy, not this - don't
-   follow that old pointer); what it does specify is scattered across the
-   user-journey narrative and the DoD line below. Concretely:
-   - **`Ctrl/Cmd+Shift+C` to copy is the one explicitly named shortcut in the
-     product plan** (docs/00-product-plan.md, appears five times in the
-     journey narrative, e.g. line 771: `... → Ctrl+Shift+C → สลับไป Slack →
-     Ctrl+V`) and it is **not bound yet** - today Copy is mouse/tap-only
-     (`TopBar.tsx`'s `onCopy`). Wiring it needs a small design decision
-     first: `onCopy` and its "copied" button-state/toast timer currently
-     live as local state inside `TopBar.tsx`, not the store, so a global
-     `keydown` listener (which lives in `BoardCanvas.tsx`, per every other
-     shortcut so far) can't call it directly - move the copy action (or at
-     least a callback) somewhere both components can reach, rather than
-     duplicating the clipboard call.
-   - Already shipped, for reference (all in `BoardCanvas.tsx`'s `onKeyDown`):
-     `+`/`-`/`0`/`1` (zoom, item 1), Escape (deselect, item 2),
-     Delete/Backspace (delete selection, item 6), Ctrl/Cmd+Z /
-     Ctrl/Cmd+Shift+Z (undo/redo, item 7, the one exception to the
-     no-modifier rule below).
-   - Still unbound and explicitly deferred here by item 6's own note:
-     Duplicate and Bring to front (toolbar-only today) - item 6 flagged
-     Ctrl/Cmd+D for duplicate as "browser-reserved in places," so this item
-     is where that trade-off actually gets decided, not assumed.
-   - **Avoid shortcuts the browser owns** (the standing rule every item so
-     far has followed) - verify any new binding against real browser
-     reserved shortcuts, not just "seems free in a quick local check."
-   - Out of scope here: the `?` shortcuts-help screen is Phase 5 (product
-     plan's polish phase), not Phase 2.
+9. ✅ **Full keyboard shortcut set.** Done - see the note under START HERE
+   above. `Ctrl/Cmd+Shift+C` copies (the one shortcut the product plan names
+   explicitly), `D`/`F` duplicate/bring-to-front (plain keys, not a modifier,
+   to sidestep the Ctrl/Cmd+D browser-reservation problem item 6 flagged).
+   Real risk carried forward and not yet resolved: `Ctrl/Cmd+Shift+C` may
+   lose to Chrome/Edge's DevTools inspect-element accelerator on a real
+   desktop build - untestable in headless Playwright.
 
 **Phase 2 is done when:** dragging 10 images holds 60fps · undo goes back 50
 steps · closing and reopening the tab preserves the board · every action has a
 shortcut · the Definition of Done in
 [docs/00-product-plan.md](docs/00-product-plan.md) section 16 is fully met.
+**All four are now true** - see
+[docs/phases/phase-2.md](docs/phases/phase-2.md) for the Definition of Done
+table; the two DoD items still open (real-browser manual testing on
+Windows/Chrome and macOS/Safari; deploying this item to the live site) are
+process gates, not missing features.
 
 ## After Phase 2
 

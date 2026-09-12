@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
-import { useBoardStore, toRenderInput } from '@/board/store/boardStore'
+import { useBoardStore } from '@/board/store/boardStore'
 import { BACKGROUNDS, type BackgroundName, type LayoutMode, type StylePreset } from '@/board/model/types'
-import { exportBoard, exportFilename } from '@/board/export/exportBoard'
-import { copyImageToClipboard, downloadBlob } from '@/board/export/clipboard'
+import { exportFilename } from '@/board/export/exportBoard'
+import { downloadBlob } from '@/board/export/clipboard'
+import { useExportRender } from '@/hooks/useCopyAction'
 import { modKey, t } from '@/i18n/t'
 
 const LAYOUTS: { mode: LayoutMode; label: string }[] = [
@@ -26,39 +26,17 @@ const STYLES: { key: StylePreset; label: string }[] = [
   { key: 'soft', label: t('style.soft') },
 ]
 
-export function TopBar() {
+interface Props {
+  copied: boolean
+  onCopy: () => void
+}
+
+export function TopBar({ copied, onCopy }: Props) {
   const board = useBoardStore((s) => s.board)
   const store = useBoardStore()
-  const [copied, setCopied] = useState(false)
-  const copyTimer = useRef<number | null>(null)
+  const render = useExportRender()
 
   const hasImages = board.nodes.length > 0
-
-  /** Renders at 2x: sharp on retina, and still comfortably inside the safe area. */
-  const render = async () => {
-    const result = await exportBoard(toRenderInput(board), { scale: 2, format: 'image/png' })
-    if (result.downscaled) {
-      store.toast(t('toast.exportDownscaled', { scale: result.appliedScale }), 'warn')
-    }
-    return result.blob
-  }
-
-  const onCopy = async () => {
-    const filename = exportFilename('image/png')
-    const outcome = await copyImageToClipboard(render, (blob) => downloadBlob(blob, filename))
-
-    if (outcome.method === 'download') {
-      store.toast(t('toast.copyFailed'), 'warn')
-      return
-    }
-    setCopied(true)
-    if (copyTimer.current) window.clearTimeout(copyTimer.current)
-    copyTimer.current = window.setTimeout(() => setCopied(false), 1600)
-    store.toast(
-      outcome.verified ? t('toast.copied', { mod: modKey() }) : t('toast.copiedUnverified'),
-      'success',
-    )
-  }
 
   const onDownload = async () => {
     const name = exportFilename('image/png')
@@ -155,7 +133,11 @@ export function TopBar() {
           <button className="btn" onClick={onDownload}>
             {t('toolbar.download')}
           </button>
-          <button className={`btn btn--primary${copied ? ' btn--done' : ''}`} onClick={onCopy}>
+          <button
+            className={`btn btn--primary${copied ? ' btn--done' : ''}`}
+            title={t('toolbar.copyTitle', { mod: modKey() })}
+            onClick={onCopy}
+          >
             {copied ? t('toolbar.copied') : t('toolbar.copy')}
           </button>
         </>

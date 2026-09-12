@@ -34,6 +34,9 @@ interface Props {
   board: Board
   /** Space the canvas may occupy on screen, in CSS pixels. */
   viewport: { w: number; h: number }
+  /** Shared with TopBar's Copy button (see `useCopyAction`) so Ctrl/Cmd+Shift+C
+   * triggers the exact same clipboard call and "copied" feedback. */
+  onCopy: () => void
 }
 
 /**
@@ -44,7 +47,7 @@ interface Props {
  * what places the board correctly inside that fixed-size canvas; export never
  * sets it, so this is purely a preview concern - see invariant 1.
  */
-export function BoardCanvas({ board, viewport }: Props) {
+export function BoardCanvas({ board, viewport, onCopy }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const interactionCanvasRef = useRef<HTMLCanvasElement>(null)
   const pageRef = useRef<HTMLDivElement>(null)
@@ -554,31 +557,47 @@ export function BoardCanvas({ board, viewport }: Props) {
     }
   }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction])
 
-  // Keyboard shortcuts. Undo/redo is the one deliberate exception to "no
-  // modifier keys": Ctrl/Cmd+Z is universal and, unlike Ctrl/Cmd+D (see item
-  // 6's note on why that one waits for item 9), no browser reserves it on a
-  // plain page. Every other shortcut here still avoids modifiers so the
-  // browser's own Ctrl/Cmd +/-/0 page-zoom shortcuts are left alone.
+  // Keyboard shortcuts (Phase 2 item 9 completes this set). Undo/redo and
+  // copy are the deliberate exceptions to "no modifier keys": Ctrl/Cmd+Z is
+  // universal and, unlike Ctrl/Cmd+D (see item 6's note on why duplicate
+  // waits for item 9 - and ends up on a plain key instead, below), no browser
+  // reserves it on a plain page. Ctrl/Cmd+Shift+C is the one shortcut the
+  // product plan itself names (docs/00-product-plan.md's journey narrative);
+  // Chromium/Edge also bind it to DevTools' inspect-element mode, a
+  // browser-chrome-level accelerator this page can only `preventDefault`
+  // against, not detect - whether that wins over the page in every real
+  // desktop build is unconfirmed, same category as the existing real-browser
+  // gotchas above. Duplicate and bring-to-front get plain `D`/`F` instead of
+  // a modifier: Ctrl/Cmd+D is browser-reserved for bookmarking everywhere,
+  // and every other single-purpose shortcut in this file (zoom, delete,
+  // escape) already avoids modifiers for the same reason.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
+      // Only bail for an actual text-editing surface, where a modifier
+      // shortcut should act on the text, not the board - unlike the gap
+      // slider below, there's no such surface yet (Phase 4 is what adds
+      // one), but this keeps the promise invariant 7 already makes about
+      // text input. The gap slider itself commonly still has focus right
+      // after a drag (the exact moment a user reaches for undo or copy), so
+      // it must not be caught by this check the way the plain shortcuts
+      // below are.
+      const isTextEntry =
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLInputElement && target.type !== 'range')
 
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'z') {
-        // Only bail for an actual text-editing surface, where Ctrl/Cmd+Z
-        // should undo typing, not the board - unlike the gap slider below,
-        // there's no such surface yet (Phase 4 is what adds one), but this
-        // keeps the promise invariant 7 already makes about text input.
-        // The gap slider itself commonly still has focus right after a drag
-        // (the exact moment a user reaches for undo), so it must not be
-        // caught by that check the way the plain shortcuts below are.
-        const isTextEntry =
-          target instanceof HTMLTextAreaElement ||
-          target instanceof HTMLSelectElement ||
-          (target instanceof HTMLInputElement && target.type !== 'range')
         if (isTextEntry) return
         e.preventDefault()
         if (e.shiftKey) redo()
         else undo()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'c') {
+        if (isTextEntry) return
+        e.preventDefault()
+        void onCopy()
         return
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return
@@ -603,11 +622,33 @@ export function BoardCanvas({ board, viewport }: Props) {
           e.preventDefault()
           deleteSelected()
         }
+      } else if (e.key.toLowerCase() === 'd') {
+        if (selectedIds.length > 0) {
+          e.preventDefault()
+          duplicateSelected()
+        }
+      } else if (e.key.toLowerCase() === 'f') {
+        if (selectedIds.length > 0) {
+          e.preventDefault()
+          bringToFront()
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [zoomByFactor, fitToView, resetTo100, setSelection, selectedIds, deleteSelected, undo, redo])
+  }, [
+    zoomByFactor,
+    fitToView,
+    resetTo100,
+    setSelection,
+    selectedIds,
+    deleteSelected,
+    duplicateSelected,
+    bringToFront,
+    undo,
+    redo,
+    onCopy,
+  ])
 
   return (
     <div className="board-stage">

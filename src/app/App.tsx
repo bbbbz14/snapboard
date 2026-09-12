@@ -6,6 +6,7 @@ import { RecoveryBar } from '@/ui/RecoveryBar'
 import { Toasts } from '@/ui/Toasts'
 import { useBoardStore } from '@/board/store/boardStore'
 import { usePasteImages, useDropImages } from '@/hooks/useImageInput'
+import { useCopyAction } from '@/hooks/useCopyAction'
 import { t } from '@/i18n/t'
 
 export function App() {
@@ -14,6 +15,10 @@ export function App() {
   const hydrate = useBoardStore((s) => s.hydrate)
   const stageRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState({ w: 900, h: 600 })
+  // Shared by TopBar's Copy button and BoardCanvas's Ctrl/Cmd+Shift+C shortcut
+  // (Phase 2 item 9) - lifted here, the nearest common ancestor, so both see
+  // the same "copied" button-state timer instead of each owning its own.
+  const { copied, onCopy } = useCopyAction()
 
   const onFiles = useCallback((files: File[]) => void addFiles(files), [addFiles])
   usePasteImages(onFiles)
@@ -38,13 +43,13 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar />
+      <TopBar copied={copied} onCopy={onCopy} />
       <RecoveryBar />
       <div className="stage" ref={stageRef}>
         {board.nodes.length === 0 ? (
           <EmptyState onFiles={onFiles} />
         ) : (
-          <BoardCanvas board={board} viewport={viewport} />
+          <BoardCanvas board={board} viewport={viewport} onCopy={onCopy} />
         )}
       </div>
       {drag.dragging && <div className="dropzone">{t('drop.overlay', { count: drag.count })}</div>}
