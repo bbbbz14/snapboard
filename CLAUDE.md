@@ -9,26 +9,84 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 # START HERE — what this session should do next
 
 **Current state:** Phase 1 complete, manual test checklist gate cleared (see
-below). **Phase 2 is complete — all 9 items done, shipped (`69cc234`), pushed
-to `main`, and deployed to the live site** — see
-[docs/phases/phase-2.md](docs/phases/phase-2.md) for the full writeup. On top
-of that, a small unplanned addition — a "Clear board" misclick safety net
-(confirm dialog + a one-snapshot restore, see the note right below) — has
-also shipped, been pushed to `main`, and been deployed (`4df51c6`).
+below). Phase 2 is complete — all 9 items done, shipped (`69cc234`), pushed
+to `main`, and deployed to the live site — see
+[docs/phases/phase-2.md](docs/phases/phase-2.md). A small unplanned addition —
+the "Clear board" misclick safety net (confirm dialog + a one-snapshot
+restore, see the note right below) — also shipped, pushed, and deployed
+(`4df51c6`). **Phase 3 (export hardening) is now feature-complete and
+committed locally, but not yet pushed or deployed** — see
+[docs/phases/phase-3.md](docs/phases/phase-3.md) for the full writeup. Most of
+Phase 3's feature list (scale/format/quality plumbing, the canvas-size guard,
+transparent-background handling, meaningful filenames, clipboard fallback,
+the copy shortcut) turned out to already exist from Phase 1/2 - the only real
+gap was a UI to choose scale/format/quality and preview the output size
+before exporting, which this session built as a small popover off a new
+Download/▾ split button in `TopBar.tsx`.
 `npm run verify` green (typecheck + 151 unit + 27 renderer parity on 3 engines
-+ 130 e2e passed, 5 skipped by design — clipboard round-trip on headless
++ 139 e2e passed, 5 skipped by design — clipboard round-trip on headless
 Firefox/WebKit for both the Copy button and the Ctrl/Cmd+Shift+C shortcut
 (ADR-003), plus the reorder pixel-swap assertion on headless WebKit only, see
 the WebKit rasterisation gotcha below — none of these are failures).
 
-**Next session should start Phase 3 (export hardening: 1x/2x/3x, JPG,
-cross-browser fallbacks)** — see "After Phase 2" below for the full Phase list
-— unless the user asks to close the two open manual-testing gaps first (real
-Windows/Chrome + macOS/Safari testing per the manual test checklist, and
-confirming `Ctrl/Cmd+Shift+C` doesn't lose to Chrome/Edge's DevTools
-inspect-element accelerator on a real desktop build - untestable in headless
-Playwright, see item 9's note below). Neither gap blocks starting Phase 3; ask
-if unsure which the user wants prioritized.
+**Next session should ask the user whether to push/deploy Phase 3 first**
+(outward-facing commands, not yet run this session), then either close the
+open manual-testing gaps (see below) or start Phase 4 (annotations: arrow,
+box, text, number, redact, crop) — see "After Phase 3" below for the full
+Phase list.
+
+### Phase 3 — done: export options (scale/format/quality) UI
+
+Shipped as its own commit. Not yet pushed/deployed — ask the user first (both
+commands are outward-facing). See
+[docs/phases/phase-3.md](docs/phases/phase-3.md) for the full writeup.
+
+- Almost all of Phase 3's feature list already existed from Phase 1:
+  `exportBoard.ts` already had `scale: 1|2|3`, PNG/JPEG with `quality`, the
+  `resolveScale`/`SAFE_PIXEL_AREA` canvas-size guard (ADR-005, unit-tested up
+  to 20000×20000), transparent-PNG/white-backdrop-for-JPEG handling, and
+  meaningful filenames. Clipboard fallback (ADR-003) and the copy shortcut
+  (Phase 2 item 9) covered the other two feature-list lines. The only real
+  gap: nothing in the UI let the user actually choose scale/format/quality —
+  `TopBar.tsx`'s Download always hardcoded `{ scale: 2, format: 'image/png' }`.
+- New `src/ui/ExportMenu.tsx` — a small popover opened from a caret (`▾`)
+  that turns the old single Download button into a **split button**
+  (`Download` | `▾`). Clicking `Download` itself still exports immediately
+  with whatever was last chosen (defaults match the old hardcoded behavior:
+  2x/PNG) — no extra click for the common case. The caret only opens/closes
+  the popover that lets you change those settings; there's no separate
+  "confirm" button inside it.
+  Popover contents: Format (PNG/JPG, reusing the existing `.group`/`.chip`
+  classes), Size (1x/2x/3x, same classes), a Quality slider shown only when
+  JPG is selected, and a live pixel-size estimate computed with the exact
+  same `resolveScale`/`estimatePixels` functions `exportBoard` uses for the
+  real export — one source of truth, so the preview number can't drift from
+  what actually downloads (pinned by `tests/e2e/exportOptions.spec.ts`, which
+  checks the estimate against the real downloaded file's IHDR dimensions at
+  both 1x and 3x). Closes on outside click or Escape.
+- **Copy deliberately gets none of these options** — `copyImageToClipboard`
+  writes a `ClipboardItem` with MIME `'image/png'` fixed, and the Clipboard
+  API doesn't support JPEG across engines anyway. Copy stays the fast,
+  zero-decision path; Download is now the one with control. Don't add a
+  scale/format choice to Copy — there's no clipboard MIME type to put a JPEG
+  in.
+- Why a popover and not permanent controls in the top bar: the standing
+  mobile-overflow finding (see below) already says not to add more to that
+  bar. A caret that only grows the bar by one small button in its resting
+  state, with everything else on demand, follows the same reasoning
+  `ZoomControls` and `SelectionToolbar` already used to justify living
+  outside the top bar entirely.
+- Deliberately not done: no e2e test that actually allocates a ~15000px
+  canvas to prove the guard doesn't crash a real browser — the unit test's
+  20000×20000 case plus ADR-005's real per-browser measurements already cover
+  it; a live test here would re-prove the same math at a much higher cost.
+  No persistence of the chosen format/scale/quality across sessions either —
+  nothing in the product plan asks for it, and it's a UI preference, not
+  board content (same reasoning camera/selection state already got).
+- **Still open, and can't be closed from inside this environment:** Phase
+  3's own DoD item — pasting the exported file into real Slack, LINE, Jira,
+  Gmail, Word, Figma, Google Docs and recording a results table — needs a
+  human with accounts and screens in those apps.
 
 ### Unplanned addition — done: "Clear board" misclick safety net
 
@@ -494,20 +552,21 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with the Clear board safety net (post-Phase-2)
+## Live site status — behind by one commit: Phase 3 not yet pushed/deployed
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
-HTTPS enforced, certificate approved. Source push (`git push origin
-master:main`) and `bash scripts/deploy-pages.sh` were last run together after
-the unplanned "Clear board" misclick safety net (`4df51c6`), and both worked
-cleanly again on the first try (no re-auth, no DNS re-check needed) — the
-earlier "Workflows: Read and write" token-scope fix from a prior session is
-holding. Live site now serves all of Phase 2 (items 1–9) plus that addition.
-Deploy script itself reported success (`Published.` + the live URL); a
+HTTPS enforced, certificate approved. Last confirmed push+deploy was the
+unplanned "Clear board" misclick safety net (`4df51c6`) — see the git log
+above for the exact commit. **Phase 3's export-options UI is committed
+locally on top of that but has not been pushed to `main` or deployed** —
+both commands are outward-facing (see below), and this session didn't get an
+explicit go-ahead to run them. Live site currently still serves Phase 2
+(items 1–9) plus the Clear board addition, without Phase 3.
+Deploy script itself last reported success (`Published.` + the live URL); a
 same-session `curl` for the new JS bundle hash still 404ed right after, which
 matches the documented CDN caveat below rather than a failed deploy — not
-re-confirmed with a fresh 200 this session, worth a quick check next session
-if in doubt. (The custom domain sits behind a CDN edge cache with a 10-minute
+re-confirmed with a fresh 200 since, worth a quick check next session if in
+doubt. (The custom domain sits behind a CDN edge cache with a 10-minute
 `max-age`, so a stale bundle hash can be observed for a few minutes right
 after a deploy — not a deploy failure, just propagation.)
 
@@ -602,13 +661,33 @@ table; the two DoD items still open (real-browser manual testing on
 Windows/Chrome and macOS/Safari; deploying this item to the live site) are
 process gates, not missing features.
 
-## After Phase 2
+## Phase 3 — Export hardening
 
-Phase 3 export hardening (1x/2x/3x, JPG, cross-browser fallbacks) · Phase 4
-annotations (arrow, box, text, number, redact, crop) · Phase 5 polish, dark
-mode, Thai UI · Phase 6 persistence and PWA · Phase 7 Chrome extension.
-Full definitions in [docs/00-product-plan.md](docs/00-product-plan.md)
-section 12.
+Objective: make the export path trustworthy - the user picks scale/format
+and knows the output size before committing.
+
+1. ✅ **Choose 1x/2x/3x, PNG/JPG + quality, see the output size before
+   exporting.** Done — see the note under START HERE above. Turned out most
+   of Phase 3's feature list (the canvas-size guard, transparent-background
+   handling, meaningful filenames, clipboard fallback, the copy shortcut)
+   already existed from Phase 1/2; this item was the one real gap, a
+   `Download`/`▾` split button opening a small popover in `TopBar.tsx`.
+
+**Phase 3 is done when:** export matches what's on screen 100% (pixel diff
+< 0.1%) · a 15000px canvas doesn't crash · the Firefox fallback works
+gracefully · pasting the exported file into Slack, LINE, Jira, Gmail, Word,
+Figma, and Google Docs is confirmed with a results table. **The first three
+are true** (see [docs/phases/phase-3.md](docs/phases/phase-3.md) for the
+Definition of Done table); **the fourth needs a human with real accounts and
+screens in those apps** — not doable from inside this environment. Push/deploy
+also still need the user's go-ahead (see "Live site status" above).
+
+## After Phase 3
+
+Phase 4 annotations (arrow, box, text, number, redact, crop) · Phase 5
+polish, dark mode, Thai UI · Phase 6 persistence and PWA · Phase 7 Chrome
+extension. Full definitions in
+[docs/00-product-plan.md](docs/00-product-plan.md) section 12.
 
 ## When a phase finishes
 
@@ -770,7 +849,9 @@ and is a commitment, not a backlog.
 Automation here runs headless on Linux, so three things remain unproven and
 need a real machine:
 
-1. Copy → paste into Slack, LINE, Jira, Gmail, Word.
+1. Copy → paste into Slack, LINE, Jira, Gmail, Word, and (Phase 3 DoD, still
+   open) inserting the downloaded PNG/JPG file into Figma and Google Docs too
+   — as a results table, per [docs/phases/phase-3.md](docs/phases/phase-3.md).
 2. Paste *from* Windows Snipping Tool and macOS Cmd+Shift+4.
 3. Copy on real Safari and real Firefox (only Chromium is confirmed).
 

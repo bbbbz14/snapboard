@@ -1,8 +1,9 @@
-import { useBoardStore } from '@/board/store/boardStore'
+import { useState } from 'react'
+import { useBoardStore, toRenderInput } from '@/board/store/boardStore'
 import { BACKGROUNDS, type BackgroundName, type LayoutMode, type StylePreset } from '@/board/model/types'
-import { exportFilename } from '@/board/export/exportBoard'
+import { exportBoard, exportFilename, estimatePixels, resolveScale, type ExportOptions } from '@/board/export/exportBoard'
 import { downloadBlob } from '@/board/export/clipboard'
-import { useExportRender } from '@/hooks/useCopyAction'
+import { ExportMenu } from '@/ui/ExportMenu'
 import { modKey, t } from '@/i18n/t'
 
 const LAYOUTS: { mode: LayoutMode; label: string }[] = [
@@ -34,13 +35,22 @@ interface Props {
 export function TopBar({ copied, onCopy }: Props) {
   const board = useBoardStore((s) => s.board)
   const store = useBoardStore()
-  const render = useExportRender()
+  const [exportOpts, setExportOpts] = useState<ExportOptions>({ scale: 2, format: 'image/png', quality: 0.92 })
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
 
   const hasImages = board.nodes.length > 0
 
+  // Shown ahead of time in the menu below, from the same pure guard
+  // exportBoard applies for real (invariant-adjacent: one source of truth
+  // for "will this get downscaled", see ADR-005).
+  const resolved = resolveScale(board.size, exportOpts.scale)
+  const estimatedPixels = estimatePixels(board.size, resolved.scale)
+
   const onDownload = async () => {
-    const name = exportFilename('image/png')
-    downloadBlob(await render(), name)
+    const result = await exportBoard(toRenderInput(board), exportOpts)
+    if (result.downscaled) store.toast(t('toast.exportDownscaled', { scale: result.appliedScale }), 'warn')
+    const name = exportFilename(exportOpts.format)
+    downloadBlob(result.blob, name)
     store.toast(t('toast.downloaded', { name }), 'success')
   }
 
@@ -136,9 +146,28 @@ export function TopBar({ copied, onCopy }: Props) {
           </button>
           {/* Download stays visible next to Copy: a silent clipboard failure is
               undetectable, so the user always needs a way out. See ADR-003. */}
-          <button className="btn" onClick={onDownload}>
-            {t('toolbar.download')}
-          </button>
+          <div className="split-btn">
+            <button className="btn" onClick={onDownload}>
+              {t('toolbar.download')}
+            </button>
+            <button
+              className="btn split-btn__caret"
+              aria-label={t('toolbar.exportOptions')}
+              aria-expanded={exportMenuOpen}
+              onClick={() => setExportMenuOpen((v) => !v)}
+            >
+              ▾
+            </button>
+            {exportMenuOpen && (
+              <ExportMenu
+                opts={exportOpts}
+                pixels={estimatedPixels}
+                downscaledTo={resolved.downscaled ? resolved.scale : null}
+                onChange={setExportOpts}
+                onClose={() => setExportMenuOpen(false)}
+              />
+            )}
+          </div>
           <button
             className={`btn btn--primary${copied ? ' btn--done' : ''}`}
             title={t('toolbar.copyTitle', { mod: modKey() })}

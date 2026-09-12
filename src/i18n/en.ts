@@ -22,8 +22,17 @@ export const en = {
   'toolbar.copyTitle': 'Copy ({{mod}}+Shift+C)',
   'toolbar.copied': 'Copied',
   'toolbar.download': 'Download',
+  'toolbar.exportOptions': 'Export options',
   'toolbar.clear': 'Clear board',
   'toolbar.clearConfirm': 'Clear the board? This can still be undone with {{mod}}+Z.',
+
+  'export.format': 'Format',
+  'export.formatPng': 'PNG',
+  'export.formatJpg': 'JPG',
+  'export.scale': 'Size',
+  'export.quality': 'Quality',
+  'export.estimate': '{{w}} × {{h}} px',
+  'export.willDownscale': 'Exports at {{scale}}x — larger would exceed the safe canvas size',
 
   'layout.auto': 'Auto',
   'layout.rows': 'Rows',
