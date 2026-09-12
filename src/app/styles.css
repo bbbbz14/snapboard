@@ -407,9 +407,10 @@ body {
   background: color-mix(in srgb, #dc2626 10%, transparent);
 }
 
-/* Cursor hint while the arrow tool is armed - the canvas itself still owns
-   every pointer listener (see BoardCanvas.tsx), this is purely cosmetic. */
-.board-canvas--arrow {
+/* Cursor hint while an annotation tool (arrow/box) is armed - the canvas
+   itself still owns every pointer listener (see BoardCanvas.tsx), this is
+   purely cosmetic. */
+.board-canvas--annotate {
   cursor: crosshair;
 }
 

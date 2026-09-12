@@ -65,6 +65,8 @@ export const en = {
 
   'annotate.arrow': 'Arrow',
   'annotate.arrowTitle': 'Arrow (A)',
+  'annotate.box': 'Box',
+  'annotate.boxTitle': 'Box (R)',
 
   'zoom.out': 'Zoom out',
   'zoom.in': 'Zoom in',

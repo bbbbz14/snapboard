@@ -44,9 +44,25 @@ export interface ArrowNode {
   color: string
 }
 
-export type BoardNode = ImageNode | ArrowNode
+/** A rectangular outline to frame a region of interest (product plan's
+ * "กล่องกรอบ"). Unlike `ArrowNode`, `frame` here is not a derived padding -
+ * it *is* the rectangle the user dragged, exactly like `ImageNode.frame`, so
+ * it needs no separate start/end and every generic frame-based helper
+ * (move, duplicate, hitTest) already does the right thing with no per-kind
+ * branch. */
+export interface BoxNode {
+  kind: 'box'
+  id: NodeId
+  frame: Rect
+  order: number
+  color: string
+}
 
-export const DEFAULT_ARROW_COLOR = '#dc2626'
+export type BoardNode = ImageNode | ArrowNode | BoxNode
+
+/** Shared by every annotation kind - red, visible on any background, per
+ * the product plan's "สีอัตโนมัติ (แดงเป็นค่าเริ่มต้น)". */
+export const DEFAULT_ANNOTATION_COLOR = '#dc2626'
 
 export interface Board {
   version: 1

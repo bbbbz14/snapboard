@@ -7,8 +7,9 @@ import { CORNERS, cornerPoint, HANDLE_SIZE, hitTestHandle } from '@/board/intera
 import { resizeKeepingAspect } from '@/board/interact/resize'
 import { snapMove, type SnapGuide } from '@/board/interact/snap'
 import { ARROW_STROKE_WIDTH, strokeArrow } from '@/board/render/arrow'
+import { BOX_STROKE_WIDTH, strokeBox } from '@/board/render/box'
 import type { Board, NodeId } from '@/board/model/types'
-import { DEFAULT_ARROW_COLOR } from '@/board/model/types'
+import { DEFAULT_ANNOTATION_COLOR } from '@/board/model/types'
 import { boardToScreen, fitCamera, panBy, screenToBoard, zoomAt, type Camera } from '@/board/view/camera'
 import type { Point, Rect } from '@/lib/geometry'
 import { boundsOf, rectFromPoints, translate } from '@/lib/geometry'
@@ -20,6 +21,8 @@ import { t } from '@/i18n/t'
 /** Screen-px drag distance below which an arrow-tool drag is treated as a
  * stray click, not a deliberate zero-length arrow. */
 const ARROW_MIN_DRAG = 4
+/** Same threshold, for the box tool. */
+const BOX_MIN_DRAG = 4
 
 /** Screen-px movement below this counts as a click, not a marquee drag. */
 const MARQUEE_THRESHOLD = 3
@@ -81,6 +84,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // Arrow-tool drag in progress: board-space start/current end point, drawn
   // as a live preview on the interaction canvas until pointer-up commits it.
   const arrowDraftRef = useRef<{ start: Point; current: Point; screenStart: { x: number; y: number } } | null>(null)
+  // Box-tool drag in progress - same shape as `arrowDraftRef`, just for the
+  // other one-shot annotation tool.
+  const boxDraftRef = useRef<{ start: Point; current: Point; screenStart: { x: number; y: number } } | null>(null)
   // Drag-to-reorder in progress (any layout mode except 'free'): the dragged
   // node floats to follow the pointer without reflowing the rest of the
   // board (computeLayout is too slow to call every pointermove - see
@@ -107,6 +113,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   const tool = useBoardStore((s) => s.tool)
   const setTool = useBoardStore((s) => s.setTool)
   const addArrow = useBoardStore((s) => s.addArrow)
+  const addBox = useBoardStore((s) => s.addBox)
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -209,7 +216,14 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     if (arrowDraft) {
       const a = boardToScreen(camera, viewport, arrowDraft.start)
       const b = boardToScreen(camera, viewport, arrowDraft.current)
-      strokeArrow(ctx, a, b, DEFAULT_ARROW_COLOR, ARROW_STROKE_WIDTH * camera.zoom)
+      strokeArrow(ctx, a, b, DEFAULT_ANNOTATION_COLOR, ARROW_STROKE_WIDTH * camera.zoom)
+    }
+
+    const boxDraft = boxDraftRef.current
+    if (boxDraft) {
+      const a = boardToScreen(camera, viewport, boxDraft.start)
+      const b = boardToScreen(camera, viewport, boxDraft.current)
+      strokeBox(ctx, rectFromPoints(a, b), DEFAULT_ANNOTATION_COLOR, BOX_STROKE_WIDTH * camera.zoom)
     }
 
     // Positions the floating selection toolbar imperatively, same ref-first
@@ -426,6 +440,13 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         return
       }
 
+      if (tool === 'box') {
+        const point = toBoardPoint(e)
+        boxDraftRef.current = { start: point, current: point, screenStart: { x: e.clientX, y: e.clientY } }
+        canvas.setPointerCapture(e.pointerId)
+        return
+      }
+
       const handle = hitTestHandle(board.nodes, selectedIds, cameraRef.current, viewport, toScreenPoint(e))
       if (handle) {
         resizeRef.current = { id: handle.id, corner: handle.corner, startFrame: handle.frame }
@@ -468,6 +489,13 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       const arrowDraft = arrowDraftRef.current
       if (arrowDraft) {
         arrowDraftRef.current = { ...arrowDraft, current: toBoardPoint(e) }
+        drawInteraction()
+        return
+      }
+
+      const boxDraft = boxDraftRef.current
+      if (boxDraft) {
+        boxDraftRef.current = { ...boxDraft, current: toBoardPoint(e) }
         drawInteraction()
         return
       }
@@ -526,6 +554,16 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         arrowDraftRef.current = null
         const dragged = Math.hypot(e.clientX - arrowDraft.screenStart.x, e.clientY - arrowDraft.screenStart.y) > ARROW_MIN_DRAG
         if (dragged) addArrow(arrowDraft.start, arrowDraft.current)
+        else setTool('select')
+        drawInteraction()
+        return
+      }
+
+      const boxDraft = boxDraftRef.current
+      if (boxDraft) {
+        boxDraftRef.current = null
+        const dragged = Math.hypot(e.clientX - boxDraft.screenStart.x, e.clientY - boxDraft.screenStart.y) > BOX_MIN_DRAG
+        if (dragged) addBox(boxDraft.start, boxDraft.current)
         else setTool('select')
         drawInteraction()
         return
@@ -603,7 +641,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction, tool, addArrow, setTool])
+  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction, tool, addArrow, addBox, setTool])
 
   // Keyboard shortcuts (Phase 2 item 9 completes this set). Undo/redo and
   // copy are the deliberate exceptions to "no modifier keys": Ctrl/Cmd+Z is
@@ -664,7 +702,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         e.preventDefault()
         resetTo100()
       } else if (e.key === 'Escape') {
-        if (tool === 'arrow') setTool('select')
+        if (tool !== 'select') setTool('select')
         setSelection([])
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedIds.length > 0) {
@@ -684,6 +722,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       } else if (e.key.toLowerCase() === 'a') {
         e.preventDefault()
         setTool(tool === 'arrow' ? 'select' : 'arrow')
+      } else if (e.key.toLowerCase() === 'r') {
+        e.preventDefault()
+        setTool(tool === 'box' ? 'select' : 'box')
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -713,7 +754,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       <div ref={pageRef} className="board-page" />
       <canvas
         ref={canvasRef}
-        className={`board-canvas${tool === 'arrow' ? ' board-canvas--arrow' : ''}`}
+        className={`board-canvas${tool !== 'select' ? ' board-canvas--annotate' : ''}`}
         role="img"
         aria-label={`Board with ${imageCount} image${imageCount === 1 ? '' : 's'}`}
       />
@@ -734,7 +775,11 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         onReset={resetTo100}
         onFit={fitToView}
       />
-      <AnnotationToolbar tool={tool} onToggleArrow={() => setTool(tool === 'arrow' ? 'select' : 'arrow')} />
+      <AnnotationToolbar
+        tool={tool}
+        onToggleArrow={() => setTool(tool === 'arrow' ? 'select' : 'arrow')}
+        onToggleBox={() => setTool(tool === 'box' ? 'select' : 'box')}
+      />
     </div>
   )
 }

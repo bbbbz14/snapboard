@@ -1,6 +1,7 @@
 import type { Point, Rect, Size } from '@/lib/geometry'
 import { STYLE_PRESETS, type Background, type StylePreset } from '@/board/model/types'
 import { ARROW_STROKE_WIDTH, strokeArrow } from './arrow'
+import { BOX_STROKE_WIDTH, strokeBox } from './box'
 
 export interface RenderItem {
   id: string
@@ -17,6 +18,12 @@ export interface RenderArrow {
   color: string
 }
 
+export interface RenderBox {
+  id: string
+  frame: Rect
+  color: string
+}
+
 export interface RenderInput {
   size: Size
   background: Background
@@ -25,6 +32,8 @@ export interface RenderInput {
   /** Optional so `tests/render/harness.ts`'s scenes (image-only) don't need
    * to know arrows exist. */
   arrows?: RenderArrow[]
+  /** Optional for the same reason `arrows` is. */
+  boxes?: RenderBox[]
 }
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
@@ -84,13 +93,18 @@ export function renderScene(ctx: Ctx2D, input: RenderInput, { scale, tiles, offs
     }
   }
 
-  // Arrows are drawn on top of every image - they exist to point at
-  // something already on the board, so they must never end up underneath it.
+  // Boxes and arrows are drawn on top of every image - they exist to point
+  // at or frame something already on the board, so they must never end up
+  // underneath it. Boxes first so an arrow can still point across a box's
+  // outline without being interrupted by it.
+  for (const box of input.boxes ?? []) {
+    strokeBox(ctx, box.frame, box.color, BOX_STROKE_WIDTH)
+  }
   for (const arrow of input.arrows ?? []) {
     strokeArrow(ctx, arrow.start, arrow.end, arrow.color, ARROW_STROKE_WIDTH)
   }
 
-  // Badges are drawn after the images (and arrows) so they are never clipped by a tile.
+  // Badges are drawn after the images (and arrows/boxes) so they are never clipped by a tile.
   for (const item of input.items) {
     if (item.badge !== undefined) drawBadge(ctx, item, input.background)
   }

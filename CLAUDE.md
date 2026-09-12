@@ -33,14 +33,13 @@ the WebKit rasterisation gotcha below — none of these are failures).
 [docs/manual-test-checklist.md](docs/manual-test-checklist.md) run against
 the live site — see the Gate section below for the full results).
 
-**Phase 4 (annotations) is underway. Item 1, arrow, is done, shipped
-(`9a63829`), committed to `master` but not yet pushed to `main` or
-deployed** — see the note right below. `npm run verify` green (typecheck +
-163 unit + 27 renderer parity on 3 engines + 151 e2e passed, 5 skipped by
-design — same 5 as before, see the note above; the new arrow e2e file added
-12 passing tests and no new skips). **Next session should do Phase 4 item 2**
-(box/rectangle annotation) — see "Phase 4 — Annotations" below for the full
-item list.
+**Phase 4 (annotations) is underway. Items 1 (arrow) and 2 (box/rectangle)
+are done. Not yet pushed to `main` or deployed** — see the notes right below
+for both. `npm run verify` green (typecheck + 171 unit + 27 renderer parity
+on 3 engines + 166 e2e passed, 5 skipped by design — same 5 as before, see
+the note above; the new box e2e file added 9 passing tests and no new
+skips). **Next session should do Phase 4 item 3** (text) — see "Phase 4 —
+Annotations" below for the full item list.
 
 ### Phase 4 item 1 — done: arrow annotation
 
@@ -115,13 +114,83 @@ live-site section below for the usual two commands).
   one exact pixel, since the curve's bow means the stroke isn't on the
   straight line between the two drag points.
 - **Deliberately not done, scoped to what "arrow" alone needs:** no color
-  picker (fixed `DEFAULT_ARROW_COLOR`, `#dc2626` - the other five annotation
-  types will need their own color decisions anyway, and picking one now for
-  arrows alone would be exactly the kind of speculative surface CLAUDE.md
-  says not to add). No endpoint-drag editing after the fact - move the whole
-  arrow, or delete and redraw it; a full two-handle editing UI is real extra
-  scope the product plan's own line item ("ลูกศร โค้งเล็กน้อย ดูเป็นมิตร")
-  doesn't ask for.
+  picker (fixed `DEFAULT_ANNOTATION_COLOR`, `#dc2626`, later shared with item
+  2's box - the remaining annotation types will need their own color
+  decisions anyway, and picking one now for arrows alone would be exactly
+  the kind of speculative surface CLAUDE.md says not to add). No
+  endpoint-drag editing after the fact - move the whole arrow, or delete and
+  redraw it; a full two-handle editing UI is real extra scope the product
+  plan's own line item ("ลูกศร โค้งเล็กน้อย ดูเป็นมิตร") doesn't ask for.
+
+### Phase 4 item 2 — done: box/rectangle annotation
+
+Not yet committed - see the note under START HERE above for what's staged.
+
+- Mirrors item 1's arrow tool exactly, down to the interaction shape: a
+  floating "Box" tool button in the same bottom-left `AnnotationToolbar`
+  (next to Arrow), plus a plain `R` keyboard shortcut (rectangle - `B` was
+  free too, but every design tool this product's users already know uses
+  `R`) - press once to arm it, drag anywhere on the board to draw, release
+  to commit. One-shot by design, same as arrow: committing a box (or a stray
+  click with no drag) reverts the tool to `'select'` automatically, and
+  Escape while armed cancels without creating anything. `BoardCanvas.tsx`'s
+  Escape handler is now `if (tool !== 'select') setTool('select')` instead
+  of arrow-specific, so a future third one-shot tool won't need to touch it
+  again.
+- `BoardNode` is now `ImageNode | ArrowNode | BoxNode`. Unlike `ArrowNode`,
+  `BoxNode.frame` is **not** a derived/padded box - it *is* the rectangle the
+  user dragged, exactly like `ImageNode.frame`. That one difference means
+  every generic frame-based helper (`setFrames`'s move, `duplicateSelected`'s
+  offset-copy, `hitTest`) needed **zero** new per-kind branches - the
+  existing `else` arm that already handles "not an arrow" (i.e. images)
+  handles boxes correctly for free, since a box's frame-move and an image's
+  frame-move are the identical operation. `relayout`, `reconcileAssets`, and
+  `decodeBoardAssets`'s existing `n.kind !== 'image'`/`n.kind === 'image'`
+  checks already generalize to any non-image kind, so none of those needed
+  touching either - this item's diff is smaller than arrow's for exactly
+  that reason.
+- `src/board/render/box.ts` - `strokeBox`, a thin wrapper around
+  `ctx.strokeRect` with `BOX_STROKE_WIDTH` (3, thinner than the arrow's 4
+  since a box's outline runs along four long edges rather than one point-to-
+  point line - a thick rectangle reads as a filled block at a glance).
+  Called identically by `renderScene` (committed box, board-space,
+  invariant 1) and `BoardCanvas`'s interaction-canvas preview (screen-space
+  while dragging), same one-source-of-truth reasoning `strokeArrow` and
+  Phase 3's export-size estimate already established. Drawn before arrows in
+  `renderScene` so an arrow can still point across a box's outline without
+  being interrupted by it.
+- Renamed `DEFAULT_ARROW_COLOR` to `DEFAULT_ANNOTATION_COLOR` (still
+  `#dc2626`) since both arrow and box need the same "auto color, red,
+  visible on any background" default the product plan specifies once for
+  all annotations, not per-kind - this avoids the same literal existing
+  twice under two different names for what is definitionally one shared
+  default.
+- Boxes never expose a resize handle, same scope cut as arrows and for the
+  same reason: `handles.ts`'s existing `n.kind !== 'image'` guard already
+  excluded anything that isn't an image, so this needed no new code at all.
+  Dragging a box's outline (or its interior - a box hit-tests as a plain
+  AABB like every other node, so clicking inside it hits the box, not
+  whatever image happens to sit underneath) moves the whole box instead.
+- `tests/unit/boardStore.test.ts` gained an `addBox` block mirroring
+  `addArrow`'s (frame from the two drag corners, normalized regardless of
+  drag direction, free-layout switch, tool reverting to `'select'`,
+  move/duplicate on the frame directly, exclusion from
+  `toRenderInput.items`/badge numbering plus presence in `.boxes`, and
+  delete+undo). `tests/unit/hitTest.test.ts` gained one box mixed-kind case
+  next to arrow's. `tests/e2e/box.spec.ts` (new) covers drawing (and export
+  survival, invariant 1), the `R` shortcut, Escape-cancels, a stray click
+  creating nothing, select→delete→undo, and (one more than arrow's own
+  spec, because unlike a curve a box's whole interior is a legitimate move
+  handle) that dragging from inside the box's outline moves it rather than
+  resizing anything - using the same reddish-pixel-region scan technique
+  `arrow.spec.ts` established, since a stroked rectangle's edges aren't one
+  exact pixel either.
+- **Deliberately not done, scoped to what "box" alone needs:** no fill
+  option (outline only, matching the product plan's own "กล่องกรอบ" -
+  a frame, not a filled highlight) and no corner-radius/style choice - same
+  "don't add a decision nothing asked for yet" reasoning arrow's color
+  picker cut already used. No post-hoc resize, for the same reason arrow
+  has none: move the whole box, or delete and redraw it.
 
 ### Phase 3 — done: export options (scale/format/quality) UI
 
@@ -806,7 +875,8 @@ order; each item is independently shippable, same as Phase 2/3.
 
 1. ✅ **Arrow** (gently curved, friendly, not a rigid straight line). Done —
    see "Phase 4 item 1" under START HERE above.
-2. ⬜ **Box/rectangle** outline to frame a region of interest.
+2. ✅ **Box/rectangle** outline to frame a region of interest. Done — see
+   "Phase 4 item 2" under START HERE above.
 3. ⬜ **Text** - needs a shared `measureText`-based line-wrap used by both
    preview and export (invariant 1), and a `textarea` overlay for editing
    that reads only `.value` (invariant 7 - never let user text become DOM

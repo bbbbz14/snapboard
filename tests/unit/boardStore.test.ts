@@ -183,6 +183,78 @@ describe('addArrow', () => {
   })
 })
 
+describe('addBox', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', nodes: [node('img', { x: 0, y: 0, w: 10, h: 10 })] },
+      selectedIds: [],
+      tool: 'box',
+    })
+  })
+
+  it('adds a box node from the two drag corners, selects it, switches layout to free, and returns to the select tool', () => {
+    useBoardStore.getState().addBox({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const board = useBoardStore.getState().board
+    const box = board.nodes.find((n) => n.kind === 'box')
+    expect(box).toBeDefined()
+    expect(box!.frame).toEqual({ x: 0, y: 0, w: 40, h: 30 })
+    expect(board.layout).toBe('free')
+    expect(useBoardStore.getState().selectedIds).toEqual([box!.id])
+    expect(useBoardStore.getState().tool).toBe('select')
+  })
+
+  it('normalizes the frame regardless of which corner was dragged from', () => {
+    useBoardStore.getState().addBox({ x: 40, y: 30 }, { x: 0, y: 0 })
+    const box = useBoardStore.getState().board.nodes.find((n) => n.kind === 'box')!
+    expect(box.frame).toEqual({ x: 0, y: 0, w: 40, h: 30 })
+  })
+
+  it('does not disturb the existing image node', () => {
+    useBoardStore.getState().addBox({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const board = useBoardStore.getState().board
+    expect(board.nodes.find((n) => n.id === 'img')?.frame).toEqual({ x: 0, y: 0, w: 10, h: 10 })
+  })
+
+  it('moving a box (setFrames) just sets the new frame directly, same as an image', () => {
+    useBoardStore.getState().addBox({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const box = useBoardStore.getState().board.nodes.find((n) => n.kind === 'box')!
+    useBoardStore.getState().setFrames([{ id: box.id, frame: { x: 100, y: 5, w: 40, h: 30 } }])
+    const moved = useBoardStore.getState().board.nodes.find((n) => n.id === box.id)
+    expect(moved?.frame).toEqual({ x: 100, y: 5, w: 40, h: 30 })
+  })
+
+  it('duplicating a box offsets its frame like an image', () => {
+    useBoardStore.getState().addBox({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const box = useBoardStore.getState().board.nodes.find((n) => n.kind === 'box')!
+    useBoardStore.setState({ selectedIds: [box.id] })
+    useBoardStore.getState().duplicateSelected()
+    const copyId = useBoardStore.getState().selectedIds[0]!
+    const copy = useBoardStore.getState().board.nodes.find((n) => n.id === copyId)
+    expect(copy?.frame).toEqual({ x: 16, y: 16, w: 40, h: 30 })
+  })
+
+  it('is excluded from toRenderInput.items and step badge numbering, and appears in .boxes', () => {
+    useBoardStore.setState({ board: { ...useBoardStore.getState().board, layout: 'steps', resolvedLayout: 'steps' } })
+    useBoardStore.getState().addBox({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const input = toRenderInput(useBoardStore.getState().board)
+    expect(input.items.map((i) => i.id)).toEqual(['img'])
+    expect(input.items[0]?.badge).toBe(1)
+    expect(input.boxes).toHaveLength(1)
+    expect(input.boxes![0]).toMatchObject({ frame: { x: 0, y: 0, w: 40, h: 30 } })
+  })
+
+  it('can be deleted and undone like any other node', () => {
+    useBoardStore.getState().addBox({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const boxId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'box')!.id
+    useBoardStore.setState({ selectedIds: [boxId] })
+    useBoardStore.getState().deleteSelected()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === boxId)).toBeUndefined()
+
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === boxId)).toBeDefined()
+  })
+})
+
 describe('undo/redo', () => {
   beforeEach(() => {
     useBoardStore.setState({

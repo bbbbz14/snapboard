@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { containsPoint, hitTest, intersectsRect, marqueeSelect } from '@/board/interact/hitTest'
-import type { ArrowNode, ImageNode } from '@/board/model/types'
+import type { ArrowNode, BoxNode, ImageNode } from '@/board/model/types'
 
 function node(id: string, frame: { x: number; y: number; w: number; h: number }, order: number): ImageNode {
   return { kind: 'image', id, assetId: `a-${id}`, frame, order }
@@ -8,6 +8,10 @@ function node(id: string, frame: { x: number; y: number; w: number; h: number },
 
 function arrow(id: string, frame: { x: number; y: number; w: number; h: number }, order: number): ArrowNode {
   return { kind: 'arrow', id, frame, order, start: { x: frame.x, y: frame.y }, end: { x: frame.x + frame.w, y: frame.y + frame.h }, color: '#dc2626' }
+}
+
+function box(id: string, frame: { x: number; y: number; w: number; h: number }, order: number): BoxNode {
+  return { kind: 'box', id, frame, order, color: '#dc2626' }
 }
 
 describe('containsPoint', () => {
@@ -59,6 +63,14 @@ describe('hitTest', () => {
       arrow('arr', { x: 0, y: 0, w: 20, h: 20 }, 1),
     ]
     expect(hitTest(nodes, { x: 5, y: 5 })).toBe('arr')
+  })
+
+  it('is generic across node kinds - a box hits like any other frame', () => {
+    const nodes: (ImageNode | BoxNode)[] = [
+      node('img', { x: 0, y: 0, w: 20, h: 20 }, 0),
+      box('bx', { x: 0, y: 0, w: 20, h: 20 }, 1),
+    ]
+    expect(hitTest(nodes, { x: 5, y: 5 })).toBe('bx')
   })
 })
 

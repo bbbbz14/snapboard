@@ -2,13 +2,14 @@ import { create } from 'zustand'
 import { computeLayout } from '@/board/layout/computeLayout'
 import {
   BACKGROUNDS,
-  DEFAULT_ARROW_COLOR,
+  DEFAULT_ANNOTATION_COLOR,
   DEFAULT_BOARD,
   type ArrowNode,
   type Background,
   type BackgroundName,
   type Board,
   type BoardNode,
+  type BoxNode,
   type ImageNode,
   type LayoutMode,
   type NodeId,
@@ -19,7 +20,7 @@ import { AssetStore, type Asset } from '@/assets/assetStore'
 import type { Rejection } from '@/assets/validate'
 import { arrowFrame } from '@/board/render/arrow'
 import type { RenderInput } from '@/board/render/renderScene'
-import { translate, translatePoint, type Point, type Rect } from '@/lib/geometry'
+import { rectFromPoints, translate, translatePoint, type Point, type Rect } from '@/lib/geometry'
 import {
   restoreAutosave,
   restoreLastCleared as restoreLastClearedFromDB,
@@ -117,18 +118,24 @@ interface BoardState {
   /** Copies the selected nodes, offset so they read as distinct from the
    * originals, and selects the copies. */
   duplicateSelected: () => void
-  /** Which pointer gesture on the board canvas means "draw a new arrow"
+  /** Which pointer gesture on the board canvas means "draw a new arrow/box"
    * instead of "select/move/marquee" - not part of `Board` for the same
    * reason `selectedIds` isn't: it's what the user is about to do, not
-   * arranged content. Reverts to `'select'` the instant an arrow commits. */
-  tool: 'select' | 'arrow'
-  setTool: (tool: 'select' | 'arrow') => void
+   * arranged content. Reverts to `'select'` the instant an arrow or box
+   * commits. */
+  tool: 'select' | 'arrow' | 'box'
+  setTool: (tool: 'select' | 'arrow' | 'box') => void
   /** Commits a new arrow from `start` to `end` (board-space) and switches
    * back to the select tool - same one-shot pattern a stamp tool would use.
    * Locks the board to `layout: 'free'` like `setFrames` does: an arrow's
    * `start`/`end` are absolute board-space points, so a later relayout that
    * moves images around would silently leave it pointing at nothing. */
   addArrow: (start: Point, end: Point) => void
+  /** Commits a new box from `start` to `end` (board-space, opposite drag
+   * corners) and switches back to the select tool - same one-shot pattern
+   * as `addArrow`, for the same reason (a box's frame is an absolute
+   * board-space rect the user placed by hand). */
+  addBox: (start: Point, end: Point) => void
   /** Moves the selected nodes to the top of z-order (drawn last). Also
    * relayouts, since `order` doubles as layout position for auto boards -
    * same overload `reorder` already relies on for drag-to-reorder. */
@@ -456,11 +463,27 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         order: s.board.nodes.length,
         start,
         end,
-        color: DEFAULT_ARROW_COLOR,
+        color: DEFAULT_ANNOTATION_COLOR,
       }
       return {
         ...commitBoard(s, { ...s.board, layout: 'free', nodes: [...s.board.nodes, arrow] }),
         selectedIds: [arrow.id],
+        tool: 'select',
+      }
+    }),
+
+  addBox: (start, end) =>
+    set((s) => {
+      const box: BoxNode = {
+        kind: 'box',
+        id: `n${nodeSeq++}`,
+        frame: rectFromPoints(start, end),
+        order: s.board.nodes.length,
+        color: DEFAULT_ANNOTATION_COLOR,
+      }
+      return {
+        ...commitBoard(s, { ...s.board, layout: 'free', nodes: [...s.board.nodes, box] }),
+        selectedIds: [box.id],
         tool: 'select',
       }
     }),
@@ -562,5 +585,8 @@ export function toRenderInput(board: Board): RenderInput {
     arrows: sorted
       .filter((n): n is ArrowNode => n.kind === 'arrow')
       .map((n) => ({ id: n.id, start: n.start, end: n.end, color: n.color })),
+    boxes: sorted
+      .filter((n): n is BoxNode => n.kind === 'box')
+      .map((n) => ({ id: n.id, frame: n.frame, color: n.color })),
   }
 }
