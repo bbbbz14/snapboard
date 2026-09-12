@@ -1,18 +1,74 @@
+/* ---------- design tokens ----------
+
+   Two groups, and the split matters more than any individual value:
+
+   1. CHROME tokens follow the OS theme (see the dark-mode block below).
+      These are the app's own UI - bars, buttons, toasts, focus rings.
+   2. BOARD-CONTENT tokens do NOT follow the theme, on purpose. They either
+      appear inside the exported file or preview something that does (the
+      annotation red, the page's white base, the transparency checkerboard),
+      so theming them would make the app's chrome and the exported image
+      disagree about what the user is looking at. The manual test checklist's
+      E7 result ("UI chrome follows the OS theme, board background does not")
+      is this rule, confirmed against the live site - don't collapse the two
+      groups into one.
+
+   Contrast: every chrome token that ends up as text carries >=4.5:1 against
+   the surface it sits on in BOTH themes, and every token used only as a
+   border/ring carries >=3:1. Values were picked against that requirement,
+   not by eye - Phase 5 item 4's Lighthouse a11y > 95 target depends on it. */
 :root {
   color-scheme: light dark;
+
+  /* chrome - surfaces and text */
   --bg: #f6f7f9;
   --surface: #ffffff;
   --surface-2: #f1f3f6;
   --border: #e3e7ed;
   --text: #0f172a;
   --text-dim: #64748b;
+
+  /* chrome - accent. `--accent` is for text, links, rings and borders;
+     `--accent-solid` is the fill behind `--accent-text`. They're equal in
+     light mode and deliberately differ in dark: a blue bright enough to read
+     as text on a dark surface is too light to carry white text on top of
+     it. Same split as --success/--success-solid below. */
   --accent: #2563eb;
+  --accent-solid: #2563eb;
   --accent-text: #ffffff;
+
+  /* chrome - status */
   --warn: #b45309;
+  --success: #15803d;
+  --success-solid: #15803d;
+  --danger: #dc2626;
+
+  /* chrome - the one hover tint every borderless control shares */
+  --hover-tint: color-mix(in srgb, var(--text) 7%, transparent);
+
+  /* chrome - shape and type */
   --radius: 10px;
+  --radius-sm: 7px;
+  --control-h: 28px;
+  --bar-pad: 3px;
+  --text-sm: 13px;
+  --text-xs: 12px;
   --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
   --shadow-2: 0 8px 30px rgba(15, 23, 42, 0.14);
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Thai", sans-serif;
+
+  /* board content - NOT themed, see the note above.
+     `--annotation` mirrors DEFAULT_ANNOTATION_COLOR in board/model/types.ts:
+     it tints the text tool's live textarea overlay and the armed-tool button,
+     both of which promise "this is the red that will be drawn". Lightening it
+     in dark mode would make that promise false. */
+  --annotation: #dc2626;
+  --checker: #c9cfd8;
+  --checker-base: #ffffff;
+  --checker-image: linear-gradient(45deg, var(--checker) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--checker) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--checker) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--checker) 75%);
 }
 
 /* Self-hosted, per product plan 9.2 ("font self-host, no Google Fonts" -
@@ -41,6 +97,12 @@
   unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
 }
 
+/* Only CHROME tokens are overridden here. Every board-content token
+   (--annotation, --checker*) is deliberately absent: see the group-2 note
+   above. Before Phase 5 item 1, --warn, --danger and --success had no dark
+   values at all, so the toast that reports a rejected file rendered dark
+   amber on a near-black surface at 3.4:1 - below AA, on the one code path a
+   user only ever sees when something has already gone wrong. */
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0d1117;
@@ -49,7 +111,14 @@
     --border: #2a323d;
     --text: #e6edf3;
     --text-dim: #8b949e;
+    /* Brighter for text/rings; --accent-solid stays dark enough to carry
+       white --accent-text on a filled button (white on #4c8dff is 3.2:1,
+       which is why the two can't be one token in this theme). */
     --accent: #4c8dff;
+    --accent-solid: #1f6feb;
+    --warn: #fbbf24;
+    --success: #4ade80;
+    --danger: #f87171;
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
     --shadow-2: 0 8px 30px rgba(0, 0, 0, 0.5);
   }
@@ -108,7 +177,7 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
+  padding: var(--bar-pad);
   background: var(--surface-2);
   border-radius: var(--radius);
 }
@@ -119,9 +188,9 @@ body {
   background: transparent;
   color: var(--text-dim);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
   padding: 5px 10px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
   transition: background 120ms ease, color 120ms ease;
@@ -129,7 +198,7 @@ body {
 
 .chip:hover {
   color: var(--text);
-  background: color-mix(in srgb, var(--text) 7%, transparent);
+  background: var(--hover-tint);
 }
 
 .chip[aria-pressed='true'] {
@@ -146,7 +215,7 @@ body {
   align-items: center;
   gap: 8px;
   padding: 5px 10px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text-dim);
   white-space: nowrap;
 }
@@ -176,7 +245,7 @@ body {
 .swatch {
   width: 24px;
   height: 24px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   /* A pale swatch on a pale toolbar needs a real outline to read as a control. */
   border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
   cursor: pointer;
@@ -188,18 +257,16 @@ body {
 }
 
 .swatch--transparent {
-  background-image: linear-gradient(45deg, #c9cfd8 25%, transparent 25%),
-    linear-gradient(-45deg, #c9cfd8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #c9cfd8 75%),
-    linear-gradient(-45deg, transparent 75%, #c9cfd8 75%);
+  background-image: var(--checker-image);
   background-size: 10px 10px;
   background-position: 0 0, 0 5px, 5px -5px, -5px 0;
-  background-color: #fff;
+  background-color: var(--checker-base);
 }
 
 .btn {
   appearance: none;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 550;
   padding: 8px 14px;
   border-radius: var(--radius);
@@ -263,13 +330,13 @@ body {
 }
 
 .export-menu__label {
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-dim);
 }
 
 .export-menu__estimate {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-dim);
 }
 
@@ -279,25 +346,28 @@ body {
 }
 
 .btn--primary {
-  background: var(--accent);
+  background: var(--accent-solid);
   border-color: transparent;
   color: var(--accent-text);
   min-width: 92px;
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 88%, black);
+  background: color-mix(in srgb, var(--accent-solid) 88%, black);
 }
 
+/* The transient "Copied" state of the primary button - it keeps
+   .btn--primary's white --accent-text, so this has to be the solid token,
+   not the brighter text-weight --success. */
 .btn--done {
-  background: #16a34a;
+  background: var(--success-solid);
 }
 
 .slider {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--text-dim);
   padding: 0 8px;
 }
@@ -314,7 +384,7 @@ body {
   align-items: center;
   gap: 10px;
   padding: 8px 16px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   color: var(--text);
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));
   border-bottom: 1px solid var(--border);
@@ -364,12 +434,10 @@ body {
   position: absolute;
   border-radius: 6px;
   box-shadow: var(--shadow-2);
-  background-image: linear-gradient(45deg, #d7dce4 25%, transparent 25%),
-    linear-gradient(-45deg, #d7dce4 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d7dce4 75%),
-    linear-gradient(-45deg, transparent 75%, #d7dce4 75%);
+  background-image: var(--checker-image);
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
-  background-color: #fff;
+  background-color: var(--checker-base);
   pointer-events: none;
 }
 
@@ -422,7 +490,7 @@ body {
   border: 1px dashed var(--accent);
   border-radius: 4px;
   background: color-mix(in srgb, var(--surface) 70%, transparent);
-  color: #dc2626;
+  color: var(--annotation);
   font-family: 'Snapboard Annotation', ui-sans-serif, system-ui, sans-serif;
   font-weight: 600;
   outline: none;
@@ -437,7 +505,7 @@ body {
   transform: translate(-50%, calc(-100% - 10px));
   align-items: center;
   gap: 2px;
-  padding: 3px;
+  padding: var(--bar-pad);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -453,20 +521,20 @@ body {
   font: inherit;
   font-size: 14px;
   cursor: pointer;
-  border-radius: 7px;
-  width: 28px;
-  height: 28px;
+  border-radius: var(--radius-sm);
+  width: var(--control-h);
+  height: var(--control-h);
   color: var(--text-dim);
 }
 
 .selection-toolbar__btn:hover {
   color: var(--text);
-  background: color-mix(in srgb, var(--text) 7%, transparent);
+  background: var(--hover-tint);
 }
 
 .selection-toolbar__btn--danger:hover {
-  color: #dc2626;
-  background: color-mix(in srgb, #dc2626 10%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 /* Cursor hint while an annotation tool (arrow/box) is armed - the canvas
@@ -484,7 +552,7 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
+  padding: var(--bar-pad);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -498,20 +566,23 @@ body {
   font: inherit;
   font-size: 15px;
   cursor: pointer;
-  border-radius: 7px;
-  width: 28px;
-  height: 28px;
+  border-radius: var(--radius-sm);
+  width: var(--control-h);
+  height: var(--control-h);
   color: var(--text-dim);
 }
 
 .annotation-toolbar__btn:hover {
   color: var(--text);
-  background: color-mix(in srgb, var(--text) 7%, transparent);
+  background: var(--hover-tint);
 }
 
+/* Deliberately --annotation, not --danger: an armed tool button is
+   previewing the red it is about to draw on the board, so it must not shift
+   with the OS theme the way a destructive-action affordance does. */
 .annotation-toolbar__btn.is-active {
-  color: #fff;
-  background: #dc2626;
+  color: var(--accent-text);
+  background: var(--annotation);
 }
 
 .zoom-controls {
@@ -521,7 +592,7 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
+  padding: var(--bar-pad);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -535,24 +606,24 @@ body {
   background: transparent;
   font: inherit;
   cursor: pointer;
-  border-radius: 7px;
-  height: 28px;
+  border-radius: var(--radius-sm);
+  height: var(--control-h);
 }
 
 .zoom-btn {
   color: var(--text-dim);
   font-size: 15px;
   line-height: 1;
-  width: 28px;
+  width: var(--control-h);
 }
 
 .zoom-fit {
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .zoom-pct {
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   min-width: 48px;
   padding: 0 8px;
@@ -561,7 +632,7 @@ body {
 .zoom-btn:hover,
 .zoom-pct:hover {
   color: var(--text);
-  background: color-mix(in srgb, var(--text) 7%, transparent);
+  background: var(--hover-tint);
 }
 
 /* ---------- empty state ---------- */
@@ -599,11 +670,11 @@ body {
 .empty p {
   margin: 0;
   color: var(--text-dim);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 .empty .privacy {
-  font-size: 12px;
+  font-size: var(--text-xs);
   opacity: 0.85;
 }
 
@@ -642,7 +713,7 @@ body {
   box-shadow: var(--shadow-2);
   border-radius: var(--radius);
   padding: 9px 15px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   animation: toast-in 160ms ease-out;
 }
 
@@ -652,7 +723,7 @@ body {
 }
 
 .toast--success {
-  border-color: #16a34a;
+  border-color: var(--success);
 }
 
 @keyframes toast-in {
@@ -671,7 +742,7 @@ body {
   border-radius: var(--radius);
   box-shadow: var(--shadow-2);
   padding: 9px 15px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   z-index: 60;
 }
 

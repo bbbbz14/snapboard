@@ -224,6 +224,16 @@ function imageSize(image: CanvasImageSource): Size {
 
 export const BADGE_DIAMETER = 44
 
+/** The step badge's own colors. Named rather than inlined so it's obvious
+ * they are *board content* - they land in the exported file, so unlike the
+ * app's chrome they must never follow the OS theme, and in particular must
+ * not be swapped for the `--accent`/`--surface` CSS tokens they happen to
+ * share a value with today (see the two token groups in app/styles.css). */
+export const BADGE_FILL_COLOR = '#2563eb'
+export const BADGE_TEXT_COLOR = '#ffffff'
+/** Fallback ring color where the board has no solid color to match. */
+const BADGE_RING_ON_TRANSPARENT = 'rgba(255,255,255,0.9)'
+
 /** Numbered marker in the gutter, so a stack of screenshots reads as a sequence. */
 function drawBadge(ctx: Ctx2D, item: RenderItem, background: Background): void {
   const r = BADGE_DIAMETER / 2
@@ -234,14 +244,14 @@ function drawBadge(ctx: Ctx2D, item: RenderItem, background: Background): void {
   ctx.save()
   ctx.beginPath()
   ctx.arc(cx, cy, r, 0, Math.PI * 2)
-  ctx.fillStyle = '#2563eb'
+  ctx.fillStyle = BADGE_FILL_COLOR
   ctx.fill()
   // A ring keeps the badge legible where it overlaps a dark background.
   ctx.lineWidth = 2
-  ctx.strokeStyle = background.type === 'solid' ? background.color : 'rgba(255,255,255,0.9)'
+  ctx.strokeStyle = background.type === 'solid' ? background.color : BADGE_RING_ON_TRANSPARENT
   ctx.stroke()
 
-  ctx.fillStyle = '#ffffff'
+  ctx.fillStyle = BADGE_TEXT_COLOR
   ctx.font = `600 ${Math.round(BADGE_DIAMETER * 0.5)}px ui-sans-serif, system-ui, sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'

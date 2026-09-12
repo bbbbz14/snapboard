@@ -52,15 +52,113 @@ passed, 5 skipped by design - same 5 as always, see the note above; item 6's
 e2e file added 5 test cases (15 counting all 3 browser engines) and no new
 skips).
 
-**Next up: Phase 5 (polish)** - see "Phase 5 — Polish" below for the full,
-ordered 10-item list this guide broke the product plan's flat feature list
-into. **Start with item 1, design system cleanup** - items 2+ (dark mode,
-gradients, mobile lite) build on its tokens, so doing it first avoids
-redoing earlier work. Before diving in, consider closing the manual-testing
-gaps that have carried over since Phase 2/3 (real Safari/Firefox
-confirmation, and the Slack/LINE/Jira/Gmail/Word/Figma/Google Docs paste
-results table) - neither is doable from inside this environment and both
-need the user; check with them whether to close those first or start Phase 5.
+**Phase 5 (polish) is in progress. Item 1 (design system cleanup) is done -
+see "Phase 5 item 1" below; not yet committed, pushed, or deployed as of
+this note.** `npm run verify` green after it. **Next up: item 2 (dark
+mode)**, which item 1 deliberately reduced to a verification pass rather
+than new plumbing - read item 1's note first, especially the two token
+groups and why board-content colors must stay unthemed.
+
+**One ordering change was approved this session** (see item 1's note and the
+Phase 5 list below): the minimum top-bar overflow fix moves *ahead* of item
+3 (6 gradient backgrounds), because item 3 grows the background swatch row
+from 4 controls to 10 in a bar already confirmed to need horizontal
+scrolling on mobile. It is not the whole of item 10 (mobile lite) - just
+enough that item 3 does not make a known finding worse.
+
+Still open and still needing the user (carried over since Phase 2/3): real
+Safari/Firefox confirmation, the Slack/LINE/Jira/Gmail/Word/Figma/Google
+Docs paste results table, whether `Ctrl/Cmd+Shift+C` loses to Chrome/Edge
+DevTools on a real desktop build, and manual-checklist E2 (HEIC) / E4
+(>50MB). None are doable from inside this environment.
+
+### Phase 5 item 1 — done: design system cleanup
+
+Built this session. `npm run verify` green. **Not committed, pushed, or
+deployed yet** - the user was asked to approve the work before it goes out.
+
+- **The audit that preceded it found dark mode was already half-built, the
+  same way Phase 3 found most of its own feature list already existed:**
+  `styles.css` already had a 13-token `:root` and an
+  `@media (prefers-color-scheme: dark)` block overriding 9 of them. The real
+  gap was not "no tokens," it was **three status colors that had no dark
+  value at all** - so item 1's scope was widened (with the user's explicit
+  approval) to close that, which is what turns item 2 into a verification
+  pass instead of a second edit of the same file.
+- **The one decision this item actually made, and the reason to read this
+  note before touching `styles.css` again: tokens are now split into two
+  groups, and the split is load-bearing.** *Chrome* tokens follow the OS
+  theme. *Board-content* tokens (`--annotation`, `--checker`,
+  `--checker-base`, `--checker-image`) deliberately do **not**, and are
+  absent from the dark-mode block on purpose. Collapsing the two would make
+  the app's chrome and the exported image disagree about what the user is
+  looking at, and would contradict manual-checklist E7's confirmed result
+  ("UI chrome follows the OS theme, board background does not"). A naive
+  "tokenize every literal" pass would have done exactly that - `.board-page`'s
+  `#fff` and the transparency checkerboard look like chrome and are not.
+- **Concretely, this is why `.text-edit` and `.annotation-toolbar__btn.is-active`
+  use `--annotation` and not `--danger`,** even though all three were the
+  same `#dc2626` literal before: the text tool's live textarea and the armed
+  tool button are both *previewing the red that will be drawn on the board*.
+  A dark-mode variant would make that preview lie. `.selection-toolbar__btn--danger`
+  is the opposite case - a destructive-action affordance, pure chrome - and
+  does get a dark variant. Same literal, three sites, two different meanings;
+  that distinction is the whole point of the group split.
+- **Three real contrast failures fixed, all of them measured rather than
+  eyeballed** (the numbers matter because item 4's acceptance bar is
+  Lighthouse a11y > 95):
+  - `--warn` had no dark value, so the toast that reports a **rejected file**
+    rendered `#b45309` on `#161b22` at **3.4:1** - below AA, on the one code
+    path a user only ever sees when something has already gone wrong. Now
+    `#fbbf24` in dark (10.4:1).
+  - `.btn--done` (the "Copied" state of the primary button) kept
+    `.btn--primary`'s white text over `#16a34a` - **3.58:1, failing AA in
+    light mode already**, before dark mode was even considered. Now
+    `--success-solid` `#15803d` (4.8:1). This is a deliberate, visible
+    light-mode color change, not just a rename.
+  - White `--accent-text` over the dark theme's `--accent` `#4c8dff` was
+    **3.2:1** on the Download button.
+- **That last one forced a token split worth knowing about:** in dark mode a
+  blue bright enough to read *as text* on a dark surface is too light to
+  *carry* white text on top of it. One token cannot do both jobs. Hence
+  `--accent` (text, links, focus rings, borders) vs `--accent-solid` (the
+  fill behind `--accent-text`); they're equal in light mode and differ only
+  in dark. `--success`/`--success-solid` needed the identical split for the
+  identical reason - `--success` borders a light toast so it can't be the
+  bright green either.
+- Duplication actually removed (the "cleanup" half of the item): the
+  `color-mix(in srgb, var(--text) 7%, transparent)` hover tint was written
+  out **5 times verbatim** and is now `--hover-tint`; the transparency
+  checkerboard was **two near-identical 4-gradient stacks using two
+  different grays** (`#c9cfd8` in the swatch, `#d7dce4` on the board page)
+  and is now one `--checker-image` - the board page's checkerboard is
+  consequently slightly darker than before, which is a visible change and
+  the better default (more contrast reads as "transparent" more clearly).
+  Also added `--radius-sm`, `--control-h`, `--bar-pad`, `--text-sm`,
+  `--text-xs` for values repeated 4-8 times each across the four
+  pill-shaped control groups - item 10 (mobile) is what will actually need
+  to scale those, which is why they exist now rather than later.
+- **No full spacing scale, on purpose.** Rewriting every `padding`/`gap` in
+  a 700-line file into a `--space-N` ladder would churn every rule for no
+  present caller; the five tokens above are the ones with 4+ real duplicate
+  sites today. Add more when a caller needs them.
+- `renderScene.ts`'s badge colors are now named (`BADGE_FILL_COLOR`,
+  `BADGE_TEXT_COLOR`, `BADGE_RING_ON_TRANSPARENT`) instead of inline
+  literals. They are board content, so this is *not* a step toward wiring
+  them to CSS tokens - the names exist specifically so the next reader
+  doesn't "fix" `#2563eb` into `var(--accent)` because the two share a value
+  today. `tests/render/render.spec.ts:54` asserts the badge is blue, so that
+  mistake would be caught, but only on the parity suite.
+- **Nothing else in `src/` needed to change and no test needed updating** -
+  no e2e or unit test asserts on a chrome color (checked before editing);
+  the only color literals tests do reference are the annotation red and the
+  badge blue, both of which are unchanged by design.
+- **Deliberately not done:** no theme toggle (item 2's call, if it wants
+  one - `prefers-color-scheme` alone is what E7 confirmed works); no
+  `@media (max-width)` rules (that's the approved pre-item-3 overflow work,
+  next); no a11y changes beyond the contrast values above (`role="group"` on
+  the chip groups and `ExportMenu`'s missing focus trap were both found
+  during the audit and belong to item 4 - see the Phase 5 list below).
 
 ### Phase 4 item 6 — done: crop (per-image, not the whole board)
 
@@ -1294,51 +1392,89 @@ mockups for most of them - the order below is this guide's own judgment
 call (each item still independently shippable, same as every prior phase),
 made so later items can build on earlier ones instead of redoing them:
 
-1. ⬜ **Design system cleanup.** Audit `src/app/styles.css` for ad-hoc
-   colors/spacing and pull them into consistent tokens (CSS custom
-   properties) - do this first so dark mode (item 2) is a token swap, not a
-   second pass over every rule.
-2. ⬜ **Dark mode.** Builds directly on item 1's tokens. Remember the
-   existing manual-test finding (Gate section below): the board's own
-   *content* background (white/black/slate/transparent/gradient) is export
-   content and must never follow the OS theme - only the UI chrome does,
-   exactly as already confirmed for the existing light-mode chrome vs.
-   board-background distinction.
-3. ⬜ **6 gradient backgrounds.** `Background` (`src/board/model/types.ts`)
+1. ✅ **Design system cleanup.** Done - see "Phase 5 item 1" under START
+   HERE above. Read its note before touching `styles.css` again: tokens are
+   now split into chrome (themed) and board-content (never themed) groups,
+   and it closed three measured contrast failures, two of which were
+   pre-existing in light mode.
+2. ⬜ **Dark mode.** Item 1 reduced this to a **verification pass**, not new
+   plumbing: `@media (prefers-color-scheme: dark)` already existed and now
+   overrides every chrome token including the three status colors that had
+   none. What's left is actually looking at each surface in dark mode and
+   deciding whether a theme *toggle* is wanted at all (nothing asks for one;
+   E7 confirmed `prefers-color-scheme` alone works). Remember the
+   board-content rule item 1 encoded: the board's own background
+   (white/black/slate/transparent/gradient) is export content and must never
+   follow the OS theme.
+3. ⬜ **Minimum top-bar overflow fix.** *Inserted here by an approved
+   ordering change, ahead of the gradients below.* `.topbar` is a plain
+   `display: flex` with no `flex-wrap` and no `overflow-x`, and
+   `styles.css` has no `@media (max-width:)` rule at all - which is the
+   mechanism behind the standing "top bar needs horizontal scrolling on
+   mobile" finding (Gate section below). Item 4 below grows the background
+   swatch row from 4 controls to 10, so doing that first would measurably
+   worsen a known finding. This is **not** all of item 11 (mobile lite) -
+   just enough that the next item is safe to add. Item 1's `--text-sm`/
+   `--control-h`/`--bar-pad` tokens exist for this.
+4. ⬜ **6 gradient backgrounds.** `Background` (`src/board/model/types.ts`)
    is currently `{ type: 'solid' } | { type: 'transparent' }` - this item
    needs a third variant and a `renderScene.ts` fill path for it. No
    concrete 6 gradients are specified anywhere in the product plan; picking
    them is part of this item's own work, not something to look up.
-4. ⬜ **Accessibility pass** (focus rings, ARIA, full keyboard
+   **Blast radius was audited and is small - 6 real sites** - but one of
+   them is easy to miss: `renderScene.ts`'s `drawBadge` picks its ring color
+   with `background.type === 'solid' ? background.color : <white>`, so a
+   gradient would silently fall through to the transparent-board fallback
+   and needs its own branch. `exportBoard.ts`'s JPEG backdrop check is
+   already safe (it only tests for `'transparent'`, and a gradient is
+   opaque). The others: the `renderScene` fill itself, `BACKGROUNDS` in
+   `types.ts`, `SWATCHES` in `TopBar.tsx`, and `tests/render/harness.ts`.
+   Strongly consider putting the picker in a popover (the `ExportMenu`
+   pattern) rather than 10 inline swatches, for the reason item 3 exists.
+5. ⬜ **Accessibility pass** (focus rings, ARIA, full keyboard
    operability). Partly already true by construction (every Phase 2–4
    tool has a keyboard shortcut, canvas already gets an `aria-live` status
-   region - see item 2's own note under Phase 2 above) - this item is the
-   dedicated audit that finds what's still missing, plus the Lighthouse a11y
-   > 95 acceptance check.
-5. ⬜ **Friendly error messages everywhere.** Audit every existing
+   region - see item 2's own note under Phase 2 above; `:focus-visible`
+   outlines, `prefers-reduced-motion`, and `aria-label`/`aria-pressed` on
+   every component already exist too). **Three concrete gaps were found
+   during item 1's audit and deliberately left here rather than fixed in
+   passing:** `ExportMenu` has `role="dialog"` but no focus trap and does
+   not restore focus on close; the `TopBar` chip groups have no
+   `role="group"` + label, so a screen reader reads five unrelated buttons;
+   the gap slider has no explicitly associated label. Item 1 closed the
+   *contrast* half of this item (see its note) - these three are what's
+   left, plus the Lighthouse a11y > 95 check itself.
+6. ⬜ **Friendly error messages everywhere.** Audit every existing
    toast/rejection message (`src/i18n/en.ts`'s `toast.rejected.*` etc.) for
    tone, not just correctness - most already exist from Phase 1, so this is
    a review pass, not new plumbing.
-6. ⬜ **Right-click context menu.** A second entry point to the same
+7. ⬜ **Right-click context menu.** A second entry point to the same
    selection actions `SelectionToolbar` already exposes (Crop/Duplicate/
    Bring to front/Delete) - no new store actions needed, just a new UI
    surface over existing ones.
-7. ⬜ **Help page / shortcut cheatsheet, opened with `?`.** By this point
+8. ⬜ **Help page / shortcut cheatsheet, opened with `?`.** By this point
    every shortcut across Phase 2–4 is known and stable, so this is a single
    static reference, not something that needs updating per-item going
-   forward.
-8. ⬜ **Animation / micro-interactions.** Deliberately late - polish on top
+   forward. `?` was checked against every existing binding during item 1's
+   audit and is free; the full set currently taken is `+ - 0 1 Esc
+   Del/Backspace D F A R T N C` plus `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`,
+   `Ctrl/Cmd+Shift+C` and `Ctrl/Cmd+Enter`.
+9. ⬜ **Animation / micro-interactions.** Deliberately late - polish on top
    of UI that's already visually settled (dark mode, gradients, a11y) costs
-   less rework than polishing first and having items 1–4 change underneath it.
-9. ⬜ **i18n: Thai/English.** `src/i18n/en.ts` is already the single source
-   of every user-facing string (no hardcoded strings in components, per
-   "Where things live" below) specifically so this item is "add `th.ts` +
-   a switch," not a hunt through components.
-10. ⬜ **Mobile lite mode.** Last, and the biggest single item - directly
-    addresses the standing "top bar/toolbar needs horizontal scrolling on
-    mobile" finding (Gate section below), which every Phase 2–4 UI addition
-    was explicitly warned not to make worse. Wants the rest of Phase 5
-    (dark mode, tokens, a11y) already in place rather than done in parallel.
+   less rework than polishing first and having the earlier items change
+   underneath it. Baseline is near zero today (two `transition` rules and
+   one `@keyframes`), and `prefers-reduced-motion` is already handled, so
+   there is nothing to unpick first.
+10. ⬜ **i18n: Thai/English.** `src/i18n/en.ts` is already the single source
+    of every user-facing string specifically so this item is "add `th.ts` +
+    a switch," not a hunt through components - **re-confirmed by grep during
+    item 1's audit: zero hardcoded user-facing strings in `src/ui/*.tsx` or
+    `App.tsx`**, and `t.ts` already does `{{}}` interpolation.
+11. ⬜ **Mobile lite mode.** Last, and the biggest single item. Item 3 above
+    takes only the minimum overflow fix out of it; this is the rest -
+    a genuinely mobile-shaped layout, not just a bar that no longer
+    overflows. Wants the rest of Phase 5 (dark mode, gradients, a11y)
+    already in place rather than done in parallel.
 
 **Phase 5 is done when:** 5 new users understand the app within 10 seconds
 with no explanation (needs real people, same category as Phase 1's
