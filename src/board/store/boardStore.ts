@@ -16,6 +16,7 @@ import { AssetStore, type Asset } from '@/assets/assetStore'
 import type { Rejection } from '@/assets/validate'
 import type { RenderInput } from '@/board/render/renderScene'
 import { translate, type Rect } from '@/lib/geometry'
+import { restoreAutosave, scheduleAutosave, wipeAutosave } from '@/board/persist/autosave'
 
 /** Board-space offset applied to a duplicate so it's visibly distinct from
  * the original instead of sitting exactly on top of it. */
@@ -51,6 +52,21 @@ interface BoardState {
   adjustmentBase: Board | null
   busy: { done: number; total: number } | null
   toasts: Toast[]
+  /** Set once at startup if autosave had a non-empty board waiting - drives
+   * the dismissible "Recovered your last board" bar. Null before hydration
+   * finishes, after the user dismisses it, or if there was nothing to
+   * recover; it does not track whether recovered content is still present. */
+  recoveredBoard: Board | null
+  /** Reads the last autosaved board and its images back from IndexedDB and
+   * makes them the starting board. Call once, at startup, before the user
+   * can commit any action of their own. */
+  hydrate: () => Promise<void>
+  /** Hides the recovery bar without touching the board. */
+  dismissRecovery: () => void
+  /** The recovery bar's "Start fresh" action: same empty board as `clear()`,
+   * plus an immediate (non-debounced) wipe of autosave storage, since this
+   * is a deliberate "throw it away" action, not a routine edit. */
+  startFresh: () => void
   addFiles: (files: File[]) => Promise<void>
   setLayout: (mode: LayoutMode) => void
   setBackground: (name: BackgroundName) => void
@@ -136,6 +152,7 @@ function reconcileAssets(boards: Board[]): void {
  * `past` (capped at MAX_HISTORY) and clears `future`, same as any editor's
  * "new action discards the redo branch" rule. */
 function commitBoard(s: BoardState, board: Board): Pick<BoardState, 'board' | 'past' | 'future'> {
+  autosave(board)
   if (s.adjustmentBase) {
     reconcileAssets([board, s.adjustmentBase, ...s.past, ...s.future])
     return { board, past: s.past, future: s.future }
@@ -143,6 +160,13 @@ function commitBoard(s: BoardState, board: Board): Pick<BoardState, 'board' | 'p
   const past = [...s.past, s.board].slice(-MAX_HISTORY)
   reconcileAssets([board, ...past])
   return { board, past, future: [] }
+}
+
+/** Every commit path (including undo/redo, which build their own return
+ * value instead of calling `commitBoard`) runs through this so autosave
+ * never has a mutation that silently skips it. */
+function autosave(board: Board): void {
+  scheduleAutosave(board, (assetId) => assetStore.get(assetId)?.blob)
 }
 
 export const useBoardStore = create<BoardState>((set, get) => ({
@@ -153,6 +177,48 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   adjustmentBase: null,
   busy: null,
   toasts: [],
+  recoveredBoard: null,
+
+  async hydrate() {
+    const restored = await restoreAutosave()
+    if (!restored) return
+    const { board, assets } = restored
+
+    const uniqueIds = [...new Set(board.nodes.map((n) => n.assetId))]
+    const decoded = new Map<string, Asset>()
+    await Promise.all(
+      uniqueIds.map(async (id) => {
+        const blob = assets.get(id)
+        if (!blob) return
+        const asset = await assetStore.restore(id, blob)
+        if (asset) decoded.set(id, asset)
+      }),
+    )
+
+    // A node whose asset failed to come back (corrupt store) would otherwise
+    // render forever with no image - drop it rather than leave it broken.
+    const nodes = board.nodes.filter((n) => decoded.has(n.assetId))
+    const recovered: Board =
+      nodes.length === board.nodes.length
+        ? board
+        : relayout({ ...board, nodes: nodes.map((n, i) => ({ ...n, order: i })) })
+    if (recovered.nodes.length === 0) return
+
+    for (const n of recovered.nodes) {
+      const match = /^n(\d+)$/.exec(n.id)
+      if (match) nodeSeq = Math.max(nodeSeq, Number(match[1]) + 1)
+    }
+    reconcileAssets([recovered])
+    set({ board: recovered, recoveredBoard: recovered })
+  },
+
+  dismissRecovery: () => set({ recoveredBoard: null }),
+
+  startFresh: () =>
+    set((s) => {
+      wipeAutosave()
+      return { ...commitBoard(s, { ...DEFAULT_BOARD, nodes: [] }), selectedIds: [], recoveredBoard: null }
+    }),
 
   async addFiles(files) {
     if (files.length === 0) return
@@ -269,6 +335,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       const past = s.past.slice(0, -1)
       const future = [...s.future, s.board]
       reconcileAssets([previous, ...past, ...future])
+      autosave(previous)
       return {
         board: previous,
         past,
@@ -285,6 +352,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       const future = s.future.slice(0, -1)
       const past = [...s.past, s.board]
       reconcileAssets([next, ...past, ...future])
+      autosave(next)
       return {
         board: next,
         past,

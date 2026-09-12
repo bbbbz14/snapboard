@@ -217,6 +217,46 @@ describe('beginAdjustment/endAdjustment', () => {
   })
 })
 
+describe('recovery', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, nodes: [node('a', { x: 0, y: 0, w: 10, h: 10 })] },
+      selectedIds: ['a'],
+      recoveredBoard: null,
+      past: [],
+      future: [],
+    })
+  })
+
+  it('hydrate is a no-op when there is nothing autosaved (e.g. IndexedDB unavailable)', async () => {
+    await useBoardStore.getState().hydrate()
+    const board = useBoardStore.getState().board
+    expect(board.nodes.map((n) => n.id)).toEqual(['a'])
+    expect(useBoardStore.getState().recoveredBoard).toBeNull()
+  })
+
+  it('dismissRecovery hides the banner without touching the board', () => {
+    useBoardStore.setState({ recoveredBoard: useBoardStore.getState().board })
+    useBoardStore.getState().dismissRecovery()
+    expect(useBoardStore.getState().recoveredBoard).toBeNull()
+    expect(useBoardStore.getState().board.nodes).toHaveLength(1)
+  })
+
+  it('startFresh empties the board, clears selection, and hides the banner', () => {
+    useBoardStore.setState({ recoveredBoard: useBoardStore.getState().board })
+    useBoardStore.getState().startFresh()
+    expect(useBoardStore.getState().board.nodes).toHaveLength(0)
+    expect(useBoardStore.getState().selectedIds).toEqual([])
+    expect(useBoardStore.getState().recoveredBoard).toBeNull()
+  })
+
+  it('startFresh can still be undone, same as clear()', () => {
+    useBoardStore.getState().startFresh()
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.nodes.map((n) => n.id)).toEqual(['a'])
+  })
+})
+
 describe('bringToFront', () => {
   beforeEach(() => {
     useBoardStore.setState({

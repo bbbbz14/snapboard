@@ -116,6 +116,34 @@ export class AssetStore {
     return { assets, rejected }
   }
 
+  /**
+   * Re-decodes a Blob read back from autosave into an asset keyed by its
+   * *original* id, so restored `Board.nodes[].assetId` references keep
+   * resolving without the board itself needing to change. Returns null if
+   * the bytes no longer decode (corrupt store) - the caller drops the node
+   * rather than leaving it pointing at nothing forever.
+   */
+  async restore(id: string, blob: Blob): Promise<Asset | null> {
+    const existing = this.#assets.get(id)
+    if (existing) return existing
+
+    const res = await this.#decode(blob)
+    if (!res.ok || !res.display || !res.natural) return null
+
+    const asset: Asset = { id, blob, natural: res.natural, display: res.display, refs: 1 }
+    this.#assets.set(id, asset)
+    this.#byHash.set(await hashBlob(blob), id)
+    this.#bumpSeqPast(id)
+    return asset
+  }
+
+  /** Keeps future `a${seq++}` ids from colliding with one just restored
+   * from autosave (e.g. board has "a7", next fresh ingest must not reuse it). */
+  #bumpSeqPast(id: string): void {
+    const match = /^a(\d+)$/.exec(id)
+    if (match) this.#seq = Math.max(this.#seq, Number(match[1]) + 1)
+  }
+
   /** Decodes the original bytes at full resolution for export, then releases them. */
   async fullRes(id: string): Promise<ImageBitmap | null> {
     const asset = this.#assets.get(id)

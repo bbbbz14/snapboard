@@ -125,7 +125,7 @@ body {
   white-space: nowrap;
 }
 
-.free-banner .link {
+.link {
   appearance: none;
   border: 0;
   background: transparent;
@@ -136,7 +136,7 @@ body {
   padding: 0;
 }
 
-.free-banner .link:hover {
+.link:hover {
   text-decoration: underline;
 }
 
@@ -225,6 +225,35 @@ body {
 .slider input {
   width: 78px;
   accent-color: var(--accent);
+}
+
+/* ---------- recovery bar ---------- */
+
+.recovery-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  border-bottom: 1px solid var(--border);
+}
+
+.recovery-dismiss {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  margin-left: auto;
+  padding: 0 4px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.recovery-dismiss:hover {
+  color: var(--text);
 }
 
 /* ---------- stage ---------- */

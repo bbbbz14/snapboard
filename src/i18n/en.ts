@@ -67,6 +67,10 @@ export const en = {
   'toast.rejected.too-many-pixels': '{{name}} has too many pixels to open safely',
   'toast.rejected.corrupt': '{{name}} could not be read as an image',
   'toast.decoding': 'Adding {{done}} of {{total}}...',
+
+  'recovery.message': 'Recovered your last board',
+  'recovery.startFresh': 'Start fresh',
+  'recovery.dismiss': 'Dismiss',
 } as const
 
 export type MessageKey = keyof typeof en
