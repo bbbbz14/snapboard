@@ -92,18 +92,13 @@ don't collide with each other mid-flight:
    shipped as commit `26c6761`, pushed to `main`, and deployed to the live
    site. See "Phase 5 annotation revision, part 1" below for the full
    writeup.
-2. **A new font pairing for the text tool, plus a subtle shadow/halo for
-   legibility** - the user found the current self-hosted Inter+Anuphan pair
-   ([styles.css](src/app/styles.css)'s `'Snapboard Annotation'` face) reads
-   as stiff/plain, and wants something closer to how macOS's own screenshot
-   markup tool renders text. Two candidate treatments to actually try and
-   compare live before picking one: a soft drop-shadow, or a thin light
-   halo/outline around each glyph (closer to what macOS Markup does).
-   Whatever font is picked needs an OFL (or equivalently permissive)
-   license, same as the current pair, and `npm run test:render` needs a
-   clean run across all 3 engines afterward - text-rendering/antialiasing
-   differences between engines are exactly what invariant 1 exists to catch,
-   and a shadow is new surface for that class of bug.
+2. ✅ **Done - a halo (light outline) behind text-tool glyphs for
+   legibility.** Built this session, shipped as commit `b6f1d5c`, pushed to
+   `main`, and deployed to the live site. Three OFL font pairings and two
+   treatments were compared live before deciding to **keep the current
+   Inter+Anuphan pairing and add only the halo treatment** - see "Phase 5
+   annotation revision, part 2" below for the full writeup, including a
+   real gap this found in the render-parity test harness itself.
 3. **Text box starts small and grows with the content, instead of a fixed
    240px width that only grows taller** (`TEXT_DEFAULT_WIDTH` in
    `render/text.ts`) - another explicit Lightshot comparison. This is a
@@ -113,6 +108,20 @@ don't collide with each other mid-flight:
    not a parameter tweak. Do this **after** part 2, not interleaved with
    it - both touch the same rendering code and picking the font/shadow
    first avoids re-touching text.ts's layout math twice.
+
+**Two real bugs in part 1's own UI, found this session by the user actually
+using the wheel/color feature on the live site and fixed before starting
+part 2** - both shipped in the same commit as part 2, `b6f1d5c`: the
+Style/settings button disabled itself the instant an annotation tool
+committed and reverted to `'select'` (i.e. right after drawing one shape,
+since every annotation tool is one-shot), which broke the single most
+common real flow - arm a tool, draw with it, then try to change its
+color/size - and looked exactly like "the color button doesn't work." Fixed
+by remembering the last-armed tool so settings stay reachable across that
+revert. Separately, scrolling the wheel to adjust size had no feedback at
+all unless the popover happened to already be open - fixed with a small
+transient "Npx" badge near the toolbar. See "Phase 5 annotation revision,
+part 2" below for the full writeup of both, plus the halo work.
 
 Still open and still needing the user: the Slack/LINE/Jira/Gmail/Word/Figma/
 Google Docs paste results table. Not doable from inside this environment.
@@ -124,6 +133,138 @@ Chrome/Edge DevTools is no longer an open question either - the user
 confirmed on a real desktop build that DevTools wins, so this is now a known,
 accepted limitation (see Phase 2 item 9's note and the shortcut cheatsheet,
 Phase 5 item 8), not a thing to test or fix.
+
+### Phase 5 annotation revision, part 2 — done: two part-1 bugs fixed, halo added
+
+Built this session, shipped as commit `b6f1d5c`, pushed to `main`, and
+deployed to the live site. Push and deploy both worked cleanly on the first
+try; the `gh-pages` branch's own last commit reads `Deploy b6f1d5c`
+(confirmed via `git fetch origin gh-pages` + `git log`, not just the deploy
+script's own "Published." message) and a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. The
+custom domain briefly kept serving the previous bundle hash right after -
+the standing CDN-cache caveat (see "Live site status" below), not a deploy
+failure. `npm run verify` green (typecheck + 228 unit + 27 renderer parity
+on 3 engines + 244/249 e2e passed, 5 skipped by design, same 5 as always) -
+same counts as part 1 shipped with, since neither the two bug fixes nor the
+halo needed a new test: the existing e2e suites already drive both code
+paths and kept passing.
+
+- **Both bugs came from the user actually using part 1's own feature on the
+  live site, not from re-reading the code** - worth remembering as a
+  pattern: a feature can pass every automated check (part 1 shipped with 15
+  new e2e cases, all green on all 3 engines) and still have a real
+  first-five-minutes usability bug, because the tests exercise the
+  documented interaction (arm tool → open settings → change color → draw),
+  not the interaction a user tries first (arm tool → draw → *then* try to
+  change something).
+- **Bug 1 - the Style/settings button disabled itself the moment it was
+  needed most.** Every annotation tool is one-shot: drawing one shape
+  commits it and reverts `tool` to `'select'` immediately (documented
+  behavior since Phase 4 item 1). `AnnotationToolbar`'s settings button was
+  `disabled={armed === null}`, where `armed` was `null` whenever
+  `tool === 'select'` - so the instant a user drew their first shape (the
+  natural thing to try before hunting for a settings button), the button
+  that would let them change its color/size went dead. The user's own
+  description - "the button shows up but pressing it does nothing" - is
+  literally what a disabled button does; reproduced directly with a
+  Playwright script that armed Arrow, drew one arrow, then checked
+  `settingsButton.isDisabled()` - `true`, confirming the mechanism before
+  touching any code. Fixed with a new `lastArmedTool` state in
+  `AnnotationToolbar.tsx`: a `useEffect` records `tool` every time it's
+  something other than `'select'`, and a new `settingsTool = armed ??
+  lastArmedTool` derived value feeds the button's `disabled` check, the
+  swatch preview, and the popover's props everywhere `armed` used to. The
+  popover no longer force-closes when `tool` reverts to `'select'` either
+  (that effect existed specifically because the old code assumed there was
+  "nothing left to control" at that point, which is exactly the assumption
+  this fix overturns) - it now closes only the normal way, via outside
+  click, Escape, or the settings button itself, same as `ExportMenu`. Several
+  throwaway Playwright scripts were written and discarded chasing this (not
+  committed) - across Chromium/Firefox/WebKit and dev vs. production
+  builds, confirming the exact color-picking flow the e2e suite already
+  covers really does work standalone - before landing on the one repro that
+  actually needed no popover interaction at all, just drawing first. Worth
+  remembering if a similarly "invisible" bug report comes in again: try the
+  interaction in the order a first-time user would, not the order the
+  feature's own e2e spec does.
+- **Bug 2 - scrolling the wheel to adjust size had no feedback unless the
+  popover happened to already be open.** `BoardCanvas.tsx`'s wheel handler
+  already called `adjustToolSize` correctly (part 1's own e2e case for this
+  passed); the gap was purely visual. Fixed with a new transient
+  `.annotation-size-hint` badge - `flashSizeHint()` reads the just-updated
+  size straight from `useBoardStore.getState()` (not the subscribed
+  `toolSettings` variable, whose closure inside the wheel effect only
+  refreshes when `tool` itself changes, not on every wheel tick of the same
+  tool) and shows it near the toolbar for 1.2s per scroll.
+- **Neither bug fix touched `boardStore.ts` or any render code** - both were
+  UI-only (`AnnotationToolbar.tsx`, plus the new hint state/element in
+  `BoardCanvas.tsx` and its CSS), which is why `npm run verify`'s counts
+  didn't move: the existing `annotationSettings.spec.ts` (15 cases, part 1's
+  own suite) already exercises the color/size-change mechanics themselves
+  and kept passing unchanged: what it didn't cover was the *post-draw*
+  path, which is exactly what was broken. No new test was added for either
+  fix - a defensible gap, not an oversight: it was deliberately left for a
+  future pass rather than expanding scope further after two unplanned bug
+  fixes already ahead of the planned part 2 work.
+- **The halo itself: `drawText` in `render/text.ts` now strokes each line in
+  a fixed near-white (`rgba(255, 255, 255, 0.9)`) before filling it**, width
+  scaling with font size (`Math.max(2, Math.round(fontSize * 0.15))`) so it
+  stays proportional across the full `ANNOTATION_SIZE_RANGE.text` range
+  (14–40px), not just the default. Fixed, not user-configurable and not
+  derived from the board's background or the editor's OS theme - the same
+  "board content, not chrome" reasoning that already keeps `--annotation`
+  and the checkerboard tokens out of dark mode's token group (Phase 5 item
+  1's note): a label meant to be read off a screenshot of arbitrary content
+  can't take its cue from the *editor's* theme. Harmless on a plain white
+  background (the halo simply disappears where a red fill alone already
+  read fine) and is what actually rescues legibility on a photo or gradient
+  one - which is the whole point.
+- **Font pairing: compared three real OFL-licensed candidates live, not just
+  by description** - the current Inter (Latin) + Anuphan (Thai) pairing,
+  IBM Plex Sans + IBM Plex Sans Thai, and Poppins + Sarabun. Downloaded all
+  three's actual font files (IBM's from its GitHub releases, Poppins/Sarabun
+  from the `google/fonts` OFL directory - each verified against its own
+  `OFL.txt` before use), built a throwaway HTML/canvas comparison page
+  rendering English and Thai sample text in all 3 pairings × 3 treatments
+  (plain/shadow/halo) against a busy gradient backdrop (deliberately not a
+  flat color, to actually stress-test legibility), and screenshotted it for
+  a real side-by-side rather than describing fonts in the abstract. **User's
+  call: keep Inter+Anuphan, use halo, not shadow** - Inter already
+  approximates SF Pro's proportions (part of why it was picked originally),
+  and halo read as unambiguously closer to macOS Markup's own look than the
+  softer drop-shadow in every side-by-side. Since the font itself didn't
+  change, **no new font files, no new OFL license doc, and no `styles.css`
+  `@font-face` changes were needed** - this made the whole item cheaper than
+  CLAUDE.md's own note anticipated ("whatever font is picked needs an OFL
+  license... same as the current pair"), since nothing was actually picked
+  to replace the current pair.
+- **Real, pre-existing gap found while trying to validate the halo with
+  `npm run test:render`, worth remembering before relying on that suite for
+  *any* annotation-related change:** its 5 fixture scenes
+  (`tests/render/render.spec.ts`'s `SCENES`) are pure image boards - none of
+  them include an arrow/box/text/marker/redact node, and have not since
+  Phase 4 introduced those node kinds. So "27/27 passed" after the halo
+  change is real and correctly green, but it is not evidence about text
+  rendering specifically - it only reconfirms the pre-existing
+  image-tile-compositing checks still pass, which is a narrower claim than
+  CLAUDE.md's own part-2 planning note assumed ("text-rendering/
+  antialiasing differences between engines are exactly what invariant 1
+  exists to catch"). The actual cross-engine confirmation for the halo came
+  from `tests/e2e/text.spec.ts`'s existing 15 cases (5 × 3 engines), which
+  do exercise real halo-rendered text and passed on all three. Extending
+  the render-parity harness to include annotation-node scenes would close
+  this gap properly but is real, unplanned work - noted here rather than
+  done in passing, since it applies to all five annotation kinds, not just
+  text.
+- **Deliberately not done, scoped to exactly the two bugs plus the halo:**
+  no persistence of `lastArmedTool` across a reload (same "UI preference,
+  not board content" reasoning `toolSettings` itself already got in part
+  1); no size-hint equivalent for color changes (color changes are already
+  visible immediately - the armed tool button's own background swaps live -
+  so there was nothing invisible to add feedback for); no attempt to extend
+  the render-parity harness (see the gap above - real, but out of scope for
+  this item specifically).
 
 ### Phase 5 annotation revision, part 1 — done: color + size for every tool
 
@@ -1552,24 +1693,29 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–3 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes), and part 1 of the annotation revision (color + size for every tool)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–3 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes), and parts 1–2 of the annotation revision (color + size for every tool, plus the two part-1 bug fixes and the text halo)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after the annotation revision's part 1 commit (`26c6761`, color +
-size for every annotation tool, see the START HERE note above), and both
+right after the annotation revision's part 2 commit (`b6f1d5c`, two part-1
+bug fixes plus the text halo, see the START HERE note above), and both
 worked cleanly again on the first try (no re-auth, no DNS re-check
 needed). Live site now serves all of Phase 2 (items 1–9), the Clear board
 addition, Phase 3, the complete Phase 4 (items 1–6), Phase 5 items 1–3, and
-annotation-revision part 1. Deploy script itself reported success
-(`Published.` + the live URL); a same-session `curl -o /dev/null -w
-'%{http_code}'` for `/` returned a fresh `200`. (The custom domain sits
-behind a CDN edge cache with a 10-minute
+annotation-revision parts 1–2. Deploy script itself reported success
+(`Published.` + the live URL); the `gh-pages` branch's own last commit reads
+`Deploy b6f1d5c` (confirmed via `git fetch origin gh-pages` + `git log`, not
+just the deploy script's own message) and a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. (The
+custom domain sits behind a CDN edge cache with a 10-minute
 `max-age`, so a stale bundle hash can be observed for a few minutes right
 after a deploy — not a deploy failure, just propagation - worth a re-check
 next session if in doubt about the *bundle* specifically, as opposed to the
-page.)
+page. This session actually observed it: the root `curl` came back `200`
+immediately, but the bundle hash in the served HTML still matched the
+*previous* build for a few minutes, while the `gh-pages` branch itself
+already had the new one.)
 
 Both commands are one command away whenever there's new work to publish —
 source: `git push origin master:main`; live site:
