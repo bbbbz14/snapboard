@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import type { Size } from '@/lib/geometry'
 import type { ExportFormat, ExportOptions } from '@/board/export/exportBoard'
 import { t } from '@/i18n/t'
@@ -11,6 +11,9 @@ interface Props {
   downscaledTo: number | null
   onChange: (opts: ExportOptions) => void
   onClose: () => void
+  /** The caret button that opened this menu - measured once on mount to
+   * position the (fixed-position, see styles.css) popover under it. */
+  anchorRef: RefObject<HTMLButtonElement | null>
 }
 
 /**
@@ -19,8 +22,14 @@ interface Props {
  * Copy has none of this: it stays the fixed, zero-decision fast path
  * (see useCopyAction.ts), so this menu only ever affects Download.
  */
-export function ExportMenu({ opts, pixels, downscaledTo, onChange, onClose }: Props) {
+export function ExportMenu({ opts, pixels, downscaledTo, onChange, onClose, anchorRef }: Props) {
   const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+
+  useLayoutEffect(() => {
+    const rect = anchorRef.current?.getBoundingClientRect()
+    if (rect) setPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right })
+  }, [anchorRef])
 
   useEffect(() => {
     const onPointerDown = (e: MouseEvent) => {
@@ -41,7 +50,13 @@ export function ExportMenu({ opts, pixels, downscaledTo, onChange, onClose }: Pr
   const setScale = (scale: 1 | 2 | 3) => onChange({ ...opts, scale })
 
   return (
-    <div ref={ref} className="export-menu" role="dialog" aria-label={t('toolbar.exportOptions')}>
+    <div
+      ref={ref}
+      className="export-menu"
+      role="dialog"
+      aria-label={t('toolbar.exportOptions')}
+      style={pos ? { top: pos.top, right: pos.right } : { visibility: 'hidden' }}
+    >
       <div className="export-menu__row">
         <span className="export-menu__label">{t('export.format')}</span>
         <div className="group">

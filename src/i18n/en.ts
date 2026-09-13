@@ -46,7 +46,6 @@ export const en = {
 
   'background.white': 'White',
   'background.black': 'Black',
-  'background.slate': 'Slate',
   'background.transparent': 'Transparent',
 
   'style.plain': 'Plain',
@@ -54,6 +53,7 @@ export const en = {
   'style.soft': 'Soft',
 
   'spacing.gap': 'Gap',
+  'spacing.gapWithPercent': 'Gap · {{percent}}%',
   'spacing.padding': 'Padding',
 
   'selection.count': '{{count}} selected',

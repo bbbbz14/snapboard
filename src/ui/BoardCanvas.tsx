@@ -714,12 +714,17 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
           toggleSelection(hitId)
           return
         }
-        if (board.layout !== 'free') {
-          // Still auto-arranged: dragging reorders instead of moving freely
-          // (see `reorder` in the store) - only a resize handle (checked
-          // above) or `setFrames` switches this board to 'free'.
+        const hitNode = board.nodes.find((n) => n.id === hitId)!
+        if (hitNode.kind === 'image' && board.layout !== 'free') {
+          // Still auto-arranged: dragging an *image* reorders instead of
+          // moving freely (see `reorder` in the store) - only a resize
+          // handle (checked above) or `setFrames` switches this board to
+          // 'free'. Annotations were never part of the layout (relayout()
+          // skips non-image nodes, see boardStore.ts) so they always get a
+          // direct move below, on an 'auto' board or a 'free' one alike -
+          // there's no "reorder position" for an arrow/box/text/marker/
+          // redact to drop onto in the first place.
           setSelection([hitId])
-          const hitNode = board.nodes.find((n) => n.id === hitId)!
           reorderRef.current = { id: hitId, startFrame: hitNode.frame, startPoint: point }
           canvas.setPointerCapture(e.pointerId)
           return

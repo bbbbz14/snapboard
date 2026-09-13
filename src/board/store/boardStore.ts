@@ -139,14 +139,14 @@ interface BoardState {
   setTool: (tool: 'select' | 'arrow' | 'box' | 'text' | 'marker' | 'redact') => void
   /** Commits a new arrow from `start` to `end` (board-space) and switches
    * back to the select tool - same one-shot pattern a stamp tool would use.
-   * Locks the board to `layout: 'free'` like `setFrames` does: an arrow's
-   * `start`/`end` are absolute board-space points, so a later relayout that
-   * moves images around would silently leave it pointing at nothing. */
+   * Deliberately does *not* touch `layout` - unlike `setFrames`, an arrow
+   * never moves an image's frame, so `relayout()` (which only ever rewrites
+   * `kind === 'image'` frames, see below) stays free to keep auto-arranging
+   * images on an `'auto'`/`'rows'`/etc. board with arrows already on it. */
   addArrow: (start: Point, end: Point) => void
   /** Commits a new box from `start` to `end` (board-space, opposite drag
    * corners) and switches back to the select tool - same one-shot pattern
-   * as `addArrow`, for the same reason (a box's frame is an absolute
-   * board-space rect the user placed by hand). */
+   * and same layout-preserving reasoning as `addArrow`. */
   addBox: (start: Point, end: Point) => void
   /** Creates a new text node (`id: null`) or re-commits an existing one after
    * a re-edit, in both cases with `frame` already reflecting the final
@@ -166,12 +166,12 @@ interface BoardState {
    * plain click instead of a drag: a marker has no meaningful "size" the
    * user draws, just a place to point. Its visible number is derived at
    * render time (see `toRenderInput`), not stored here - so deleting one
-   * marker just renumbers the rest, no separate counter to keep in sync. */
+   * marker just renumbers the rest, no separate counter to keep in sync.
+   * Same layout-preserving reasoning as `addArrow` - does not touch `layout`. */
   addMarker: (point: Point) => void
   /** Commits a new redaction from `start` to `end` (board-space, opposite
    * drag corners) and switches back to the select tool - same one-shot
-   * pattern as `addBox`, for the same reason (an absolute board-space rect
-   * the user placed by hand, not something layout should ever move). */
+   * pattern as `addBox`, and same layout-preserving reasoning as `addArrow`. */
   addRedact: (start: Point, end: Point) => void
   /** Moves the selected nodes to the top of z-order (drawn last). Also
    * relayouts, since `order` doubles as layout position for auto boards -
@@ -193,12 +193,15 @@ interface BoardState {
 let nodeSeq = 0
 let toastSeq = 0
 
-/** Recomputes frames and canvas size from the current image nodes. Arrows
- * are never part of the layout - their `start`/`end` are absolute board-
- * space points the user placed by hand, same as a manually-moved image's
- * frame, so they pass through untouched (only reachable at all when the
- * board isn't `'free'` yet, i.e. before any arrow could exist, or after the
- * user explicitly turns auto layout back on - see `addArrow`). */
+/** Recomputes frames and canvas size from the current image nodes.
+ * Annotations (arrow/box/text/marker/redact) are never part of the layout -
+ * their geometry is absolute board-space points/rects the user placed by
+ * hand, same as a manually-moved image's frame - so the final `nodes.map`
+ * below only ever rewrites `kind === 'image'` frames and passes every other
+ * node through untouched. That's also why adding an annotation (see
+ * `addArrow` etc.) never needs to touch `layout`: this function already
+ * ignores non-image nodes on an `'auto'`/`'rows'`/etc. board, so images keep
+ * auto-arranging exactly as if the annotation weren't there. */
 function relayout(board: Board): Board {
   if (board.layout === 'free') return board
   const items = board.nodes
@@ -520,7 +523,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         color: DEFAULT_ANNOTATION_COLOR,
       }
       return {
-        ...commitBoard(s, { ...s.board, layout: 'free', nodes: [...s.board.nodes, arrow] }),
+        ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, arrow] }),
         selectedIds: [arrow.id],
         tool: 'select',
       }
@@ -536,7 +539,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         color: DEFAULT_ANNOTATION_COLOR,
       }
       return {
-        ...commitBoard(s, { ...s.board, layout: 'free', nodes: [...s.board.nodes, box] }),
+        ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, box] }),
         selectedIds: [box.id],
         tool: 'select',
       }
@@ -556,7 +559,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           color: DEFAULT_ANNOTATION_COLOR,
         }
         return {
-          ...commitBoard(s, { ...s.board, layout: 'free', nodes: [...s.board.nodes, node] }),
+          ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, node] }),
           selectedIds: [node.id],
         }
       }
@@ -583,7 +586,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         color: DEFAULT_ANNOTATION_COLOR,
       }
       return {
-        ...commitBoard(s, { ...s.board, layout: 'free', nodes: [...s.board.nodes, marker] }),
+        ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, marker] }),
         selectedIds: [marker.id],
         tool: 'select',
       }
@@ -598,7 +601,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         order: s.board.nodes.length,
       }
       return {
-        ...commitBoard(s, { ...s.board, layout: 'free', nodes: [...s.board.nodes, redact] }),
+        ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, redact] }),
         selectedIds: [redact.id],
         tool: 'select',
       }

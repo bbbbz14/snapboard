@@ -166,13 +166,13 @@ describe('addArrow', () => {
     })
   })
 
-  it('adds an arrow node, selects it, switches layout to free, and returns to the select tool', () => {
+  it('adds an arrow node, selects it, leaves layout untouched, and returns to the select tool', () => {
     useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
     const board = useBoardStore.getState().board
     const arrow = board.nodes.find((n) => n.kind === 'arrow')
     expect(arrow).toBeDefined()
     expect(arrow).toMatchObject({ start: { x: 0, y: 0 }, end: { x: 40, y: 0 } })
-    expect(board.layout).toBe('free')
+    expect(board.layout).toBe('auto')
     expect(useBoardStore.getState().selectedIds).toEqual([arrow!.id])
     expect(useBoardStore.getState().tool).toBe('select')
   })
@@ -232,13 +232,13 @@ describe('addBox', () => {
     })
   })
 
-  it('adds a box node from the two drag corners, selects it, switches layout to free, and returns to the select tool', () => {
+  it('adds a box node from the two drag corners, selects it, leaves layout untouched, and returns to the select tool', () => {
     useBoardStore.getState().addBox({ x: 0, y: 0 }, { x: 40, y: 30 })
     const board = useBoardStore.getState().board
     const box = board.nodes.find((n) => n.kind === 'box')
     expect(box).toBeDefined()
     expect(box!.frame).toEqual({ x: 0, y: 0, w: 40, h: 30 })
-    expect(board.layout).toBe('free')
+    expect(board.layout).toBe('auto')
     expect(useBoardStore.getState().selectedIds).toEqual([box!.id])
     expect(useBoardStore.getState().tool).toBe('select')
   })
@@ -303,13 +303,13 @@ describe('commitText', () => {
     })
   })
 
-  it('creates a new text node, selects it, and switches layout to free', () => {
+  it('creates a new text node, selects it, and leaves layout untouched', () => {
     useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
     const board = useBoardStore.getState().board
     const text = board.nodes.find((n) => n.kind === 'text')
     expect(text).toBeDefined()
     expect(text).toMatchObject({ text: 'hello', frame: { x: 0, y: 0, w: 240, h: 40 } })
-    expect(board.layout).toBe('free')
+    expect(board.layout).toBe('auto')
     expect(useBoardStore.getState().selectedIds).toEqual([text!.id])
   })
 
@@ -374,14 +374,14 @@ describe('addMarker', () => {
     })
   })
 
-  it('adds a marker centered on the click point, selects it, switches layout to free, and returns to the select tool', () => {
+  it('adds a marker centered on the click point, selects it, leaves layout untouched, and returns to the select tool', () => {
     useBoardStore.getState().addMarker({ x: 20, y: 20 })
     const board = useBoardStore.getState().board
     const marker = board.nodes.find((n) => n.kind === 'marker')
     expect(marker).toBeDefined()
     expect(marker!.frame.x + marker!.frame.w / 2).toBeCloseTo(20, 5)
     expect(marker!.frame.y + marker!.frame.h / 2).toBeCloseTo(20, 5)
-    expect(board.layout).toBe('free')
+    expect(board.layout).toBe('auto')
     expect(useBoardStore.getState().selectedIds).toEqual([marker!.id])
     expect(useBoardStore.getState().tool).toBe('select')
   })
@@ -456,13 +456,13 @@ describe('addRedact', () => {
     })
   })
 
-  it('adds a redact node from the two drag corners, selects it, switches layout to free, and returns to the select tool', () => {
+  it('adds a redact node from the two drag corners, selects it, leaves layout untouched, and returns to the select tool', () => {
     useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
     const board = useBoardStore.getState().board
     const redact = board.nodes.find((n) => n.kind === 'redact')
     expect(redact).toBeDefined()
     expect(redact!.frame).toEqual({ x: 0, y: 0, w: 40, h: 30 })
-    expect(board.layout).toBe('free')
+    expect(board.layout).toBe('auto')
     expect(useBoardStore.getState().selectedIds).toEqual([redact!.id])
     expect(useBoardStore.getState().tool).toBe('select')
   })

@@ -150,7 +150,6 @@ export const STYLE_PRESETS: Record<StylePreset, { radius: number; shadow: null |
 export const BACKGROUNDS = {
   white: { type: 'solid', color: '#ffffff' },
   black: { type: 'solid', color: '#0b0f14' },
-  slate: { type: 'solid', color: '#eef2f7' },
   transparent: { type: 'transparent' },
 } as const satisfies Record<string, Background>
 
@@ -160,7 +159,7 @@ export const DEFAULT_BOARD: Board = {
   version: 1,
   layout: 'auto',
   resolvedLayout: 'rows',
-  gap: 20,
+  gap: 6,
   padding: 32,
   columns: null,
   targetWidth: 1200,

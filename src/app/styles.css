@@ -159,6 +159,22 @@ body {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex: none;
+  /* Minimum mobile-overflow fix (Phase 5 item 3): once every group/button
+     doesn't fit, scroll the bar itself instead of silently squishing chips
+     and buttons below their content size (the manual-checklist finding).
+     `> *` gets flex-shrink: 0 below so nothing shrinks before this kicks
+     in - `.spacer`'s own `flex: 1` (declared after, same specificity) still
+     wins for itself, so it keeps collapsing first, same as before. This is
+     not the full mobile-shaped layout (item 11) - just the floor so nothing
+     already in the bar becomes illegible on a narrow screen. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.topbar > * {
+  flex-shrink: 0;
 }
 
 .brand {
@@ -310,9 +326,13 @@ body {
 }
 
 .export-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  /* Fixed, not absolute: item 3 made `.topbar` a horizontal-scroll
+     container, and an absolutely-positioned descendant would still get
+     clipped by that ancestor's overflow (escaping a containing block for
+     *layout* doesn't escape an ancestor's overflow *clipping* - two
+     different things). `top`/`right` are set inline from the caret
+     button's real screen position instead (see ExportMenu.tsx). */
+  position: fixed;
   z-index: 20;
   display: grid;
   gap: 10px;

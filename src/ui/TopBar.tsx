@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useBoardStore, toRenderInput } from '@/board/store/boardStore'
 import { BACKGROUNDS, type BackgroundName, type LayoutMode, type StylePreset } from '@/board/model/types'
 import { exportBoard, exportFilename, estimatePixels, resolveScale, type ExportOptions } from '@/board/export/exportBoard'
@@ -17,7 +17,6 @@ const LAYOUTS: { mode: LayoutMode; label: string }[] = [
 const SWATCHES: { name: BackgroundName; label: string; css: string }[] = [
   { name: 'white', label: t('background.white'), css: '#ffffff' },
   { name: 'black', label: t('background.black'), css: '#0b0f14' },
-  { name: 'slate', label: t('background.slate'), css: '#eef2f7' },
   { name: 'transparent', label: t('background.transparent'), css: '' },
 ]
 
@@ -26,6 +25,10 @@ const STYLES: { key: StylePreset; label: string }[] = [
   { key: 'card', label: t('style.card') },
   { key: 'soft', label: t('style.soft') },
 ]
+
+// The gap slider's own range (px) - also the denominator for the %
+// shown next to it, so the two never drift apart.
+const GAP_MAX = 80
 
 interface Props {
   copied: boolean
@@ -37,6 +40,21 @@ export function TopBar({ copied, onCopy }: Props) {
   const store = useBoardStore()
   const [exportOpts, setExportOpts] = useState<ExportOptions>({ scale: 2, format: 'image/png', quality: 0.92 })
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const headerRef = useRef<HTMLElement>(null)
+  const caretRef = useRef<HTMLButtonElement>(null)
+
+  // The bar itself scrolls now (item 3) - if it scrolls while the export
+  // popover is open, the popover (position: fixed, see ExportMenu.tsx)
+  // would visually detach from the caret button that anchored it. Simplest
+  // correct behavior: close it, same as an outside click already does.
+  useEffect(() => {
+    if (!exportMenuOpen) return
+    const header = headerRef.current
+    if (!header) return
+    const onScroll = () => setExportMenuOpen(false)
+    header.addEventListener('scroll', onScroll)
+    return () => header.removeEventListener('scroll', onScroll)
+  }, [exportMenuOpen])
 
   const hasImages = board.nodes.length > 0
 
@@ -61,7 +79,7 @@ export function TopBar({ copied, onCopy }: Props) {
   }
 
   return (
-    <header className="topbar">
+    <header className="topbar" ref={headerRef}>
       <span className="brand">{t('app.name')}</span>
 
       {hasImages && (
@@ -120,11 +138,11 @@ export function TopBar({ copied, onCopy }: Props) {
           </div>
 
           <label className="slider">
-            {t('spacing.gap')}
+            {t('spacing.gapWithPercent', { percent: Math.round((board.gap / GAP_MAX) * 100) })}
             <input
               type="range"
               min={0}
-              max={80}
+              max={GAP_MAX}
               value={board.gap}
               onChange={(e) => store.setGap(Number(e.target.value))}
               onPointerDown={store.beginAdjustment}
@@ -151,6 +169,7 @@ export function TopBar({ copied, onCopy }: Props) {
               {t('toolbar.download')}
             </button>
             <button
+              ref={caretRef}
               className="btn split-btn__caret"
               aria-label={t('toolbar.exportOptions')}
               aria-expanded={exportMenuOpen}
@@ -165,6 +184,7 @@ export function TopBar({ copied, onCopy }: Props) {
                 downscaledTo={resolved.downscaled ? resolved.scale : null}
                 onChange={setExportOpts}
                 onClose={() => setExportMenuOpen(false)}
+                anchorRef={caretRef}
               />
             )}
           </div>
