@@ -301,10 +301,14 @@ and the two real test-suite bugs this round's own e2e coverage surfaced.
   correctly; Anuphan's own type design is simply a modern, loopless one.
   Not to be re-raised as a font-loading bug.
 
-**Phase 5 item 5 (accessibility pass) is now built and verified, not yet
-pushed to `main` or deployed to the live site, pending the user's
-go-ahead.** All 4 concrete gaps item 1/2's audits found and deliberately
-deferred are closed this session: a new shared hook
+**Phase 5 item 5 (accessibility pass) is now built, verified, pushed to
+`main`, and deployed to the live site** (commit `2d3f789`), on the user's
+approval. Push and deploy both worked cleanly on the first try; the
+`gh-pages` branch's own last commit reads `Deploy 2d3f789` (confirmed via
+`git fetch origin gh-pages` + `git log`) and a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. All 4
+concrete gaps item 1/2's audits found and deliberately deferred are closed
+this session: a new shared hook
 (`src/hooks/useFocusTrap.ts`) gives all three anchored popovers
 (`ExportMenu`, `BackgroundMenu`, `AnnotationSettingsPopover` - not just
 `ExportMenu`, which is the one the audit named, but all three share the
@@ -348,8 +352,8 @@ See "Phase 5 item 5" below for the full writeup.
 
 ### Phase 5 item 5 — done: accessibility pass (4 concrete gaps)
 
-Built this session, verified, not yet pushed to `main` or deployed to the
-live site, pending the user's go-ahead. `npm run verify` green (typecheck +
+Built this session, shipped as commit `2d3f789`, pushed to `main`, and
+deployed to the live site. `npm run verify` green (typecheck +
 243 unit + 33 renderer parity on 3 engines + 265/270 e2e passed, 5 skipped
 by design, same 5 as always).
 
@@ -2354,20 +2358,19 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–4 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds), all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), and the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–5 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass), all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), and the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after the third-round bug-fix commit (`baaa915`, see the START HERE
-note above) - that same push/deploy pass also carried Phase 5 item 4, held
-un-pushed from the prior session - and both worked cleanly again on the
-first try (no re-auth, no DNS re-check needed). Live site now serves all of
+right after Phase 5 item 5's own commit (`2d3f789`, see the START HERE note
+above), on the user's approval, and both worked cleanly again on the first
+try (no re-auth, no DNS re-check needed). Live site now serves all of
 Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete Phase 4
-(items 1–6), Phase 5 items 1–4, all 3 parts of the annotation revision,
+(items 1–6), Phase 5 items 1–5, all 3 parts of the annotation revision,
 real-usage feedback round 2, and the third round of real-usage feedback.
 Deploy script itself reported success (`Published.` + the live URL); the
-`gh-pages` branch's own last commit reads `Deploy baaa915` (confirmed via
+`gh-pages` branch's own last commit reads `Deploy 2d3f789` (confirmed via
 `git fetch origin gh-pages` + `git log`, not just the deploy script's own
 message) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
 returned a fresh `200`. (The
@@ -2575,7 +2578,7 @@ made so later items can build on earlier ones instead of redoing them:
    squishing chips/buttons illegibly; this is **not** all of item 11
    (mobile lite) - just enough that item 4 below is safe to add.
 4. ✅ **6 gradient backgrounds.** Done - see "Phase 5 item 4" under START
-   HERE above. Shipped, not yet pushed/deployed. `Background` gained a
+   HERE above. Pushed to `main` and deployed to the live site. `Background` gained a
    `{ type: 'gradient'; from; to }` variant plus 6 named presets; the picker
    became a popover (`BackgroundMenu.tsx`, the `ExportMenu` pattern) instead
    of growing the inline swatch row, so this doesn't make the standing
