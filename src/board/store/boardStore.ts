@@ -28,6 +28,7 @@ import {
 import { moveToFront } from '@/board/model/zorder'
 import { AssetStore, type Asset } from '@/assets/assetStore'
 import type { Rejection } from '@/assets/validate'
+import { t } from '@/i18n/t'
 import { arrowFrame } from '@/board/render/arrow'
 import { markerFrame } from '@/board/render/marker'
 import { REDACT_DEFAULT_COLOR } from '@/board/render/redact'
@@ -822,15 +823,15 @@ function rejectionMessage(r: Rejection): string {
   const name = r.name || 'That file'
   switch (r.reason) {
     case 'svg-not-supported':
-      return 'SVG files are not supported'
+      return t('toast.rejected.svg-not-supported')
     case 'too-large':
-      return `${name} is larger than 50 MB`
+      return t('toast.rejected.too-large', { name })
     case 'too-many-pixels':
-      return `${name} has too many pixels to open safely`
+      return t('toast.rejected.too-many-pixels', { name })
     case 'corrupt':
-      return `${name} could not be read as an image`
+      return t('toast.rejected.corrupt', { name })
     default:
-      return `${name} is not a supported image`
+      return t('toast.rejected.not-an-image', { name })
   }
 }
 

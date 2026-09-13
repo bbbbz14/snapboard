@@ -66,8 +66,8 @@ test('unsupported files are refused individually, keeping the good ones', async 
     { name: 'evil.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>') },
     { name: 'notes.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') },
   ])
-  await expect(page.getByText('SVG files are not supported')).toBeVisible()
-  await expect(page.getByText(/notes\.pdf is not a supported image/)).toBeVisible()
+  await expect(page.getByText("SVG isn't supported")).toBeVisible()
+  await expect(page.getByText(/notes\.pdf isn't a supported image/)).toBeVisible()
   // The valid image still made it onto the board.
   await expect(page.getByRole('img', { name: /Board with 1 image/ })).toBeVisible()
 })

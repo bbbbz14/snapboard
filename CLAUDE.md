@@ -473,6 +473,80 @@ by design, same 5 as always).
   by that specific number. Worth a real Lighthouse pass on a real machine
   if that exact score is ever needed.
 
+**Phase 5 item 6 (friendly error messages) is also done this session** -
+built, `npm run verify` green, committed locally, **not yet pushed to
+`main` or deployed to the live site**, pending the user's go-ahead. See
+"Phase 5 item 6" below for the full writeup, including a real pre-existing
+bug this audit found: the file-rejection toasts (`toast.rejected.*`) were
+never actually reading from `src/i18n/en.ts` at all - a second, hardcoded
+copy of the same five messages lived directly in `boardStore.ts`'s
+`rejectionMessage()`, silently bypassing the i18n layer this file's own
+header comment says every user-facing string must go through. Editing
+`en.ts` alone would have changed nothing a real user ever saw. Fixed by
+routing `rejectionMessage()` through `t()` and deleting the duplicate
+literals - this also means item 10 (Thai i18n) will actually pick up these
+five strings when it adds a `th.ts`, instead of silently missing them.
+**Also found, not fixed - a pre-existing, order-dependent e2e flake,
+unrelated to this item's own change (confirmed by re-running the same two
+tests against a clean `git stash` of this session's diff, where they still
+failed the same way):** `tests/e2e/annotationEdit.spec.ts`'s two "size
+slider... grows/thickens an already-placed node" cases (chromium only)
+fail intermittently - which of the two fails, or whether both do, varies
+run to run. Not investigated further since it's out of this item's scope
+(tone/copy, not the settings-popover slider mechanics) and it isn't a
+regression this session introduced - worth a real look next time that area
+of the code is touched.
+
+### Phase 5 item 6 — done: friendly error messages
+
+Built this session. `npm run verify` green (typecheck + 243 unit + 33
+renderer parity on 3 engines + 264/270 e2e passed, 5 skipped by design plus
+1 pre-existing flake noted above - same 265/270 as item 5 shipped with).
+
+- **Scope was exactly what the Phase 5 list item says: an audit/review
+  pass of existing copy, not new plumbing.** Read every `toast.*` and
+  `toast.rejected.*` string in `src/i18n/en.ts` for tone rather than
+  writing anything new - most of them (recovery, cleared-board, copy
+  confirmations) already read warm and reassuring from Phase 1/2/the
+  Clear-board safety net, and were left untouched.
+- **The five rejection messages (`not-an-image`, `svg-not-supported`,
+  `too-large`, `too-many-pixels`, `corrupt`) and `toast.copyFailed` were
+  the ones that actually needed softer wording** - the originals read as
+  blunt system errors ("{{name}} could not be read as an image", "SVG
+  files are not supported") with no hint at what to do next. Reworded to
+  use contractions (matching the app's existing casual voice - the
+  tagline is "Paste. Arrange. Copy.", not "Paste content. Arrange
+  content."), and gave the two size-related rejections distinct wording
+  (`too-large` = file size, `too-many-pixels` = pixel dimensions) since
+  the old phrasing for both ("is larger than 50 MB" vs "has too many
+  pixels") could otherwise read as the same complaint restated. The SVG
+  message now suggests an alternative (PNG/JPG) instead of just stating
+  the refusal.
+- **The real find: `rejectionMessage()` in `boardStore.ts` never called
+  `t()` at all** - it had its own hardcoded switch returning the exact
+  same five strings as literals, predating this session. `en.ts`'s
+  `toast.rejected.*` keys were dead code, never read by anything.
+  Confirmed by grepping for both `rejectionMessage` and `toast.rejected`
+  across `src/` before touching either. Fixed by importing `t` into
+  `boardStore.ts` and having each switch arm call the matching key -
+  `en.ts` is now the actual single source for these five strings, not
+  just a second copy of them.
+- Two e2e assertions in `tests/e2e/board.spec.ts` matched the old literal
+  text (`'SVG files are not supported'` and a regex on `'is not a
+  supported image'`) and needed updating to the new wording - the only
+  test-suite fallout, found by grepping test files for the old strings
+  before changing any copy, not by running the suite and reacting to
+  failures.
+- **Deliberately not done, scoped to what a tone pass alone needs:** no
+  new toast for `exportBoard.ts`'s one `throw new Error('Could not create
+  an export canvas')` - it has no catch block anywhere in its call chain
+  today (an unhandled-rejection, not a shown message), and giving it one
+  would be new error-handling plumbing, not a rewording of something that
+  already exists, which this item's own scope explicitly excludes. Also
+  didn't touch `export.willDownscale`/`toast.exportDownscaled` (the
+  scale-guard notices) - both already read as informative context rather
+  than a scolding error, so there was nothing to soften.
+
 ### Phase 5 item 4 — done: 6 gradient backgrounds
 
 Built this session, shipped as commit `a8007b5` - not yet pushed to `main`
@@ -2588,10 +2662,10 @@ made so later items can build on earlier ones instead of redoing them:
    isn't installed in this environment, so the a11y > 95 target is still
    unmeasured by that specific tool - the 4 named gaps are closed and
    verified by other means (see the note).
-6. ⬜ **Friendly error messages everywhere.** Audit every existing
-   toast/rejection message (`src/i18n/en.ts`'s `toast.rejected.*` etc.) for
-   tone, not just correctness - most already exist from Phase 1, so this is
-   a review pass, not new plumbing.
+6. ✅ **Friendly error messages everywhere.** Done - see "Phase 5 item 6"
+   under START HERE above. Also fixed a real pre-existing bug this audit
+   found: the rejection toasts were bypassing `en.ts` entirely via a
+   hardcoded duplicate in `boardStore.ts`.
 7. ⬜ **Right-click context menu.** A second entry point to the same
    selection actions `SelectionToolbar` already exposes (Crop/Duplicate/
    Bring to front/Delete) - no new store actions needed, just a new UI
