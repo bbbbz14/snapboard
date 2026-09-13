@@ -50,6 +50,9 @@ export interface ArrowNode {
   start: Point
   end: Point
   color: string
+  /** Board-space stroke width, chosen at creation from the arrow tool's
+   * current setting - see `ANNOTATION_SIZE_RANGE.arrow`. */
+  size: number
 }
 
 /** A rectangular outline to frame a region of interest (product plan's
@@ -64,6 +67,9 @@ export interface BoxNode {
   frame: Rect
   order: number
   color: string
+  /** Board-space stroke width, chosen at creation from the box tool's
+   * current setting - see `ANNOTATION_SIZE_RANGE.box`. */
+  size: number
 }
 
 /** A short text label - "ข้อความ" in the product plan's Phase 4 feature
@@ -80,6 +86,10 @@ export interface TextNode {
   order: number
   text: string
   color: string
+  /** Board-space font size, chosen at creation from the text tool's current
+   * setting - see `ANNOTATION_SIZE_RANGE.text`. Fixed for the life of the
+   * node, same as `frame.w` - a re-edit can change `text`, not this. */
+  size: number
 }
 
 /** A standalone numbered marker - "ตัวเลขกำกับอัตโนมัติ" in the product plan's
@@ -107,23 +117,22 @@ export interface MarkerNode {
  * that's irrecoverable by construction - the covered pixels are simply
  * never drawn. Like `BoxNode`, `frame` is not derived - it's the rectangle
  * the user dragged, so every generic frame-based helper (move, duplicate,
- * hitTest) needs no per-kind branch. No `color` field, unlike every other
- * annotation kind - offering a color/opacity choice here would risk a
- * see-through redaction, exactly the "decision nothing asked for yet"
- * CLAUDE.md says not to add; the fill is a fixed, fully-opaque black
- * (`REDACT_FILL_COLOR` in render/redact.ts). */
+ * hitTest) needs no per-kind branch. `color` was deliberately absent through
+ * Phase 4 item 5 to foreclose a see-through redaction; it's added back here
+ * because a solid, fully-opaque fill in a chosen color carries none of that
+ * risk - there is still no opacity dial, so the fill can never be anything
+ * but 100% covering. No `size` field, unlike arrow/box/marker/text - a
+ * redaction has no separate stroke/diameter/font dimension, its size is
+ * already the dragged rectangle. */
 export interface RedactNode {
   kind: 'redact'
   id: NodeId
   frame: Rect
   order: number
+  color: string
 }
 
 export type BoardNode = ImageNode | ArrowNode | BoxNode | TextNode | MarkerNode | RedactNode
-
-/** Shared by every annotation kind - red, visible on any background, per
- * the product plan's "สีอัตโนมัติ (แดงเป็นค่าเริ่มต้น)". */
-export const DEFAULT_ANNOTATION_COLOR = '#dc2626'
 
 export interface Board {
   version: 1

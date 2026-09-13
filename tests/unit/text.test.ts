@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { textHeight, wrapText } from '@/board/render/text'
+import { textHeight, textLineHeight, wrapText } from '@/board/render/text'
+import { ANNOTATION_SIZE_RANGE } from '@/board/model/annotationDefaults'
+
+const FONT_SIZE = ANNOTATION_SIZE_RANGE.text.default
 
 /** A fixed-width-per-character stand-in for `ctx.measureText(s).width` -
  * keeps these tests independent of any real font metrics. */
@@ -62,11 +65,21 @@ describe('wrapText', () => {
 
 describe('textHeight', () => {
   it('is at least one line tall even for zero/empty content', () => {
-    expect(textHeight(0)).toBe(textHeight(1))
+    expect(textHeight(0, FONT_SIZE)).toBe(textHeight(1, FONT_SIZE))
   })
 
   it('grows linearly with the line count', () => {
-    expect(textHeight(3)).toBeGreaterThan(textHeight(2))
-    expect(textHeight(2)).toBeGreaterThan(textHeight(1))
+    expect(textHeight(3, FONT_SIZE)).toBeGreaterThan(textHeight(2, FONT_SIZE))
+    expect(textHeight(2, FONT_SIZE)).toBeGreaterThan(textHeight(1, FONT_SIZE))
+  })
+
+  it('grows with font size too, at a fixed line count', () => {
+    expect(textHeight(2, 40)).toBeGreaterThan(textHeight(2, 14))
+  })
+})
+
+describe('textLineHeight', () => {
+  it('scales with font size', () => {
+    expect(textLineHeight(40)).toBeGreaterThan(textLineHeight(14))
   })
 })

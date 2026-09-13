@@ -606,12 +606,86 @@ body {
   background: var(--hover-tint);
 }
 
-/* Deliberately --annotation, not --danger: an armed tool button is
-   previewing the red it is about to draw on the board, so it must not shift
-   with the OS theme the way a destructive-action affordance does. */
+/* Deliberately --annotation as the fallback, not --danger: an armed tool
+   button is previewing the color it is about to draw on the board, so it
+   must not shift with the OS theme the way a destructive-action affordance
+   does. AnnotationToolbar.tsx sets the real color inline per tool (now that
+   color is a per-tool choice, not always red) - this is only what shows
+   before that inline style is set. */
 .annotation-toolbar__btn.is-active {
   color: var(--accent-text);
   background: var(--annotation);
+}
+
+.annotation-toolbar__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.annotation-toolbar__divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 2px;
+  background: var(--border);
+}
+
+.annotation-toolbar__swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.annotation-settings {
+  /* Fixed, positioned from the settings button's own screen rect (see
+     AnnotationSettingsPopover.tsx) - same reasoning `.export-menu` already
+     uses, anchored upward here since the toolbar sits at the bottom of the
+     viewport instead of inside a scrolling top bar. */
+  position: fixed;
+  z-index: 20;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+}
+
+.annotation-settings__row {
+  display: grid;
+  gap: 6px;
+}
+
+.annotation-settings__label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.annotation-settings__swatches {
+  display: flex;
+  gap: 6px;
+}
+
+.annotation-settings__swatch {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.annotation-settings__swatch[aria-pressed='true'] {
+  border-color: var(--text);
+}
+
+.annotation-settings__value {
+  font-variant-numeric: tabular-nums;
 }
 
 .zoom-controls {

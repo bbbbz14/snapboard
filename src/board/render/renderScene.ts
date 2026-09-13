@@ -1,7 +1,7 @@
 import type { Point, Rect, Size } from '@/lib/geometry'
 import { STYLE_PRESETS, type Background, type StylePreset } from '@/board/model/types'
-import { ARROW_STROKE_WIDTH, strokeArrow } from './arrow'
-import { BOX_STROKE_WIDTH, strokeBox } from './box'
+import { strokeArrow } from './arrow'
+import { strokeBox } from './box'
 import { drawMarker } from './marker'
 import { fillRedact } from './redact'
 import { drawText } from './text'
@@ -22,12 +22,14 @@ export interface RenderArrow {
   start: Point
   end: Point
   color: string
+  size: number
 }
 
 export interface RenderBox {
   id: string
   frame: Rect
   color: string
+  size: number
 }
 
 export interface RenderText {
@@ -35,6 +37,7 @@ export interface RenderText {
   frame: Rect
   text: string
   color: string
+  size: number
 }
 
 export interface RenderMarker {
@@ -48,6 +51,7 @@ export interface RenderMarker {
 export interface RenderRedact {
   id: string
   frame: Rect
+  color: string
 }
 
 export interface RenderInput {
@@ -133,7 +137,7 @@ export function renderScene(ctx: Ctx2D, input: RenderInput, { scale, tiles, offs
   // label a redaction, but nothing that draws before it (only the images)
   // could ever show through it.
   for (const redact of input.redacts ?? []) {
-    fillRedact(ctx, redact.frame)
+    fillRedact(ctx, redact.frame, redact.color)
   }
 
   // Boxes and arrows are drawn on top of every image - they exist to point
@@ -141,15 +145,15 @@ export function renderScene(ctx: Ctx2D, input: RenderInput, { scale, tiles, offs
   // underneath it. Boxes first so an arrow can still point across a box's
   // outline without being interrupted by it.
   for (const box of input.boxes ?? []) {
-    strokeBox(ctx, box.frame, box.color, BOX_STROKE_WIDTH)
+    strokeBox(ctx, box.frame, box.color, box.size)
   }
   for (const arrow of input.arrows ?? []) {
-    strokeArrow(ctx, arrow.start, arrow.end, arrow.color, ARROW_STROKE_WIDTH)
+    strokeArrow(ctx, arrow.start, arrow.end, arrow.color, arrow.size)
   }
   // Text last of the three annotation kinds - it often labels an arrow or a
   // box, so it must stay on top of both to stay legible.
   for (const text of input.texts ?? []) {
-    drawText(ctx, text.frame, text.text, text.color)
+    drawText(ctx, text.frame, text.text, text.color, text.size)
   }
 
   // Markers are a numbered pin meant to flag a spot on top of whatever's

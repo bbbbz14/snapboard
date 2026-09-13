@@ -14,10 +14,6 @@ import type { Ctx2D } from './renderScene'
 export const TEXT_FONT_FAMILY = '"Snapboard Annotation", ui-sans-serif, system-ui, sans-serif'
 const TEXT_FONT_WEIGHT = 600
 
-/** Board-space px; scales with preview zoom/export scale via the caller's
- * canvas transform, same as `ARROW_STROKE_WIDTH`/`BOX_STROKE_WIDTH`. */
-export const TEXT_FONT_SIZE = 22
-export const TEXT_LINE_HEIGHT = Math.round(TEXT_FONT_SIZE * 1.35)
 /** Breathing room inside the frame so glyphs don't touch its edges. */
 export const TEXT_PADDING = 8
 /** Fixed width for a freshly-placed text box - not user-resizable, same
@@ -25,8 +21,15 @@ export const TEXT_PADDING = 8
  * grows automatically with the wrapped line count, computed by `textHeight`. */
 export const TEXT_DEFAULT_WIDTH = 240
 
-export function textFont(): string {
-  return `${TEXT_FONT_WEIGHT} ${TEXT_FONT_SIZE}px ${TEXT_FONT_FAMILY}`
+export function textFont(fontSize: number): string {
+  return `${TEXT_FONT_WEIGHT} ${fontSize}px ${TEXT_FONT_FAMILY}`
+}
+
+/** A node's `size` (font size) determines its line height too - kept as a
+ * function, not a constant, now that font size is per-node rather than the
+ * single fixed `TEXT_FONT_SIZE` this used to be derived from once. */
+export function textLineHeight(fontSize: number): number {
+  return Math.round(fontSize * 1.35)
 }
 
 const wordSegmenter = typeof Intl !== 'undefined' ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null
@@ -104,10 +107,11 @@ function breakToWidth(measure: (s: string) => number, token: string, maxWidth: n
   return pieces
 }
 
-/** Frame height for a text box with this many wrapped lines - at least one
- * line's worth, even for empty text, so a freshly-placed box isn't zero-height. */
-export function textHeight(lineCount: number): number {
-  return Math.max(1, lineCount) * TEXT_LINE_HEIGHT + TEXT_PADDING * 2
+/** Frame height for a text box with this many wrapped lines at this font
+ * size - at least one line's worth, even for empty text, so a freshly-placed
+ * box isn't zero-height. */
+export function textHeight(lineCount: number, fontSize: number): number {
+  return Math.max(1, lineCount) * textLineHeight(fontSize) + TEXT_PADDING * 2
 }
 
 /** Same drawing used identically by `renderScene` (committed text, board-
@@ -116,16 +120,17 @@ export function textHeight(lineCount: number): number {
  * canvas entirely in favour of the textarea overlay (see BoardCanvas) - it
  * never needs a screen-space draw of its own. Still factored out, alongside
  * `wrapText`, so a future caller can't drift from how lines actually wrap. */
-export function drawText(ctx: Ctx2D, frame: Rect, text: string, color: string): void {
+export function drawText(ctx: Ctx2D, frame: Rect, text: string, color: string, fontSize: number): void {
   ctx.save()
-  ctx.font = textFont()
+  ctx.font = textFont(fontSize)
   ctx.fillStyle = color
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
   const maxWidth = Math.max(1, frame.w - TEXT_PADDING * 2)
   const lines = wrapText((s) => ctx.measureText(s).width, text, maxWidth)
+  const lineHeight = textLineHeight(fontSize)
   for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i]!, frame.x + TEXT_PADDING, frame.y + TEXT_PADDING + i * TEXT_LINE_HEIGHT)
+    ctx.fillText(lines[i]!, frame.x + TEXT_PADDING, frame.y + TEXT_PADDING + i * lineHeight)
   }
   ctx.restore()
 }
@@ -143,10 +148,14 @@ let fontLoad: Promise<void> | null = null
  */
 export function ensureAnnotationFont(): Promise<void> {
   if (!fontLoad) {
+    // The pixel size requested here doesn't matter - loading a FontFace
+    // fetches and parses the resource once, after which it's available at
+    // any size `ctx.font` asks for, so one arbitrary size is enough to warm it.
+    const probeFont = textFont(16)
     fontLoad =
       typeof document === 'undefined' || !('fonts' in document)
         ? Promise.resolve()
-        : Promise.all([document.fonts.load(textFont(), 'Ag'), document.fonts.load(textFont(), 'ก')])
+        : Promise.all([document.fonts.load(probeFont, 'Ag'), document.fonts.load(probeFont, 'ก')])
             .then(() => undefined)
             .catch(() => undefined)
   }

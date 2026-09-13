@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { toRenderInput, useBoardStore } from '@/board/store/boardStore'
 import { DEFAULT_BOARD, type ImageNode } from '@/board/model/types'
+import { ANNOTATION_SIZE_RANGE, DEFAULT_ANNOTATION_COLOR } from '@/board/model/annotationDefaults'
+import { REDACT_DEFAULT_COLOR } from '@/board/render/redact'
 
 function node(id: string, frame: { x: number; y: number; w: number; h: number }): ImageNode {
   return { kind: 'image', id, assetId: `a-${id}`, frame, order: 0 }
@@ -733,5 +735,85 @@ describe('bringToFront', () => {
     useBoardStore.getState().bringToFront()
     const order = [...useBoardStore.getState().board.nodes].sort((a, b) => a.order - b.order).map((n) => n.id)
     expect(order).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('toolSettings', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', nodes: [] },
+      selectedIds: [],
+      tool: 'select',
+      toolSettings: {
+        arrow: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.arrow.default },
+        box: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.box.default },
+        text: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.text.default },
+        marker: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.marker.default },
+        redact: { color: REDACT_DEFAULT_COLOR },
+      },
+    })
+  })
+
+  it('starts every tool at the shared default color, and redact at pure black instead', () => {
+    const s = useBoardStore.getState().toolSettings
+    expect(s.arrow.color).toBe(DEFAULT_ANNOTATION_COLOR)
+    expect(s.box.color).toBe(DEFAULT_ANNOTATION_COLOR)
+    expect(s.text.color).toBe(DEFAULT_ANNOTATION_COLOR)
+    expect(s.marker.color).toBe(DEFAULT_ANNOTATION_COLOR)
+    expect(s.redact.color).toBe('#000000')
+  })
+
+  it('setToolColor changes only the given tool', () => {
+    useBoardStore.getState().setToolColor('box', '#16a34a')
+    const s = useBoardStore.getState().toolSettings
+    expect(s.box.color).toBe('#16a34a')
+    expect(s.arrow.color).toBe(DEFAULT_ANNOTATION_COLOR)
+  })
+
+  it('setToolSize clamps to the tool range', () => {
+    useBoardStore.getState().setToolSize('arrow', 999)
+    expect(useBoardStore.getState().toolSettings.arrow.size).toBe(ANNOTATION_SIZE_RANGE.arrow.max)
+    useBoardStore.getState().setToolSize('arrow', -50)
+    expect(useBoardStore.getState().toolSettings.arrow.size).toBe(ANNOTATION_SIZE_RANGE.arrow.min)
+  })
+
+  it('adjustToolSize nudges relative to the current value and clamps at the edges', () => {
+    useBoardStore.getState().adjustToolSize('marker', 5)
+    expect(useBoardStore.getState().toolSettings.marker.size).toBe(ANNOTATION_SIZE_RANGE.marker.default + 5)
+    useBoardStore.getState().setToolSize('marker', ANNOTATION_SIZE_RANGE.marker.max)
+    useBoardStore.getState().adjustToolSize('marker', 10)
+    expect(useBoardStore.getState().toolSettings.marker.size).toBe(ANNOTATION_SIZE_RANGE.marker.max)
+  })
+
+  it('a newly created arrow/box/marker/redact picks up the currently armed color and size', () => {
+    useBoardStore.getState().setToolColor('arrow', '#0ea5e9')
+    useBoardStore.getState().setToolSize('arrow', 10)
+    useBoardStore.getState().setToolColor('redact', '#111827')
+    useBoardStore.setState({ tool: 'arrow' })
+    useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const arrow = useBoardStore.getState().board.nodes.find((n) => n.kind === 'arrow')
+    expect(arrow).toMatchObject({ color: '#0ea5e9', size: 10 })
+
+    useBoardStore.setState({ tool: 'redact' })
+    useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const redact = useBoardStore.getState().board.nodes.find((n) => n.kind === 'redact')
+    expect(redact).toMatchObject({ color: '#111827' })
+  })
+
+  it('a newly created marker uses the armed diameter as its frame size', () => {
+    useBoardStore.getState().setToolSize('marker', 60)
+    useBoardStore.setState({ tool: 'marker' })
+    useBoardStore.getState().addMarker({ x: 20, y: 20 })
+    const marker = useBoardStore.getState().board.nodes.find((n) => n.kind === 'marker')!
+    expect(marker.frame.w).toBe(60)
+    expect(marker.frame.h).toBe(60)
+  })
+
+  it('a newly created text node uses the armed color and font size', () => {
+    useBoardStore.getState().setToolColor('text', '#9333ea')
+    useBoardStore.getState().setToolSize('text', 30)
+    useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
+    const text = useBoardStore.getState().board.nodes.find((n) => n.kind === 'text')
+    expect(text).toMatchObject({ color: '#9333ea', size: 30 })
   })
 })

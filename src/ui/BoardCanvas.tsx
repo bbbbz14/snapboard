@@ -7,12 +7,11 @@ import { CORNERS, cornerPoint, HANDLE_SIZE, hitTestHandle, hitTestRectHandle } f
 import { resizeKeepingAspect, type Corner } from '@/board/interact/resize'
 import { FULL_CROP, fullImageRect, resizeCropWindow, windowToCrop } from '@/board/interact/crop'
 import { snapMove, type SnapGuide } from '@/board/interact/snap'
-import { ARROW_STROKE_WIDTH, strokeArrow } from '@/board/render/arrow'
-import { BOX_STROKE_WIDTH, strokeBox } from '@/board/render/box'
+import { strokeArrow } from '@/board/render/arrow'
+import { strokeBox } from '@/board/render/box'
 import { fillRedact } from '@/board/render/redact'
-import { TEXT_DEFAULT_WIDTH, TEXT_FONT_SIZE, TEXT_LINE_HEIGHT, TEXT_PADDING, ensureAnnotationFont, textFont, textHeight, wrapText } from '@/board/render/text'
+import { TEXT_DEFAULT_WIDTH, TEXT_PADDING, ensureAnnotationFont, textFont, textHeight, textLineHeight, wrapText } from '@/board/render/text'
 import type { Board, NodeId } from '@/board/model/types'
-import { DEFAULT_ANNOTATION_COLOR } from '@/board/model/types'
 import { boardToScreen, fitCamera, panBy, screenToBoard, zoomAt, type Camera } from '@/board/view/camera'
 import type { Point, Rect } from '@/lib/geometry'
 import { boundsOf, rectFromPoints, translate } from '@/lib/geometry'
@@ -103,7 +102,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // arrow/box, text has no interaction-canvas preview: the textarea overlay
   // below *is* the preview, so the node it's editing is filtered out of
   // `draw()`'s render input instead (see the `editingText` reads there).
-  const [editingText, setEditingText] = useState<{ id: NodeId | null; point: Point; width: number; text: string } | null>(null)
+  const [editingText, setEditingText] = useState<{ id: NodeId | null; point: Point; width: number; text: string; fontSize: number } | null>(
+    null,
+  )
   const textEditRef = useRef<HTMLTextAreaElement>(null)
   // Flips once after the self-hosted annotation font finishes loading -
   // canvas `fillText` has no `font-display` equivalent, so a board restored
@@ -153,6 +154,10 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   const addMarker = useBoardStore((s) => s.addMarker)
   const addRedact = useBoardStore((s) => s.addRedact)
   const commitCrop = useBoardStore((s) => s.commitCrop)
+  const toolSettings = useBoardStore((s) => s.toolSettings)
+  const setToolColor = useBoardStore((s) => s.setToolColor)
+  const setToolSize = useBoardStore((s) => s.setToolSize)
+  const adjustToolSize = useBoardStore((s) => s.adjustToolSize)
 
   useEffect(() => {
     void ensureAnnotationFont().then(() => setFontReady(true))
@@ -197,10 +202,15 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     if (!editingText) return
     const ctx = canvasRef.current?.getContext('2d')
     if (ctx) {
-      ctx.font = textFont()
+      ctx.font = textFont(editingText.fontSize)
       const maxWidth = Math.max(1, editingText.width - TEXT_PADDING * 2)
       const lines = wrapText((s) => ctx.measureText(s).width, editingText.text, maxWidth)
-      const frame = { x: editingText.point.x, y: editingText.point.y, w: editingText.width, h: textHeight(lines.length) }
+      const frame = {
+        x: editingText.point.x,
+        y: editingText.point.y,
+        w: editingText.width,
+        h: textHeight(lines.length, editingText.fontSize),
+      }
       commitText(editingText.id, frame, editingText.text)
     }
     setEditingText(null)
@@ -332,21 +342,21 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     if (arrowDraft) {
       const a = boardToScreen(camera, viewport, arrowDraft.start)
       const b = boardToScreen(camera, viewport, arrowDraft.current)
-      strokeArrow(ctx, a, b, DEFAULT_ANNOTATION_COLOR, ARROW_STROKE_WIDTH * camera.zoom)
+      strokeArrow(ctx, a, b, toolSettings.arrow.color, toolSettings.arrow.size * camera.zoom)
     }
 
     const boxDraft = boxDraftRef.current
     if (boxDraft) {
       const a = boardToScreen(camera, viewport, boxDraft.start)
       const b = boardToScreen(camera, viewport, boxDraft.current)
-      strokeBox(ctx, rectFromPoints(a, b), DEFAULT_ANNOTATION_COLOR, BOX_STROKE_WIDTH * camera.zoom)
+      strokeBox(ctx, rectFromPoints(a, b), toolSettings.box.color, toolSettings.box.size * camera.zoom)
     }
 
     const redactDraft = redactDraftRef.current
     if (redactDraft) {
       const a = boardToScreen(camera, viewport, redactDraft.start)
       const b = boardToScreen(camera, viewport, redactDraft.current)
-      fillRedact(ctx, rectFromPoints(a, b))
+      fillRedact(ctx, rectFromPoints(a, b), toolSettings.redact.color)
     }
 
     // The text tool's own "preview" is the textarea overlay itself (see the
@@ -359,8 +369,8 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       editBox.style.left = `${topLeft.x}px`
       editBox.style.top = `${topLeft.y}px`
       editBox.style.width = `${editingText.width * camera.zoom}px`
-      editBox.style.fontSize = `${TEXT_FONT_SIZE * camera.zoom}px`
-      editBox.style.lineHeight = `${TEXT_LINE_HEIGHT * camera.zoom}px`
+      editBox.style.fontSize = `${editingText.fontSize * camera.zoom}px`
+      editBox.style.lineHeight = `${textLineHeight(editingText.fontSize) * camera.zoom}px`
       editBox.style.padding = `${TEXT_PADDING * camera.zoom}px`
     }
 
@@ -489,7 +499,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         cropToolbar.style.display = 'none'
       }
     }
-  }, [board.nodes, selectedIds, viewport, editingText, cropSession])
+  }, [board.nodes, selectedIds, viewport, editingText, cropSession, toolSettings])
 
   useEffect(() => {
     if (autoFitRef.current) {
@@ -543,6 +553,11 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // Plain wheel pans, like the scrollbars a fixed-size canvas used to get for
   // free from the browser. Ctrl/Cmd+wheel zooms at the pointer - this is also
   // how Chrome and Firefox report trackpad pinch, so pinch-to-zoom works too.
+  // While a sizable tool (arrow/box/text/marker - not redact, which has no
+  // size dimension) is armed, a plain wheel adjusts that tool's size instead
+  // of panning - the Lightshot-style interaction this revision adds. Ctrl/Cmd
+  // still zooms even then, so the user can zoom in for precision without
+  // first backing out of the armed tool.
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -552,6 +567,8 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         const rect = canvas.getBoundingClientRect()
         const anchor = { x: e.clientX - rect.left, y: e.clientY - rect.top }
         zoomByFactor(Math.exp(-e.deltaY * 0.01), anchor)
+      } else if (tool !== 'select' && tool !== 'redact') {
+        adjustToolSize(tool, e.deltaY > 0 ? -1 : 1)
       } else {
         // Scrolling down should reveal content further down the board -
         // the opposite sign from a hand-drag, which moves content with the pointer.
@@ -560,7 +577,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     }
     canvas.addEventListener('wheel', onWheel, { passive: false })
     return () => canvas.removeEventListener('wheel', onWheel)
-  }, [applyPan, zoomByFactor])
+  }, [applyPan, zoomByFactor, tool, adjustToolSize])
 
   // Space+drag or middle-mouse-drag pans. The gesture updates the camera ref
   // and redraws directly on every pointermove, bypassing React state - the
@@ -687,7 +704,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         // would exist for a single frame and then vanish, having "committed"
         // itself with whatever (empty) text it had at that instant.
         e.preventDefault()
-        setEditingText({ id: null, point: toBoardPoint(e), width: TEXT_DEFAULT_WIDTH, text: '' })
+        setEditingText({ id: null, point: toBoardPoint(e), width: TEXT_DEFAULT_WIDTH, text: '', fontSize: toolSettings.text.size })
         setTool('select')
         return
       }
@@ -931,7 +948,26 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerUp)
     }
-  }, [board, viewport, selectedIds, setSelection, toggleSelection, setFrames, reorder, draw, drawInteraction, tool, addArrow, addBox, addMarker, addRedact, setTool, setEditingText, cropSession])
+  }, [
+    board,
+    viewport,
+    selectedIds,
+    setSelection,
+    toggleSelection,
+    setFrames,
+    reorder,
+    draw,
+    drawInteraction,
+    tool,
+    addArrow,
+    addBox,
+    addMarker,
+    addRedact,
+    setTool,
+    setEditingText,
+    cropSession,
+    toolSettings,
+  ])
 
   // Keyboard shortcuts (Phase 2 item 9 completes this set). Undo/redo and
   // copy are the deliberate exceptions to "no modifier keys": Ctrl/Cmd+Z is
@@ -1079,7 +1115,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       const node = hitId ? board.nodes.find((n) => n.id === hitId) : null
       if (!node || node.kind !== 'text') return
       setSelection([node.id])
-      setEditingText({ id: node.id, point: { x: node.frame.x, y: node.frame.y }, width: node.frame.w, text: node.text })
+      setEditingText({ id: node.id, point: { x: node.frame.x, y: node.frame.y }, width: node.frame.w, text: node.text, fontSize: node.size })
     },
     [tool, board.nodes, viewport, setSelection],
   )
@@ -1159,6 +1195,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         onToggleText={() => setTool(tool === 'text' ? 'select' : 'text')}
         onToggleMarker={() => setTool(tool === 'marker' ? 'select' : 'marker')}
         onToggleRedact={() => setTool(tool === 'redact' ? 'select' : 'redact')}
+        toolSettings={toolSettings}
+        onColorChange={setToolColor}
+        onSizeChange={setToolSize}
       />
     </div>
   )

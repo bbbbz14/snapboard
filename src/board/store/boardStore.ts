@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { computeLayout } from '@/board/layout/computeLayout'
 import {
   BACKGROUNDS,
-  DEFAULT_ANNOTATION_COLOR,
   DEFAULT_BOARD,
   type ArrowNode,
   type Background,
@@ -18,11 +17,20 @@ import {
   type StylePreset,
   type TextNode,
 } from '@/board/model/types'
+import {
+  ANNOTATION_SIZE_RANGE,
+  DEFAULT_ANNOTATION_COLOR,
+  clampAnnotationSize,
+  type AnnotationTool,
+  type SizableAnnotationTool,
+  type Tool,
+} from '@/board/model/annotationDefaults'
 import { moveToFront } from '@/board/model/zorder'
 import { AssetStore, type Asset } from '@/assets/assetStore'
 import type { Rejection } from '@/assets/validate'
 import { arrowFrame } from '@/board/render/arrow'
 import { markerFrame } from '@/board/render/marker'
+import { REDACT_DEFAULT_COLOR } from '@/board/render/redact'
 import type { RenderInput } from '@/board/render/renderScene'
 import { rectFromPoints, translate, translatePoint, type Point, type Rect } from '@/lib/geometry'
 import {
@@ -40,6 +48,32 @@ const DUPLICATE_OFFSET = 16
 
 /** Undo depth required by the product plan's Phase 2 DoD. */
 const MAX_HISTORY = 50
+
+/** Per-tool color (and, except for redact, size) currently armed - what the
+ * *next* arrow/box/text/marker/redact will be created with, adjusted via the
+ * `AnnotationSettingsPopover` or by scrolling the mouse wheel while a tool is
+ * armed (see BoardCanvas's wheel handler). Not part of `Board` - same
+ * reasoning as `selectedIds`/camera/export options: a UI preference for what
+ * to draw next, not arranged content, so it's untouched by undo/redo and
+ * never autosaved. */
+export interface ToolSettings {
+  arrow: { color: string; size: number }
+  box: { color: string; size: number }
+  text: { color: string; size: number }
+  marker: { color: string; size: number }
+  redact: { color: string }
+}
+
+const DEFAULT_TOOL_SETTINGS: ToolSettings = {
+  arrow: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.arrow.default },
+  box: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.box.default },
+  text: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.text.default },
+  marker: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.marker.default },
+  // Deliberately not DEFAULT_ANNOTATION_COLOR (red) - a redaction a user
+  // hasn't touched the color picker for must stay exactly opaque black, see
+  // REDACT_DEFAULT_COLOR's own note.
+  redact: { color: REDACT_DEFAULT_COLOR },
+}
 
 export const assetStore = new AssetStore()
 
@@ -135,8 +169,18 @@ interface BoardState {
    * same reason `selectedIds` isn't: it's what the user is about to do, not
    * arranged content. Reverts to `'select'` the instant an arrow, box,
    * text, marker, or redaction placement commits. */
-  tool: 'select' | 'arrow' | 'box' | 'text' | 'marker' | 'redact'
-  setTool: (tool: 'select' | 'arrow' | 'box' | 'text' | 'marker' | 'redact') => void
+  tool: Tool
+  setTool: (tool: Tool) => void
+  /** The color (and, except for redact, size) each annotation tool is
+   * currently armed with - see `ToolSettings`'s own note. */
+  toolSettings: ToolSettings
+  setToolColor: (tool: AnnotationTool, color: string) => void
+  setToolSize: (tool: SizableAnnotationTool, size: number) => void
+  /** Relative nudge, clamped to the tool's range - what the mouse wheel
+   * calls while a tool is armed, one step per wheel event rather than per
+   * `deltaY` unit (a fast trackbackpad flick still just means "more wheel
+   * events", which already reads as faster). */
+  adjustToolSize: (tool: SizableAnnotationTool, delta: number) => void
   /** Commits a new arrow from `start` to `end` (board-space) and switches
    * back to the select tool - same one-shot pattern a stamp tool would use.
    * Deliberately does *not* touch `layout` - unlike `setFrames`, an arrow
@@ -314,6 +358,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   recoveredBoard: null,
   lastCleared: null,
   tool: 'select',
+  toolSettings: DEFAULT_TOOL_SETTINGS,
 
   async hydrate() {
     const restored = await restoreAutosave()
@@ -511,6 +556,22 @@ export const useBoardStore = create<BoardState>((set, get) => ({
 
   setTool: (tool) => set({ tool }),
 
+  setToolColor: (tool, color) =>
+    set((s) => ({ toolSettings: { ...s.toolSettings, [tool]: { ...s.toolSettings[tool], color } } })),
+
+  setToolSize: (tool, size) =>
+    set((s) => ({
+      toolSettings: { ...s.toolSettings, [tool]: { ...s.toolSettings[tool], size: clampAnnotationSize(tool, size) } },
+    })),
+
+  adjustToolSize: (tool, delta) =>
+    set((s) => ({
+      toolSettings: {
+        ...s.toolSettings,
+        [tool]: { ...s.toolSettings[tool], size: clampAnnotationSize(tool, s.toolSettings[tool].size + delta) },
+      },
+    })),
+
   addArrow: (start, end) =>
     set((s) => {
       const arrow: ArrowNode = {
@@ -520,7 +581,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         order: s.board.nodes.length,
         start,
         end,
-        color: DEFAULT_ANNOTATION_COLOR,
+        color: s.toolSettings.arrow.color,
+        size: s.toolSettings.arrow.size,
       }
       return {
         ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, arrow] }),
@@ -536,7 +598,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         id: `n${nodeSeq++}`,
         frame: rectFromPoints(start, end),
         order: s.board.nodes.length,
-        color: DEFAULT_ANNOTATION_COLOR,
+        color: s.toolSettings.box.color,
+        size: s.toolSettings.box.size,
       }
       return {
         ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, box] }),
@@ -556,7 +619,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           frame,
           order: s.board.nodes.length,
           text,
-          color: DEFAULT_ANNOTATION_COLOR,
+          color: s.toolSettings.text.color,
+          size: s.toolSettings.text.size,
         }
         return {
           ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, node] }),
@@ -581,9 +645,9 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       const marker: MarkerNode = {
         kind: 'marker',
         id: `n${nodeSeq++}`,
-        frame: markerFrame(point),
+        frame: markerFrame(point, s.toolSettings.marker.size),
         order: s.board.nodes.length,
-        color: DEFAULT_ANNOTATION_COLOR,
+        color: s.toolSettings.marker.color,
       }
       return {
         ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, marker] }),
@@ -599,6 +663,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         id: `n${nodeSeq++}`,
         frame: rectFromPoints(start, end),
         order: s.board.nodes.length,
+        color: s.toolSettings.redact.color,
       }
       return {
         ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, redact] }),
@@ -704,18 +769,20 @@ export function toRenderInput(board: Board): RenderInput {
       })),
     arrows: sorted
       .filter((n): n is ArrowNode => n.kind === 'arrow')
-      .map((n) => ({ id: n.id, start: n.start, end: n.end, color: n.color })),
+      .map((n) => ({ id: n.id, start: n.start, end: n.end, color: n.color, size: n.size })),
     boxes: sorted
       .filter((n): n is BoxNode => n.kind === 'box')
-      .map((n) => ({ id: n.id, frame: n.frame, color: n.color })),
+      .map((n) => ({ id: n.id, frame: n.frame, color: n.color, size: n.size })),
     texts: sorted
       .filter((n): n is TextNode => n.kind === 'text')
-      .map((n) => ({ id: n.id, frame: n.frame, text: n.text, color: n.color })),
+      .map((n) => ({ id: n.id, frame: n.frame, text: n.text, color: n.color, size: n.size })),
     // Numbered by placement order among markers only, same "index among
     // same-kind nodes" rule the image step badges above already use.
     markers: sorted
       .filter((n): n is MarkerNode => n.kind === 'marker')
       .map((n, i) => ({ id: n.id, frame: n.frame, number: i + 1, color: n.color })),
-    redacts: sorted.filter((n): n is RedactNode => n.kind === 'redact').map((n) => ({ id: n.id, frame: n.frame })),
+    redacts: sorted
+      .filter((n): n is RedactNode => n.kind === 'redact')
+      .map((n) => ({ id: n.id, frame: n.frame, color: n.color })),
   }
 }

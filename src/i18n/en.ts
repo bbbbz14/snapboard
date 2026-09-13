@@ -77,6 +77,10 @@ export const en = {
   'annotate.markerTitle': 'Number (N)',
   'annotate.redact': 'Redact',
   'annotate.redactTitle': 'Redact (C)',
+  'annotate.settings': 'Style',
+  'annotate.settingsTitle': 'Color & size — or scroll while a tool is armed',
+  'annotate.color': 'Color',
+  'annotate.size': 'Size',
 
   'zoom.out': 'Zoom out',
   'zoom.in': 'Zoom in',

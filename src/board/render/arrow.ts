@@ -2,10 +2,6 @@ import type { Point, Rect } from '@/lib/geometry'
 import { rectFromPoints } from '@/lib/geometry'
 import type { Ctx2D } from './renderScene'
 
-/** Board-space stroke width; scales with preview zoom/export scale via the
- * caller's canvas transform, same as everything else `renderScene` draws. */
-export const ARROW_STROKE_WIDTH = 4
-
 /** Extra board-space padding around the straight-line bounding box, wide
  * enough to cover the curve's bow and the arrowhead - see `arrowFrame`. */
 const ARROW_HIT_PADDING = 16

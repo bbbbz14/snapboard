@@ -1,16 +1,16 @@
 import type { Point, Rect } from '@/lib/geometry'
 import type { Ctx2D } from './renderScene'
 
-/** Board-space diameter of a marker's circle - fixed at creation, same "not
- * resizable" scope cut arrow/box/text already made for their own geometry. */
-export const MARKER_DIAMETER = 36
-
 /** Centers a new marker's frame on the point the user clicked - unlike
  * arrow/box (dragged from two corners), a marker has no meaningful "size"
- * to draw, just a place to point, so placement is a single click. */
-export function markerFrame(point: Point): Rect {
-  const r = MARKER_DIAMETER / 2
-  return { x: point.x - r, y: point.y - r, w: MARKER_DIAMETER, h: MARKER_DIAMETER }
+ * to draw, just a place to point, so placement is a single click. `diameter`
+ * (board-space, see `ANNOTATION_SIZE_RANGE.marker`) becomes `frame.w`/`h`
+ * directly - there is no separate stored size field for a marker, `frame`
+ * already encodes it, same as `drawMarker` below deriving its radius from
+ * `frame.w` rather than taking a size parameter of its own. */
+export function markerFrame(point: Point, diameter: number): Rect {
+  const r = diameter / 2
+  return { x: point.x - r, y: point.y - r, w: diameter, h: diameter }
 }
 
 /** Same shape drawn on any 2D context - used identically by `renderScene`
