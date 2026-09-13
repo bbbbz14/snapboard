@@ -66,15 +66,64 @@ Push and deploy both worked cleanly on the first try; a same-session
 "Phase 5 item 2" below for the full writeup, including one deferred finding
 for item 5 (the text-edit overlay's contrast).
 
-**Next up: item 3 (minimum top-bar overflow fix).**
+**Item 3 (minimum top-bar overflow fix) is also done**, shipped locally as
+commit `aebdbd2` - **not yet pushed or deployed**, per the user's explicit
+"commit first, continue next session" instruction. It went out bundled with
+a batch of real-usage feedback fixes found by the user actually using the
+live site (not part of the planned Phase 5 list) - see "Phase 5 item 3"
+below for the full writeup of both. `npm run verify` green (typecheck + 218
+unit + 27 renderer parity on 3 engines + 229/234 e2e passed, 5 skipped by
+design, same 5 as always).
 
-**One ordering change was approved this session** (see item 1's note and the
-Phase 5 list below): the minimum top-bar overflow fix moves *ahead* of item
-4 (6 gradient backgrounds), because that item grows the background swatch
-row from 4 controls to 10 in a bar already confirmed to need horizontal
-scrolling on mobile. It is not the whole of item 11 (mobile lite) - just
-enough that item 4 does not make a known finding worse. This is now item 3
-in the numbered list below (items renumbered accordingly).
+**Next up (approved this session, not yet built): a 3-part revision to the
+five Phase 4 annotation tools** (arrow/box/text/marker/redact), reopening
+scope every one of those items deliberately cut at the time ("no color
+picker," "no size choice" - see each item's own note below) because nothing
+had asked for it yet. Something has now: the user tested the live site and
+wants Lightshot-style controls. Explicitly sequenced so the two text-only
+parts don't collide with each other mid-flight:
+
+1. **Size (thickness) + color for every annotation tool, adjusted by
+   scrolling the mouse wheel while a tool is armed** (a Lightshot-style
+   interaction, but meant to end up smoother/nicer-looking than Lightshot's
+   own). Concrete defaults approved: **7 colors** - red `#dc2626` (today's
+   only color, keep as default), orange `#f97316`, yellow `#eab308`, green
+   `#16a34a`, blue `#0ea5e9`, purple `#9333ea`, black `#111827` (black
+   chosen over white - better contrast on the light backgrounds/real
+   screenshots this app actually gets used on). **Size limits:** arrow/box
+   stroke 2-12px (today's fixed values are `ARROW_STROKE_WIDTH=4`/
+   `BOX_STROKE_WIDTH=3`), marker diameter 24-64px (today `MARKER_DIAMETER=36`),
+   text font-size 14-40px (today `TEXT_FONT_SIZE=22`) - all in
+   `src/board/render/*.ts`. **Redact is the one exception:** color changes
+   are safe to add (still a fully-opaque fill, no opacity dial, so this
+   doesn't reopen the see-through-redaction risk item 5 was scoped to avoid)
+   but **no size control** - a redaction has no "thickness," its size is
+   already the dragged rectangle. Needs a new small UI (a popover off the
+   floating `AnnotationToolbar`, the same pattern `ExportMenu` already
+   established) plus per-tool state and a live preview while dragging, the
+   same one-source-of-truth reasoning the existing preview/commit pair
+   already uses for every annotation kind.
+2. **A new font pairing for the text tool, plus a subtle shadow/halo for
+   legibility** - the user found the current self-hosted Inter+Anuphan pair
+   ([styles.css](src/app/styles.css)'s `'Snapboard Annotation'` face) reads
+   as stiff/plain, and wants something closer to how macOS's own screenshot
+   markup tool renders text. Two candidate treatments to actually try and
+   compare live before picking one: a soft drop-shadow, or a thin light
+   halo/outline around each glyph (closer to what macOS Markup does).
+   Whatever font is picked needs an OFL (or equivalently permissive)
+   license, same as the current pair, and `npm run test:render` needs a
+   clean run across all 3 engines afterward - text-rendering/antialiasing
+   differences between engines are exactly what invariant 1 exists to catch,
+   and a shadow is new surface for that class of bug.
+3. **Text box starts small and grows with the content, instead of a fixed
+   240px width that only grows taller** (`TEXT_DEFAULT_WIDTH` in
+   `render/text.ts`) - another explicit Lightshot comparison. This is a
+   real model change, not a tweak: `wrapText`/`textHeight` and the
+   textarea overlay's auto-resize all currently assume a fixed width;
+   this needs a real "grow horizontally up to some max, then wrap" design,
+   not a parameter tweak. Do this **after** part 2, not interleaved with
+   it - both touch the same rendering code and picking the font/shadow
+   first avoids re-touching text.ts's layout math twice.
 
 Still open and still needing the user: the Slack/LINE/Jira/Gmail/Word/Figma/
 Google Docs paste results table. Not doable from inside this environment.
@@ -245,6 +294,94 @@ worked cleanly on the first try; a same-session `curl -o /dev/null -w
   have meant deciding item 5's approach (a fixed high-contrast backing vs.
   changing the annotation color's dark-mode behavior) without having done
   item 5's own audit first.
+
+### Phase 5 item 3 — done: top-bar overflow fix (plus a batch of real-usage feedback fixes)
+
+Shipped locally as commit `aebdbd2` - **committed, but deliberately not
+pushed or deployed yet**, per the user's explicit instruction to commit and
+update this Guide, then continue in a fresh session. `npm run verify`
+green (typecheck + 218 unit + 27 renderer parity on 3 engines + 229/234 e2e
+passed, 5 skipped by design, same 5 as always). This came from the user
+actually using the deployed live site and reporting back what felt wrong -
+four of the five things below aren't on the planned Phase 5 list at all,
+they just happened to touch the same files as item 3 so they shipped
+together.
+
+- **Real bug, not a design choice: annotations were forcing the whole
+  board to `layout: 'free'`.** The user asked "why does drawing an arrow
+  disable the Gap slider" and it turned out to be a genuine bug, not
+  intentional - `addArrow`/`addBox`/`commitText`/`addMarker`/`addRedact`
+  in `boardStore.ts` all set `layout: 'free'` on the node-add commit,
+  copied from `setFrames`'s reasoning (a manual image move/resize
+  correctly must freeze auto-layout, invariant 4) without noticing that
+  reasoning doesn't apply to annotations at all - `relayout()` only ever
+  rewrites `kind === 'image'` frames and passes every other node through
+  untouched (see its own updated comment), so an annotation coexisting
+  with an `'auto'`/`'rows'`/etc. board was never actually a problem for
+  the layout algorithm. Fixed by dropping `layout: 'free'` from all five
+  call sites - images keep auto-arranging exactly as if the annotation
+  weren't there.
+- **Second real bug, only surfaced by fixing the first one:** with layout
+  no longer frozen, dragging an annotation on an auto-arranged board fell
+  into Phase 2 item 5's drag-to-reorder path (`BoardCanvas.tsx`'s
+  `if (board.layout !== 'free')` branch), which assumes every draggable
+  node is an image with a meaningful "order" position to drop onto -
+  untrue for an arrow/box/text/marker/redact, which were never part of the
+  order/reorder system to begin with. All 3 e2e engines failed identically
+  on `redact.spec.ts`'s move test the first time `verify` ran after the
+  first fix, which is what caught this - not spotted by reasoning alone.
+  Fixed by gating that branch on `hitNode.kind === 'image'` too - an
+  annotation now always gets a direct move, whether the board is `'auto'`
+  or `'free'`.
+- **Background "Slate" swatch removed** - the user found it visually
+  indistinguishable from White in practice. Removed from `BACKGROUNDS`
+  (`types.ts`), `SWATCHES` (`TopBar.tsx`), and the `background.slate` i18n
+  string. Backward compatible with no extra code: a board's `background`
+  field stores the actual color value (`{ type: 'solid', color: '#eef2f7' }`),
+  not a name reference to the removed key, so an old autosaved/last-cleared
+  board that used Slate still decodes and renders correctly - it just won't
+  show any swatch as pressed anymore, which is cosmetic only.
+- **Gap slider now shows a live percentage** (`spacing.gapWithPercent` in
+  `en.ts`, `Gap · {{percent}}%`) computed as `gap / GAP_MAX` where
+  `GAP_MAX` is the slider's own 80px range - one denominator, so the label
+  and the slider's range can never drift apart. Default dropped from 20px
+  to **6px (~7.5%)** per the user's explicit "5-10% is enough to see the
+  gap" preference.
+- **`.topbar` now scrolls horizontally instead of squishing controls below
+  legible size** once they don't fit - the mechanism behind the standing
+  "top bar needs horizontal scrolling on mobile" manual-checklist finding
+  (Gate section below). `overflow-x: auto` on `.topbar` plus
+  `flex-shrink: 0` on its direct children (except `.spacer`, whose own
+  later `flex: 1` rule still wins for itself, so it keeps collapsing first
+  as before) - nothing shrinks illegibly before the bar itself starts
+  scrolling. This is **not** all of item 11 (mobile lite) - just the floor
+  so item 4 (6 gradient backgrounds, which grows the swatch row from 4
+  controls to 10) doesn't make a known finding worse.
+- **That overflow fix nearly broke the Phase 3 export options popover, and
+  is the one part of this batch worth remembering in detail:** `overflow`
+  on any ancestor clips absolutely-positioned descendants regardless of
+  which element is their *positioning* ancestor - `overflow` and
+  `position`'s containing-block chain are two independent things. Once
+  `.topbar` got `overflow-x: auto`, `ExportMenu`'s `.export-menu`
+  (`position: absolute` inside `.split-btn`, itself a child of `.topbar`)
+  would have started getting silently clipped by the bar's own bounding
+  box the instant it dropped below the header's 52px height - never
+  caught by any existing test because none of them assert on the popover's
+  *visual* position, only on `.export-menu`'s existence/contents. Fixed by
+  switching it to `position: fixed`, with `top`/`right` computed in a
+  `useLayoutEffect` from the caret button's real `getBoundingClientRect()`
+  (passed in as a new `anchorRef` prop) - `position: fixed` elements aren't
+  clipped by an ancestor's `overflow` unless that ancestor establishes its
+  own fixed-position containing block (via `transform`/`filter`/
+  `will-change`/etc.), which nothing here does. Also closes it on scroll
+  of the now-scrollable bar (`TopBar.tsx`'s new scroll listener while the
+  menu is open), since a `position: fixed` popover would otherwise
+  visually detach from a caret button that just scrolled out from under
+  it. Worth remembering for any future popover anchored inside `.topbar`.
+- **Deliberately not done:** no `@media (max-width)` rules and no other
+  mobile-shaped layout changes - that's the rest of item 11, later. No
+  fix to the five things above beyond what's described - each is scoped
+  to exactly what was reported, not a broader pass over its area.
 
 ### Phase 4 item 6 — done: crop (per-image, not the whole board)
 
@@ -1492,16 +1629,10 @@ made so later items can build on earlier ones instead of redoing them:
    `.btn--primary:hover` in the cascade, in both themes) and found one gap
    deliberately deferred to item 5 (the text-edit overlay's contrast, which
    fails AA in *both* themes and predates dark mode).
-3. ⬜ **Minimum top-bar overflow fix.** *Inserted here by an approved
-   ordering change, ahead of the gradients below.* `.topbar` is a plain
-   `display: flex` with no `flex-wrap` and no `overflow-x`, and
-   `styles.css` has no `@media (max-width:)` rule at all - which is the
-   mechanism behind the standing "top bar needs horizontal scrolling on
-   mobile" finding (Gate section below). Item 4 below grows the background
-   swatch row from 4 controls to 10, so doing that first would measurably
-   worsen a known finding. This is **not** all of item 11 (mobile lite) -
-   just enough that the next item is safe to add. Item 1's `--text-sm`/
-   `--control-h`/`--bar-pad` tokens exist for this.
+3. ✅ **Minimum top-bar overflow fix.** Done - see "Phase 5 item 3" under
+   START HERE above. `.topbar` now scrolls horizontally instead of
+   squishing chips/buttons illegibly; this is **not** all of item 11
+   (mobile lite) - just enough that item 4 below is safe to add.
 4. ⬜ **6 gradient backgrounds.** `Background` (`src/board/model/types.ts`)
    is currently `{ type: 'solid' } | { type: 'transparent' }` - this item
    needs a third variant and a `renderScene.ts` fill path for it. No
