@@ -80,12 +80,13 @@ of both. `npm run verify` green (typecheck + 218 unit + 27 renderer parity
 on 3 engines + 229/234 e2e passed, 5 skipped by design, same 5 as always).
 
 **A 3-part revision to the five Phase 4 annotation tools**
-(arrow/box/text/marker/redact) is in progress, reopening scope every one of
+(arrow/box/text/marker/redact) is now complete - all 3 parts done, pushed
+to `main`, and deployed to the live site. It reopened scope every one of
 those items deliberately cut at the time ("no color picker," "no size
 choice" - see each item's own note below) because nothing had asked for it
-yet. Something has now: the user tested the live site and wants
-Lightshot-style controls. Explicitly sequenced so the two text-only parts
-don't collide with each other mid-flight:
+yet. Something did: the user tested the live site and wanted Lightshot-style
+controls. Was explicitly sequenced so the two text-only parts wouldn't
+collide with each other mid-flight:
 
 1. ✅ **Done - size (thickness) + color for every annotation tool, adjusted
    by scrolling the mouse wheel while a tool is armed.** Built this session,
@@ -101,15 +102,24 @@ don't collide with each other mid-flight:
    real gap this found in the render-parity test harness itself.
 3. ✅ **Done - text box starts small and grows (and shrinks) with the
    content, instead of a fixed 240px width that only grew taller.** Built
-   this session, shipped as commit `1dc665d`, verified locally (`npm run
-   verify` green: typecheck + 243 unit + 27 renderer parity on 3 engines +
-   256/261 e2e passed, 5 skipped by design, same 5 as always - this part
-   added 6 new unit cases for `textAutoWidth`, no new e2e cases needed since
-   `text.spec.ts`/`annotationEdit.spec.ts` already exercise the same code
-   paths and kept passing unchanged). **Not yet pushed to `main` or deployed
-   to the live site** - held for the user's go-ahead, per the standing "push
-   and deploy are outward-facing, ask first" rule. See "Phase 5 annotation
+   this session, shipped as commit `1dc665d`, **pushed to `main` and
+   deployed to the live site** (recorded in `42828bc`, on the user's
+   approval). Push and deploy both worked cleanly on the first try; the
+   `gh-pages` branch's own last commit reads `Deploy 42828bc` (confirmed via
+   `git fetch origin gh-pages` + `git log`) and a same-session
+   `curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`.
+   `npm run verify` green (typecheck + 243 unit + 27 renderer parity on 3
+   engines + 256/261 e2e passed, 5 skipped by design, same 5 as always -
+   this part added 6 new unit cases for `textAutoWidth`, no new e2e cases
+   needed since `text.spec.ts`/`annotationEdit.spec.ts` already exercise the
+   same code paths and kept passing unchanged). See "Phase 5 annotation
    revision, part 3" below for the full writeup.
+
+**This closes all 3 parts of the annotation-revision arc** (size+color per
+tool, the text shadow treatment, and now content-driven text sizing) - the
+arc opened earlier in this guide is fully shipped and live. Live site is
+now up to date with everything through this arc; see "Live site status"
+below, which has also been updated to say so.
 
 **Two real bugs in part 1's own UI, found this session by the user actually
 using the wheel/color feature on the live site and fixed before starting
@@ -181,12 +191,13 @@ and the two real test-suite bugs this round's own e2e coverage surfaced.
 
 ### Phase 5 annotation revision, part 3 — done: text box grows/shrinks with content
 
-Built this session, shipped as commit `1dc665d`. `npm run verify` green
-(typecheck + 243 unit + 27 renderer parity on 3 engines + 256/261 e2e
-passed, 5 skipped by design, same 5 as always). **Not yet pushed to `main`
-or deployed to the live site** - held for the user's go-ahead, same
-"outward-facing actions need a check first" rule as every prior push/deploy
-in this guide.
+Built this session, shipped as commit `1dc665d`, pushed to `main`, and
+deployed to the live site (recorded in `42828bc`). Push and deploy both
+worked cleanly on the first try; the `gh-pages` branch's own last commit
+reads `Deploy 42828bc` and a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`.
+`npm run verify` green (typecheck + 243 unit + 27 renderer parity on 3
+engines + 256/261 e2e passed, 5 skipped by design, same 5 as always).
 
 - **The model change CLAUDE.md's own planning note anticipated: `wrapText`/
   `textHeight` and the textarea overlay's auto-resize all assumed a fixed
@@ -1977,19 +1988,19 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–3 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes), parts 1–2 of the annotation revision (color + size for every tool, plus the two part-1 bug fixes), and "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–3 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes), all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), and "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after "real-usage feedback round 2"'s commit (`2950020`, see the
-START HERE note above), and both worked cleanly again on the first try (no
+right after annotation-revision part 3's commit (`42828bc`, see the START
+HERE note above), and both worked cleanly again on the first try (no
 re-auth, no DNS re-check needed). Live site now serves all of Phase 2
 (items 1–9), the Clear board addition, Phase 3, the complete Phase 4
-(items 1–6), Phase 5 items 1–3, annotation-revision parts 1–2, and
+(items 1–6), Phase 5 items 1–3, all 3 parts of the annotation revision, and
 real-usage feedback round 2. Deploy script itself reported success
 (`Published.` + the live URL); the `gh-pages` branch's own last commit reads
-`Deploy 2950020` (confirmed via `git fetch origin gh-pages` + `git log`, not
+`Deploy 42828bc` (confirmed via `git fetch origin gh-pages` + `git log`, not
 just the deploy script's own message) and a same-session
 `curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. (The
 custom domain sits behind a CDN edge cache with a 10-minute
