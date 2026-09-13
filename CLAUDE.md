@@ -99,15 +99,17 @@ don't collide with each other mid-flight:
    Inter+Anuphan pairing and add only the halo treatment** - see "Phase 5
    annotation revision, part 2" below for the full writeup, including a
    real gap this found in the render-parity test harness itself.
-3. **Text box starts small and grows with the content, instead of a fixed
-   240px width that only grows taller** (`TEXT_DEFAULT_WIDTH` in
-   `render/text.ts`) - another explicit Lightshot comparison. This is a
-   real model change, not a tweak: `wrapText`/`textHeight` and the
-   textarea overlay's auto-resize all currently assume a fixed width;
-   this needs a real "grow horizontally up to some max, then wrap" design,
-   not a parameter tweak. Do this **after** part 2, not interleaved with
-   it - both touch the same rendering code and picking the font/shadow
-   first avoids re-touching text.ts's layout math twice.
+3. ✅ **Done - text box starts small and grows (and shrinks) with the
+   content, instead of a fixed 240px width that only grew taller.** Built
+   this session, shipped as commit `1dc665d`, verified locally (`npm run
+   verify` green: typecheck + 243 unit + 27 renderer parity on 3 engines +
+   256/261 e2e passed, 5 skipped by design, same 5 as always - this part
+   added 6 new unit cases for `textAutoWidth`, no new e2e cases needed since
+   `text.spec.ts`/`annotationEdit.spec.ts` already exercise the same code
+   paths and kept passing unchanged). **Not yet pushed to `main` or deployed
+   to the live site** - held for the user's go-ahead, per the standing "push
+   and deploy are outward-facing, ask first" rule. See "Phase 5 annotation
+   revision, part 3" below for the full writeup.
 
 **Two real bugs in part 1's own UI, found this session by the user actually
 using the wheel/color feature on the live site and fixed before starting
@@ -176,6 +178,79 @@ and the two real test-suite bugs this round's own e2e coverage surfaced.
   pixel-diff check (see below) proved it *is* Anuphan, loading and applying
   correctly; Anuphan's own type design is simply a modern, loopless one.
   Not to be re-raised as a font-loading bug.
+
+### Phase 5 annotation revision, part 3 — done: text box grows/shrinks with content
+
+Built this session, shipped as commit `1dc665d`. `npm run verify` green
+(typecheck + 243 unit + 27 renderer parity on 3 engines + 256/261 e2e
+passed, 5 skipped by design, same 5 as always). **Not yet pushed to `main`
+or deployed to the live site** - held for the user's go-ahead, same
+"outward-facing actions need a check first" rule as every prior push/deploy
+in this guide.
+
+- **The model change CLAUDE.md's own planning note anticipated: `wrapText`/
+  `textHeight` and the textarea overlay's auto-resize all assumed a fixed
+  width going in, so this needed a real "grow horizontally up to some max,
+  then wrap" design, not a parameter tweak.** New function `textAutoWidth`
+  (`render/text.ts`) replaces the old fixed `TEXT_DEFAULT_WIDTH` (240) with
+  two bounds - `TEXT_MIN_WIDTH` (32, an empty box) and `TEXT_MAX_WIDTH`
+  (480, the point where `wrapText`'s existing wrapping takes over instead of
+  the box growing further). It measures only the widest `\n`-delimited line
+  as a whole (not through `wrapText` - the point of this function is to find
+  the width that would make wrapping unnecessary in the first place),
+  clamped to those two bounds.
+- **Recomputed on every keystroke, not just at creation** - `BoardCanvas`'s
+  `onTextEditChange` calls `textAutoWidth` against the live `ctx.measureText`
+  after every character typed *or deleted*, so the box grows **and shrinks**
+  with the content, the same way Lightshot's own text tool behaves (confirmed
+  live via a throwaway Playwright script, not committed: empty → 32px, "hi" →
+  35px, a longer sentence → capped at 480px, then back down to 35px on
+  deleting back to "hi" - the exact grow/shrink/cap sequence this item asked
+  for). The one place width is still seeded rather than recomputed live is
+  the initial placement click (`TEXT_MIN_WIDTH` directly, since a fresh
+  click always starts with empty text - `textAutoWidth('')` would return the
+  same constant, so skipping the call there is just avoiding a redundant
+  canvas-context lookup, not a different rule) and a double-click re-edit
+  (seeded from the existing node's own already-fitted `frame.w`, then it
+  grows/shrinks live from there exactly like a fresh placement does).
+- **The settings-popover size slider (real-usage-feedback-round-2's "edit
+  style in place" feature) needed the identical fix, not just the live
+  typing path:** `onStyleSizeChange` used to recompute only `frame.h` when
+  the font-size slider changed an already-placed text node's size, leaving
+  `frame.w` at whatever it was fitted to under the *old* font size - a size
+  increase could leave the box wider than the new, bigger glyphs actually
+  need, or too narrow and wrapping when it didn't have to. Now recomputes
+  `width` via `textAutoWidth` first and feeds that into the same `wrapText`/
+  `textHeight` calc `frame.h` already used, so the box refits both
+  dimensions together, the same "grows with content" rule typing itself
+  follows.
+- **No changes needed to `commitText`/`boardStore.ts` beyond a comment
+  update** - the store already took `frame` as a caller-computed value (see
+  `commitText`'s own note on why: text layout needs a real `measureText`,
+  which only `BoardCanvas` has), so threading a content-fitted `w` through
+  the exact same parameter that already carried a content-fitted `h` needed
+  no new plumbing, just a caller-side change to what that `frame` argument
+  contains.
+- **No new e2e cases needed** - `tests/e2e/text.spec.ts` and
+  `tests/e2e/annotationEdit.spec.ts`'s existing pixel-scan regions already
+  cover a wide enough area around the click point that a narrower or wider
+  box (versus the old fixed 240px) still lands inside them; all 39 cases
+  across arrow/box/text/annotationSettings/annotationEdit passed unchanged
+  on all 3 engines before this was declared done, plus the throwaway script
+  above for the actual pixel-width behavior the automated suite can't assert
+  on directly (it reads `.text-edit`'s inline `style.width`, not a rendered
+  pixel). `tests/unit/text.test.ts` gained 6 new cases for `textAutoWidth`
+  directly (empty→min, short line fits exactly, grows, shrinks, caps at max,
+  and picks the widest of several explicit lines rather than the last one).
+- **Deliberately not done, scoped to what "grows with content" alone
+  needs:** no change to `TEXT_MAX_WIDTH`'s relationship to the board's own
+  size (a text box can still be wider than a small board, same as it always
+  could at the old fixed 240px); no attempt to make the *height* dimension
+  grow any differently than it already did (unchanged - line-count-driven,
+  via the same `textHeight` this item didn't touch); no persistence or
+  user-facing control over `TEXT_MIN_WIDTH`/`TEXT_MAX_WIDTH` themselves - a
+  fixed design decision for this pass, same as every other annotation
+  tool's size range.
 
 ### Real-usage feedback round 2 — done: board auto-fit, order-independent layout, edit-in-place annotation style, drop-shadow text, font check
 
