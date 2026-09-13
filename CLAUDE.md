@@ -89,8 +89,9 @@ don't collide with each other mid-flight:
 
 1. ✅ **Done - size (thickness) + color for every annotation tool, adjusted
    by scrolling the mouse wheel while a tool is armed.** Built this session,
-   shipped locally as commit `26c6761` - **not yet pushed or deployed**. See
-   "Phase 5 annotation revision, part 1" below for the full writeup.
+   shipped as commit `26c6761`, pushed to `main`, and deployed to the live
+   site. See "Phase 5 annotation revision, part 1" below for the full
+   writeup.
 2. **A new font pairing for the text tool, plus a subtle shadow/halo for
    legibility** - the user found the current self-hosted Inter+Anuphan pair
    ([styles.css](src/app/styles.css)'s `'Snapboard Annotation'` face) reads
@@ -126,12 +127,14 @@ Phase 5 item 8), not a thing to test or fix.
 
 ### Phase 5 annotation revision, part 1 — done: color + size for every tool
 
-Built this session, shipped locally as commit `26c6761` - **not yet pushed
-or deployed**, pending the user's go-ahead. `npm run verify` green
-(typecheck + 228 unit + 27 renderer parity on 3 engines + 244/249 e2e
-passed, 5 skipped by design, same 5 as always - the new
-`tests/e2e/annotationSettings.spec.ts` added 5 cases × 3 engines = 15, all
-passed on the first run, no new skips). Also manually verified in a real
+Built this session, shipped as commit `26c6761`, pushed to `main`, and
+deployed to the live site. `npm run verify` green (typecheck + 228 unit +
+27 renderer parity on 3 engines + 244/249 e2e passed, 5 skipped by design,
+same 5 as always - the new `tests/e2e/annotationSettings.spec.ts` added 5
+cases × 3 engines = 15, all passed on the first run, no new skips). Push
+and deploy both worked cleanly on the first try; a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. Also
+manually verified in a real
 browser via a throwaway Playwright screenshot script (not committed) -
 the popover positions correctly above the bottom-left toolbar, swatch
 selection and the size slider both work, and redact's popover correctly
@@ -1549,18 +1552,18 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and Phase 5 items 1–3 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–3 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes), and part 1 of the annotation revision (color + size for every tool)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-in the session right after Phase 5 item 3's commit (`57459f5`, top-bar
-overflow fix + the annotation-layout-freeze/drag-on-auto-layout bug fixes,
-see the START HERE note above), and both worked cleanly again on the first
-try (no re-auth, no DNS re-check needed). Live site now serves all of
-Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete
-Phase 4 (items 1–6), and Phase 5 items 1–3. Deploy script itself reported
-success (`Published.` + the live URL); a same-session `curl -o /dev/null -w
+right after the annotation revision's part 1 commit (`26c6761`, color +
+size for every annotation tool, see the START HERE note above), and both
+worked cleanly again on the first try (no re-auth, no DNS re-check
+needed). Live site now serves all of Phase 2 (items 1–9), the Clear board
+addition, Phase 3, the complete Phase 4 (items 1–6), Phase 5 items 1–3, and
+annotation-revision part 1. Deploy script itself reported success
+(`Published.` + the live URL); a same-session `curl -o /dev/null -w
 '%{http_code}'` for `/` returned a fresh `200`. (The custom domain sits
 behind a CDN edge cache with a 10-minute
 `max-age`, so a stale bundle hash can be observed for a few minutes right
