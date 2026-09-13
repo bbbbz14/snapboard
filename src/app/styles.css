@@ -637,6 +637,25 @@ body {
   background: var(--text-dim);
 }
 
+/* Transient feedback while scrolling the wheel to adjust a tool's size -
+   otherwise the change is invisible until the user actually draws with it.
+   Purely a readout, so it never intercepts the wheel gesture it's reporting
+   on. */
+.annotation-size-hint {
+  position: absolute;
+  left: 16px;
+  bottom: 64px;
+  padding: 4px 10px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  pointer-events: none;
+}
+
 .annotation-settings {
   /* Fixed, positioned from the settings button's own screen rect (see
      AnnotationSettingsPopover.tsx) - same reasoning `.export-menu` already

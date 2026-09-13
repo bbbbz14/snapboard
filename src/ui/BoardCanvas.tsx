@@ -19,6 +19,7 @@ import { ZoomControls } from '@/ui/ZoomControls'
 import { SelectionToolbar } from '@/ui/SelectionToolbar'
 import { CropToolbar } from '@/ui/CropToolbar'
 import { AnnotationToolbar } from '@/ui/AnnotationToolbar'
+import type { SizableAnnotationTool } from '@/board/model/annotationDefaults'
 import { t } from '@/i18n/t'
 
 /** Screen-px drag distance below which an arrow-tool drag is treated as a
@@ -158,6 +159,25 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   const setToolColor = useBoardStore((s) => s.setToolColor)
   const setToolSize = useBoardStore((s) => s.setToolSize)
   const adjustToolSize = useBoardStore((s) => s.adjustToolSize)
+
+  // Scrolling the wheel to adjust a tool's size (below) has no other on-screen
+  // feedback - the change is otherwise invisible until the user actually
+  // draws with it. A user testing the live site hit exactly this and asked
+  // for the size to be shown while scrolling, not just after drawing. This
+  // flashes a small badge near the annotation toolbar for a moment on every
+  // wheel tick; `useBoardStore.getState()` (not the subscribed `toolSettings`
+  // above) reads the just-updated value directly, since this effect's own
+  // closure only re-registers when `tool` changes, not on every size tick.
+  const [sizeHint, setSizeHint] = useState<{ tool: SizableAnnotationTool; size: number } | null>(null)
+  const sizeHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flashSizeHint = useCallback((sizableTool: SizableAnnotationTool) => {
+    setSizeHint({ tool: sizableTool, size: useBoardStore.getState().toolSettings[sizableTool].size })
+    if (sizeHintTimerRef.current) clearTimeout(sizeHintTimerRef.current)
+    sizeHintTimerRef.current = setTimeout(() => setSizeHint(null), 1200)
+  }, [])
+  useEffect(() => () => {
+    if (sizeHintTimerRef.current) clearTimeout(sizeHintTimerRef.current)
+  }, [])
 
   useEffect(() => {
     void ensureAnnotationFont().then(() => setFontReady(true))
@@ -569,6 +589,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         zoomByFactor(Math.exp(-e.deltaY * 0.01), anchor)
       } else if (tool !== 'select' && tool !== 'redact') {
         adjustToolSize(tool, e.deltaY > 0 ? -1 : 1)
+        flashSizeHint(tool)
       } else {
         // Scrolling down should reveal content further down the board -
         // the opposite sign from a hand-drag, which moves content with the pointer.
@@ -577,7 +598,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     }
     canvas.addEventListener('wheel', onWheel, { passive: false })
     return () => canvas.removeEventListener('wheel', onWheel)
-  }, [applyPan, zoomByFactor, tool, adjustToolSize])
+  }, [applyPan, zoomByFactor, tool, adjustToolSize, flashSizeHint])
 
   // Space+drag or middle-mouse-drag pans. The gesture updates the camera ref
   // and redraws directly on every pointermove, bypassing React state - the
@@ -1199,6 +1220,11 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         onColorChange={setToolColor}
         onSizeChange={setToolSize}
       />
+      {sizeHint && (
+        <div className="annotation-size-hint" aria-hidden="true">
+          {sizeHint.size}px
+        </div>
+      )}
     </div>
   )
 }

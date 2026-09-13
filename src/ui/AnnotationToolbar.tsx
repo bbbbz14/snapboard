@@ -24,9 +24,17 @@ interface Props {
  * Phase 4's annotation tools land here too as they ship.
  *
  * The trailing settings button opens `AnnotationSettingsPopover` for
- * whichever tool is currently armed - disabled while `tool === 'select'`
- * since there is no tool context to adjust yet, per this revision's own
- * "while a tool is armed" framing (see CLAUDE.md).
+ * whichever tool is currently armed, or was most recently armed
+ * (`lastArmedTool`). Every annotation tool is one-shot - it commits and
+ * reverts `tool` to 'select' the instant the user draws one shape (see each
+ * tool's own note). The first version of this settings button disabled
+ * itself the moment that happened, which broke the single most common real
+ * flow: arm a tool, draw with it (the natural first thing to try), then try
+ * to check or change its color/size - found by a user actually using the
+ * live site, who reported "the button shows up but pressing it does
+ * nothing" (it was disabled). Tracking the last-armed tool keeps settings
+ * reachable across that revert without changing the one-shot draw behavior
+ * itself.
  */
 export function AnnotationToolbar({
   tool,
@@ -41,15 +49,17 @@ export function AnnotationToolbar({
 }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const settingsBtnRef = useRef<HTMLButtonElement>(null)
+  const [lastArmedTool, setLastArmedTool] = useState<AnnotationTool | null>(null)
 
-  // Committing an annotation (or Escape) reverts `tool` to 'select' - the
-  // popover has nothing left to control at that point, so it must close
-  // with it rather than lingering open over a now-inert settings button.
   useEffect(() => {
-    if (tool === 'select') setSettingsOpen(false)
+    if (tool !== 'select') setLastArmedTool(tool)
   }, [tool])
 
   const armed = tool === 'select' ? null : tool
+  // The tool the settings button/popover actually reflects: the currently
+  // armed one, or - once nothing is armed because it just committed - the
+  // last one that was, so the button stays usable across that revert.
+  const settingsTool = armed ?? lastArmedTool
 
   return (
     <div className="annotation-toolbar">
@@ -108,21 +118,21 @@ export function AnnotationToolbar({
         ref={settingsBtnRef}
         className="annotation-toolbar__btn"
         onClick={() => setSettingsOpen((v) => !v)}
-        disabled={armed === null}
+        disabled={settingsTool === null}
         title={t('annotate.settingsTitle')}
         aria-label={t('annotate.settings')}
         aria-expanded={settingsOpen}
       >
-        <span className="annotation-toolbar__swatch" style={armed ? { background: toolSettings[armed].color } : undefined} />
+        <span className="annotation-toolbar__swatch" style={settingsTool ? { background: toolSettings[settingsTool].color } : undefined} />
       </button>
-      {settingsOpen && armed && (
+      {settingsOpen && settingsTool && (
         <AnnotationSettingsPopover
-          color={toolSettings[armed].color}
-          onColorChange={(c) => onColorChange(armed, c)}
-          size={armed === 'redact' ? null : toolSettings[armed].size}
-          sizeRange={armed === 'redact' ? null : ANNOTATION_SIZE_RANGE[armed]}
+          color={toolSettings[settingsTool].color}
+          onColorChange={(c) => onColorChange(settingsTool, c)}
+          size={settingsTool === 'redact' ? null : toolSettings[settingsTool].size}
+          sizeRange={settingsTool === 'redact' ? null : ANNOTATION_SIZE_RANGE[settingsTool]}
           onSizeChange={(s) => {
-            if (armed !== 'redact') onSizeChange(armed, s)
+            if (settingsTool !== 'redact') onSizeChange(settingsTool, s)
           }}
           onClose={() => setSettingsOpen(false)}
           anchorRef={settingsBtnRef}
