@@ -16,10 +16,10 @@ import { boardToScreen, fitCamera, panBy, screenToBoard, zoomAt, type Camera } f
 import type { Point, Rect } from '@/lib/geometry'
 import { boundsOf, rectFromPoints, translate } from '@/lib/geometry'
 import { ZoomControls } from '@/ui/ZoomControls'
-import { SelectionToolbar } from '@/ui/SelectionToolbar'
+import { SelectionToolbar, type StyleTarget } from '@/ui/SelectionToolbar'
 import { CropToolbar } from '@/ui/CropToolbar'
 import { AnnotationToolbar } from '@/ui/AnnotationToolbar'
-import type { SizableAnnotationTool } from '@/board/model/annotationDefaults'
+import { ANNOTATION_SIZE_RANGE, clampAnnotationSize, type SizableAnnotationTool } from '@/board/model/annotationDefaults'
 import { t } from '@/i18n/t'
 
 /** Screen-px drag distance below which an arrow-tool drag is treated as a
@@ -53,6 +53,18 @@ interface Props {
   /** Shared with TopBar's Copy button (see `useCopyAction`) so Ctrl/Cmd+Shift+C
    * triggers the exact same clipboard call and "copied" feedback. */
   onCopy: () => void
+}
+
+/** What `SelectionToolbar`'s settings button/popover edits for a single
+ * selected annotation node - `undefined` for no selection, a multi-
+ * selection, or an image (crop/duplicate/etc. cover images; they have no
+ * color/size to edit). A marker has no `size` field of its own (see
+ * `MarkerNode`'s note); its diameter is read straight off `frame.w`. */
+function styleTargetFor(node: Board['nodes'][number] | undefined): StyleTarget | undefined {
+  if (!node || node.kind === 'image') return undefined
+  if (node.kind === 'redact') return { color: node.color, size: null, sizeRange: null }
+  if (node.kind === 'marker') return { color: node.color, size: node.frame.w, sizeRange: ANNOTATION_SIZE_RANGE.marker }
+  return { color: node.color, size: node.size, sizeRange: ANNOTATION_SIZE_RANGE[node.kind] }
 }
 
 /**
@@ -145,6 +157,8 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   const deleteSelected = useBoardStore((s) => s.deleteSelected)
   const duplicateSelected = useBoardStore((s) => s.duplicateSelected)
   const bringToFront = useBoardStore((s) => s.bringToFront)
+  const setNodeColor = useBoardStore((s) => s.setNodeColor)
+  const setNodeSize = useBoardStore((s) => s.setNodeSize)
   const undo = useBoardStore((s) => s.undo)
   const redo = useBoardStore((s) => s.redo)
   const tool = useBoardStore((s) => s.tool)
@@ -1166,7 +1180,38 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
 
   // Crop only makes sense for a single selected image node - see
   // SelectionToolbar's own note on why the button itself is conditional.
-  const canCrop = selectedIds.length === 1 && board.nodes.find((n) => n.id === selectedIds[0])?.kind === 'image'
+  const selectedNode = selectedIds.length === 1 ? board.nodes.find((n) => n.id === selectedIds[0]) : undefined
+  const canCrop = selectedNode?.kind === 'image'
+  const styleTarget = styleTargetFor(selectedNode)
+
+  const onStyleColorChange = useCallback(
+    (color: string) => {
+      if (selectedNode && selectedNode.kind !== 'image') setNodeColor(selectedNode.id, color)
+    },
+    [selectedNode, setNodeColor],
+  )
+
+  // Text is the one kind resized here rather than through `setNodeSize` -
+  // a font-size change also changes the wrapped line count, which needs a
+  // real `measureText` only this component has (same reasoning `commitText`'s
+  // own note gives for why the store stays free of canvas/DOM dependencies).
+  const onStyleSizeChange = useCallback(
+    (size: number) => {
+      if (!selectedNode || selectedNode.kind === 'image' || selectedNode.kind === 'redact') return
+      if (selectedNode.kind === 'text') {
+        const ctx = canvasRef.current?.getContext('2d')
+        if (!ctx) return
+        const clamped = clampAnnotationSize('text', size)
+        ctx.font = textFont(clamped)
+        const maxWidth = Math.max(1, selectedNode.frame.w - TEXT_PADDING * 2)
+        const lines = wrapText((s) => ctx.measureText(s).width, selectedNode.text, maxWidth)
+        commitText(selectedNode.id, { ...selectedNode.frame, h: textHeight(lines.length, clamped) }, selectedNode.text, clamped)
+        return
+      }
+      setNodeSize(selectedNode.id, size)
+    },
+    [selectedNode, commitText, setNodeSize],
+  )
 
   return (
     <div className="board-stage">
@@ -1200,6 +1245,9 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         onDuplicate={duplicateSelected}
         onBringToFront={bringToFront}
         onDelete={deleteSelected}
+        style={styleTarget}
+        onStyleColorChange={onStyleColorChange}
+        onStyleSizeChange={onStyleSizeChange}
       />
       <CropToolbar ref={cropToolbarRef} onConfirm={confirmCrop} onCancel={cancelCrop} />
       <ZoomControls

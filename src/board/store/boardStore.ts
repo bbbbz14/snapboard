@@ -32,7 +32,7 @@ import { arrowFrame } from '@/board/render/arrow'
 import { markerFrame } from '@/board/render/marker'
 import { REDACT_DEFAULT_COLOR } from '@/board/render/redact'
 import type { RenderInput } from '@/board/render/renderScene'
-import { rectFromPoints, translate, translatePoint, type Point, type Rect } from '@/lib/geometry'
+import { boundsOf, rectFromPoints, translate, translatePoint, type Point, type Rect } from '@/lib/geometry'
 import {
   restoreAutosave,
   restoreLastCleared as restoreLastClearedFromDB,
@@ -204,7 +204,12 @@ interface BoardState {
    * annotation." Does not switch `tool` - unlike `addArrow`/`addBox`,
    * BoardCanvas already reverts to `'select'` the instant the text draft is
    * placed, before the user has typed anything. */
-  commitText: (id: NodeId | null, frame: Rect, text: string) => void
+  /** `size` is only ever passed when a re-edit is also changing the font
+   * size (see `setNodeSize` below, which routes text through here instead
+   * of mutating it directly) - BoardCanvas has already recomputed `frame`'s
+   * height to match, for the same "store stays free of canvas/DOM"
+   * reasoning as the note above. Omitted, the node's existing size is kept. */
+  commitText: (id: NodeId | null, frame: Rect, text: string, size?: number) => void
   /** Commits a new marker at `point` (board-space) and switches back to the
    * select tool - same one-shot pattern as `addArrow`/`addBox`, but for a
    * plain click instead of a drag: a marker has no meaningful "size" the
@@ -221,6 +226,21 @@ interface BoardState {
    * relayouts, since `order` doubles as layout position for auto boards -
    * same overload `reorder` already relies on for drag-to-reorder. */
   bringToFront: () => void
+  /** Recolors an already-placed annotation node directly - the settings
+   * popover opened from `SelectionToolbar` for a single selected annotation
+   * uses this, as opposed to `setToolColor`, which only ever affects the
+   * *next* one drawn (`toolSettings`). A no-op for an image (no `color`
+   * field) or an id that no longer exists. */
+  setNodeColor: (id: NodeId, color: string) => void
+  /** Resizes an already-placed arrow/box/marker node directly, clamped to
+   * the same range its tool uses - same "edit the node, not the tool
+   * default" distinction as `setNodeColor`. A marker has no `size` field
+   * (see `MarkerNode`'s own note); its `frame` is recentered on the
+   * unchanged center point instead. Text is deliberately excluded - a font
+   * size change also changes wrapped height, which needs a real
+   * `measureText` only the caller has, so BoardCanvas routes that through
+   * `commitText` instead. Redact has no size dimension at all. */
+  setNodeSize: (id: NodeId, size: number) => void
   undo: () => void
   redo: () => void
   /** Opens a coalescing window: board updates until `endAdjustment` collapse
@@ -273,6 +293,36 @@ function relayout(board: Board): Board {
     resolvedLayout: result.mode,
     size: result.size,
     nodes: board.nodes.map((n) => (n.kind === 'image' ? { ...n, frame: result.frames[n.id] ?? n.frame } : n)),
+  }
+}
+
+/** After a manual move/resize, keeps the canvas exactly as large as the
+ * content needs plus `padding` on every edge - the same tight fit
+ * `finalize()` already guarantees for every auto layout. Without this,
+ * `board.size` stays frozen at whatever it was when the board last left auto
+ * mode (invariant 4 only protects frames, not size), so rearranging into a
+ * visually tighter shape - e.g. collapsing two stacked rows into one short
+ * row - leaves the old, taller canvas behind as dead space: wasted margin
+ * in every exported/copied image. Translating every node by the same
+ * (dx, dy) preserves the arrangement the user actually made - only the
+ * shared canvas origin moves, exactly like `finalize()` already does to an
+ * auto layout's own arbitrary internal coordinates. */
+function fitBoardToContent(board: Board): Board {
+  if (board.nodes.length === 0) return board
+  const bounds = boundsOf(board.nodes.map((n) => n.frame))
+  const dx = board.padding - bounds.x
+  const dy = board.padding - bounds.y
+  const size = { w: Math.round(bounds.w + board.padding * 2), h: Math.round(bounds.h + board.padding * 2) }
+  if (dx === 0 && dy === 0 && size.w === board.size.w && size.h === board.size.h) return board
+  return {
+    ...board,
+    size,
+    nodes: board.nodes.map((n) => {
+      const frame = translate(n.frame, dx, dy)
+      return n.kind === 'arrow'
+        ? { ...n, frame, start: translatePoint(n.start, dx, dy), end: translatePoint(n.end, dx, dy) }
+        : { ...n, frame }
+    }),
   }
 }
 
@@ -473,24 +523,27 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       // The first manual move/resize switches to 'free' so the very next
       // relayout() (e.g. from adding another image) can't silently
       // overwrite it - see invariant 4.
-      return commitBoard(s, {
-        ...s.board,
-        layout: 'free',
-        nodes: s.board.nodes.map((n) => {
-          const frame = byId.get(n.id)
-          if (!frame) return n
-          // An arrow's frame is only ever moved wholesale (see handles.ts -
-          // arrows never expose a resize handle), so the delta between old
-          // and new frame origin is the same translation to apply to its
-          // actual start/end points.
-          if (n.kind === 'arrow') {
-            const dx = frame.x - n.frame.x
-            const dy = frame.y - n.frame.y
-            return { ...n, frame, start: translatePoint(n.start, dx, dy), end: translatePoint(n.end, dx, dy) }
-          }
-          return { ...n, frame }
+      return commitBoard(
+        s,
+        fitBoardToContent({
+          ...s.board,
+          layout: 'free',
+          nodes: s.board.nodes.map((n) => {
+            const frame = byId.get(n.id)
+            if (!frame) return n
+            // An arrow's frame is only ever moved wholesale (see handles.ts -
+            // arrows never expose a resize handle), so the delta between old
+            // and new frame origin is the same translation to apply to its
+            // actual start/end points.
+            if (n.kind === 'arrow') {
+              const dx = frame.x - n.frame.x
+              const dy = frame.y - n.frame.y
+              return { ...n, frame, start: translatePoint(n.start, dx, dy), end: translatePoint(n.end, dx, dy) }
+            }
+            return { ...n, frame }
+          }),
         }),
-      })
+      )
     }),
 
   commitCrop: (id, frame, crop) =>
@@ -608,7 +661,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }
     }),
 
-  commitText: (id, frame, text) =>
+  commitText: (id, frame, text, size) =>
     set((s) => {
       const trimmed = text.trim()
       if (id === null) {
@@ -636,7 +689,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }
       return commitBoard(s, {
         ...s.board,
-        nodes: s.board.nodes.map((n) => (n.id === id && n.kind === 'text' ? { ...n, frame, text } : n)),
+        nodes: s.board.nodes.map((n) => (n.id === id && n.kind === 'text' ? { ...n, frame, text, size: size ?? n.size } : n)),
       })
     }),
 
@@ -678,6 +731,37 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       const sorted = [...s.board.nodes].sort((a, b) => a.order - b.order)
       const reordered = moveToFront(sorted, new Set(s.selectedIds))
       return commitBoard(s, relayout({ ...s.board, nodes: reordered.map((n, i) => ({ ...n, order: i })) }))
+    }),
+
+  setNodeColor: (id, color) =>
+    set((s) => {
+      let changed = false
+      const nodes = s.board.nodes.map((n) => {
+        if (n.id !== id || n.kind === 'image') return n
+        changed = true
+        return { ...n, color }
+      })
+      return changed ? commitBoard(s, { ...s.board, nodes }) : {}
+    }),
+
+  setNodeSize: (id, size) =>
+    set((s) => {
+      let changed = false
+      const nodes = s.board.nodes.map((n) => {
+        if (n.id !== id) return n
+        if (n.kind === 'marker') {
+          changed = true
+          const cx = n.frame.x + n.frame.w / 2
+          const cy = n.frame.y + n.frame.h / 2
+          return { ...n, frame: markerFrame({ x: cx, y: cy }, clampAnnotationSize('marker', size)) }
+        }
+        if (n.kind === 'arrow' || n.kind === 'box') {
+          changed = true
+          return { ...n, size: clampAnnotationSize(n.kind, size) }
+        }
+        return n
+      })
+      return changed ? commitBoard(s, { ...s.board, nodes }) : {}
     }),
 
   undo: () =>

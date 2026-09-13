@@ -140,7 +140,12 @@ test('a marker can be selected, deleted, and the delete undone', async ({ page, 
 test('a marker exposes no resize handle - dragging it moves it instead', async ({ page, images, addViaPicker }) => {
   await addViaPicker(page, images([[400, 300]]))
   const rect = await pageRect(page)
-  const at = { x: rect.x + 20, y: rect.y + rect.h + 30 }
+  // Placed well inside the image, not below it - a point outside the image
+  // would extend the board's own content bounding box, which a later drag of
+  // the marker would then shrink back down (fitBoardToContent), resizing and
+  // refitting the board mid-test and invalidating every page-pixel
+  // coordinate computed from `rect` below it.
+  const at = { x: rect.x + 30, y: rect.y + 30 }
 
   await markerToolButton(page).click()
   await page.mouse.click(at.x, at.y)

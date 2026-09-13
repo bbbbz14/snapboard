@@ -19,7 +19,11 @@ function toolButton(page: Page, name: string) {
 }
 
 function settingsButton(page: Page) {
-  return page.getByRole('button', { name: 'Style' })
+  // Exact - `SelectionToolbar`'s own settings button ("Edit style") also
+  // contains "Style" as a substring, and coexists with this one whenever a
+  // one-shot tool's drawn shape is left selected (every tool here). Without
+  // `exact`, Playwright's substring name matching resolves to both.
+  return page.getByRole('button', { name: 'Style', exact: true })
 }
 
 /** Counts reddish pixels in a 1px-wide vertical strip - a rough proxy for a

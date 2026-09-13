@@ -19,17 +19,69 @@ describe('setFrames', () => {
     })
   })
 
-  it('commits the new frame and switches layout to free', () => {
+  it('commits the new frame, switches layout to free, and fits the board tightly to it', () => {
     useBoardStore.getState().setFrames([{ id: 'n0', frame: { x: 5, y: 5, w: 10, h: 10 } }])
     const board = useBoardStore.getState().board
     expect(board.layout).toBe('free')
-    expect(board.nodes[0]?.frame).toEqual({ x: 5, y: 5, w: 10, h: 10 })
+    // With a single node, the tight-fit (fitBoardToContent) recenters it to sit
+    // exactly `padding` from the edge rather than leaving it at the literal
+    // coordinates just committed - see the note on fitBoardToContent.
+    expect(board.nodes[0]?.frame).toEqual({ x: board.padding, y: board.padding, w: 10, h: 10 })
+    expect(board.size).toEqual({ w: 10 + board.padding * 2, h: 10 + board.padding * 2 })
   })
 
   it('leaves other actions unable to recompute frames once free (invariant 4)', () => {
     useBoardStore.getState().setFrames([{ id: 'n0', frame: { x: 5, y: 5, w: 10, h: 10 } }])
+    const fitted = useBoardStore.getState().board.nodes[0]?.frame
     useBoardStore.getState().setGap(40)
-    expect(useBoardStore.getState().board.nodes[0]?.frame).toEqual({ x: 5, y: 5, w: 10, h: 10 })
+    expect(useBoardStore.getState().board.nodes[0]?.frame).toEqual(fitted)
+  })
+})
+
+describe('setFrames auto-fit (fitBoardToContent)', () => {
+  it('shrinks the board once a manual rearrange makes the content bounding box smaller', () => {
+    // Two nodes stacked vertically - moving the second one up next to the
+    // first collapses the bounding box height, the exact shape of the bug
+    // report this closes: auto-layout produced a tall board (e.g. two rows),
+    // the user rearranged into one short row by hand, and the canvas used to
+    // stay frozen at the old, taller size (invariant 4 only protects frames,
+    // not size) - leaving dead margin in every export/copy.
+    useBoardStore.setState({
+      board: {
+        ...DEFAULT_BOARD,
+        layout: 'auto',
+        padding: 10,
+        nodes: [node('n0', { x: 10, y: 10, w: 100, h: 50 }), node('n1', { x: 10, y: 70, w: 100, h: 50 })],
+      },
+    })
+    useBoardStore.getState().setFrames([{ id: 'n1', frame: { x: 120, y: 10, w: 100, h: 50 } }])
+    const board = useBoardStore.getState().board
+    expect(board.size).toEqual({ w: 230, h: 70 })
+    expect(board.nodes.map((n) => n.frame)).toEqual([
+      { x: 10, y: 10, w: 100, h: 50 },
+      { x: 120, y: 10, w: 100, h: 50 },
+    ])
+  })
+
+  it('is a no-op when the move does not change the bounding box (the common case)', () => {
+    useBoardStore.setState({
+      board: {
+        ...DEFAULT_BOARD,
+        layout: 'auto',
+        padding: 10,
+        size: { w: 240, h: 70 }, // already fitted to the bounds n0/n1 form below
+        nodes: [
+          node('n0', { x: 10, y: 10, w: 100, h: 50 }),
+          node('n1', { x: 130, y: 10, w: 100, h: 50 }),
+          node('n2', { x: 50, y: 20, w: 20, h: 20 }),
+        ],
+      },
+    })
+    const before = useBoardStore.getState().board.size
+    // n2 sits well inside the bounding box n0/n1 form - nudging it doesn't
+    // touch that box's own min/max edges, so nothing should resize.
+    useBoardStore.getState().setFrames([{ id: 'n2', frame: { x: 55, y: 25, w: 20, h: 20 } }])
+    expect(useBoardStore.getState().board.size).toEqual(before)
   })
 })
 
@@ -189,8 +241,16 @@ describe('addArrow', () => {
     useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
     const arrow = useBoardStore.getState().board.nodes.find((n) => n.kind === 'arrow')!
     useBoardStore.getState().setFrames([{ id: arrow.id, frame: { ...arrow.frame, x: arrow.frame.x + 100, y: arrow.frame.y + 5 } }])
-    const moved = useBoardStore.getState().board.nodes.find((n) => n.id === arrow.id)
-    expect(moved).toMatchObject({ start: { x: 100, y: 5 }, end: { x: 140, y: 5 } })
+    const board = useBoardStore.getState().board
+    const moved = board.nodes.find((n) => n.id === arrow.id)
+    // setFrames also fits the board tightly to content (fitBoardToContent),
+    // which uniformly shifts every node - read the shift off the untouched
+    // image node rather than hardcoding it.
+    const img = board.nodes.find((n) => n.id === 'img')!
+    expect(moved).toMatchObject({
+      start: { x: 100 + img.frame.x, y: 5 + img.frame.y },
+      end: { x: 140 + img.frame.x, y: 5 + img.frame.y },
+    })
   })
 
   it('duplicating an arrow offsets its start/end along with the frame', () => {
@@ -261,8 +321,11 @@ describe('addBox', () => {
     useBoardStore.getState().addBox({ x: 0, y: 0 }, { x: 40, y: 30 })
     const box = useBoardStore.getState().board.nodes.find((n) => n.kind === 'box')!
     useBoardStore.getState().setFrames([{ id: box.id, frame: { x: 100, y: 5, w: 40, h: 30 } }])
-    const moved = useBoardStore.getState().board.nodes.find((n) => n.id === box.id)
-    expect(moved?.frame).toEqual({ x: 100, y: 5, w: 40, h: 30 })
+    const board = useBoardStore.getState().board
+    const moved = board.nodes.find((n) => n.id === box.id)
+    // See the arrow test above - fitBoardToContent shifts every node uniformly.
+    const img = board.nodes.find((n) => n.id === 'img')!
+    expect(moved?.frame).toEqual({ x: 100 + img.frame.x, y: 5 + img.frame.y, w: 40, h: 30 })
   })
 
   it('duplicating a box offsets its frame like an image', () => {
@@ -336,6 +399,18 @@ describe('commitText', () => {
     expect(text).toMatchObject({ text: 'hello world', frame: { x: 0, y: 0, w: 240, h: 70 } })
   })
 
+  it('re-editing with an explicit size updates the font size too; omitting it leaves the size unchanged', () => {
+    useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
+    const textId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'text')!.id
+    const originalSize = (useBoardStore.getState().board.nodes.find((n) => n.id === textId) as { size: number }).size
+
+    useBoardStore.getState().commitText(textId, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
+    expect((useBoardStore.getState().board.nodes.find((n) => n.id === textId) as { size: number }).size).toBe(originalSize)
+
+    useBoardStore.getState().commitText(textId, { x: 0, y: 0, w: 240, h: 60 }, 'hello', 30)
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === textId)).toMatchObject({ size: 30, frame: { h: 60 } })
+  })
+
   it('re-editing to trimmed-empty text deletes the node instead of leaving a blank annotation', () => {
     useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
     const textId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'text')!.id
@@ -398,8 +473,11 @@ describe('addMarker', () => {
     useBoardStore.getState().addMarker({ x: 20, y: 20 })
     const marker = useBoardStore.getState().board.nodes.find((n) => n.kind === 'marker')!
     useBoardStore.getState().setFrames([{ id: marker.id, frame: { x: 100, y: 5, w: marker.frame.w, h: marker.frame.h } }])
-    const moved = useBoardStore.getState().board.nodes.find((n) => n.id === marker.id)
-    expect(moved?.frame).toEqual({ x: 100, y: 5, w: marker.frame.w, h: marker.frame.h })
+    const board = useBoardStore.getState().board
+    const moved = board.nodes.find((n) => n.id === marker.id)
+    // See the arrow test above - fitBoardToContent shifts every node uniformly.
+    const img = board.nodes.find((n) => n.id === 'img')!
+    expect(moved?.frame).toEqual({ x: 100 + img.frame.x, y: 5 + img.frame.y, w: marker.frame.w, h: marker.frame.h })
   })
 
   it('duplicating a marker offsets its frame like an image', () => {
@@ -485,8 +563,11 @@ describe('addRedact', () => {
     useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
     const redact = useBoardStore.getState().board.nodes.find((n) => n.kind === 'redact')!
     useBoardStore.getState().setFrames([{ id: redact.id, frame: { x: 100, y: 5, w: 40, h: 30 } }])
-    const moved = useBoardStore.getState().board.nodes.find((n) => n.id === redact.id)
-    expect(moved?.frame).toEqual({ x: 100, y: 5, w: 40, h: 30 })
+    const board = useBoardStore.getState().board
+    const moved = board.nodes.find((n) => n.id === redact.id)
+    // See the arrow test above - fitBoardToContent shifts every node uniformly.
+    const img = board.nodes.find((n) => n.id === 'img')!
+    expect(moved?.frame).toEqual({ x: 100 + img.frame.x, y: 5 + img.frame.y, w: 40, h: 30 })
   })
 
   it('duplicating a redaction offsets its frame like an image', () => {
@@ -815,5 +896,72 @@ describe('toolSettings', () => {
     useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
     const text = useBoardStore.getState().board.nodes.find((n) => n.kind === 'text')
     expect(text).toMatchObject({ color: '#9333ea', size: 30 })
+  })
+})
+
+describe('setNodeColor / setNodeSize (editing an already-placed annotation, not a tool default)', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', nodes: [node('img', { x: 0, y: 0, w: 10, h: 10 })] },
+      selectedIds: [],
+      tool: 'select',
+    })
+  })
+
+  it('recolors an existing arrow/box/marker/redact node in place, unlike setToolColor which only affects the next one drawn', () => {
+    useBoardStore.setState({ tool: 'arrow' })
+    useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const arrowId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'arrow')!.id
+
+    useBoardStore.getState().setNodeColor(arrowId, '#16a34a')
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === arrowId)).toMatchObject({ color: '#16a34a' })
+    // toolSettings (the default for the *next* arrow) is untouched.
+    expect(useBoardStore.getState().toolSettings.arrow.color).not.toBe('#16a34a')
+  })
+
+  it('is a no-op for an image node (no color field) or a missing id', () => {
+    useBoardStore.getState().setNodeColor('img', '#16a34a')
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === 'img')?.frame).toEqual({ x: 0, y: 0, w: 10, h: 10 })
+    useBoardStore.getState().setNodeColor('does-not-exist', '#16a34a')
+    expect(useBoardStore.getState().board.nodes).toHaveLength(1)
+  })
+
+  it('resizes an existing arrow/box by its size field, clamped to the tool range', () => {
+    useBoardStore.setState({ tool: 'box' })
+    useBoardStore.getState().addBox({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const boxId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'box')!.id
+
+    useBoardStore.getState().setNodeSize(boxId, 8)
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === boxId)).toMatchObject({ size: 8 })
+
+    useBoardStore.getState().setNodeSize(boxId, 999)
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === boxId)).toMatchObject({ size: ANNOTATION_SIZE_RANGE.box.max })
+  })
+
+  it('resizes an existing marker by recentering its frame on the unchanged center point, not a size field', () => {
+    useBoardStore.setState({ tool: 'marker' })
+    useBoardStore.getState().addMarker({ x: 50, y: 50 })
+    const marker = useBoardStore.getState().board.nodes.find((n) => n.kind === 'marker')!
+    const center = { x: marker.frame.x + marker.frame.w / 2, y: marker.frame.y + marker.frame.h / 2 }
+
+    useBoardStore.getState().setNodeSize(marker.id, 50)
+    const resized = useBoardStore.getState().board.nodes.find((n) => n.id === marker.id)!
+    expect(resized.frame.w).toBe(50)
+    expect(resized.frame.h).toBe(50)
+    expect(resized.frame.x + resized.frame.w / 2).toBeCloseTo(center.x, 5)
+    expect(resized.frame.y + resized.frame.h / 2).toBeCloseTo(center.y, 5)
+  })
+
+  it('is a no-op for text and redact - text is resized through commitText instead, redact has no size at all', () => {
+    useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
+    const textId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'text')!.id
+    useBoardStore.getState().setNodeSize(textId, 30)
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === textId)).toMatchObject({ text: 'hello' })
+
+    useBoardStore.setState({ tool: 'redact' })
+    useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const redactId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'redact')!.id
+    useBoardStore.getState().setNodeSize(redactId, 30)
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === redactId)?.frame).toEqual({ x: 0, y: 0, w: 40, h: 30 })
   })
 })

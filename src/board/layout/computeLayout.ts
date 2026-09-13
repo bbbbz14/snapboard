@@ -136,15 +136,26 @@ function layoutColumn(items: LayoutItem[], opts: LayoutOptions, steps: boolean):
 /** Left gutter reserved for step badges so numbering never overlaps the image. */
 export const STEP_GUTTER = 72
 
-/** Justified rows: every row is exactly the target width, like a photo grid. */
+/** Justified rows: every row is exactly the target width, like a photo grid.
+ * Packs a copy sorted by aspect ratio, not `items` in caller order - the
+ * packing below is a greedy, single-pass bin-fill with no look-ahead, so
+ * feeding it in a different order (e.g. drag-drop's `DataTransferItemList`
+ * order vs. the file picker's own `FileList` order for the exact same
+ * files) could previously produce a differently-grouped, worse-looking
+ * result for the identical set of images. Sorting first means images of
+ * similar shape end up in the same row regardless of which order they
+ * arrived in - the sort is stable, so images that were already adjacent and
+ * similarly-shaped keep their relative order. `order` itself (z-index, step
+ * numbering, drag-to-reorder) is untouched - only this grouping decision. */
 function layoutRows(items: LayoutItem[], opts: LayoutOptions): Record<string, Rect> {
   const W = opts.targetWidth
   const targetHeight = Math.min(MAX_ROW_HEIGHT, Math.max(180, W / 3.2))
   const frames: Record<string, Rect> = {}
+  const sorted = [...items].sort((a, b) => aspect(a.natural) - aspect(b.natural))
 
   const rows: LayoutItem[][] = []
   let row: LayoutItem[] = []
-  for (const item of items) {
+  for (const item of sorted) {
     row.push(item)
     if (rowHeight(row, W, opts.gap) <= targetHeight) {
       rows.push(row)

@@ -134,8 +134,23 @@ test('F brings the selected node to front, same as the toolbar button', async ({
   await page.mouse.move(target.x, target.y, { steps: 8 })
   await page.mouse.up()
 
-  const onlyMoved = { x: bottomCenter.x, y: bottomCenter.y - h * 0.775 }
-  const overlap = { x: bottomCenter.x, y: bottomCenter.y - h * 0.275 }
+  // The move just vacated the board's old top edge, so it may have shrunk
+  // and refit the board (see boardStore.ts's fitBoardToContent) - every
+  // screen pixel from here on can differ from what topRect/bottomRect/
+  // bottomCenter measured pre-move. Re-measure both nodes fresh instead of
+  // reusing those. A drag leaves the dragged node selected, so its outline
+  // is available immediately.
+  const movedRect = await selectionScreenRect(page)
+  const rect2 = await pageRect(page)
+  // `.board-page` (rect2) spans the whole board including its `padding`
+  // gutter, not just the image content - 90% down is comfortably inside the
+  // bottom node's actual pixels regardless of how much the gutter itself
+  // just rescaled.
+  await page.mouse.click(rect2.x + rect2.w / 2, rect2.y + rect2.h * 0.9)
+  const bottomRect2 = await selectionScreenRect(page)
+
+  const onlyMoved = { x: movedRect.x + movedRect.w / 2, y: movedRect.y + 5 }
+  const overlap = { x: bottomRect2.x + bottomRect2.w / 2, y: bottomRect2.y + 5 }
   const overlapBefore = await pixelAt(page, overlap.x, overlap.y)
 
   await page.mouse.click(onlyMoved.x, onlyMoved.y)

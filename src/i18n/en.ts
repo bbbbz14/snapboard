@@ -63,6 +63,8 @@ export const en = {
   'selection.bringToFront': 'Bring to front',
   'selection.bringToFrontTitle': 'Bring to front (F)',
   'selection.delete': 'Delete',
+  'selection.style': 'Edit style',
+  'selection.styleTitle': 'Color & size',
 
   'crop.confirm': 'Done',
   'crop.cancel': 'Cancel',

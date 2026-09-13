@@ -10,6 +10,10 @@ const DESKTOP = (id: string) => item(id, 2560, 1440)
 const PHONE = (id: string) => item(id, 1170, 2532)
 const DIALOG = (id: string) => item(id, 420, 180)
 const SQUARE = (id: string) => item(id, 1000, 1000)
+/** A long full-page website capture, per the bug report this guards
+ * against: much wider relative to its height than a normal desktop
+ * screenshot (DESKTOP above). */
+const WEBPAGE = (id: string) => item(id, 1600, 400)
 
 describe('pickAutoMode', () => {
   it('pairs two similar images for comparison', () => {
@@ -140,4 +144,29 @@ describe('computeLayout specifics', () => {
     const big = computeLayout([DESKTOP('a'), DESKTOP('b'), DESKTOP('c')], 'columns', opts)
     expect(big.size.h).toBeGreaterThan(small.size.h)
   })
+
+  it('rows mode groups images by shape rather than input order, so the same set lays out identically regardless of which order the files arrived in (e.g. drag-drop vs the file picker)', () => {
+    const items = [PHONE('a'), PHONE('b'), WEBPAGE('c')]
+    const reference = computeLayout(items, 'rows', opts)
+    // Two of the three (a, b) are literally the same shape, so which one
+    // lands on the left vs. the right is cosmetically arbitrary and does
+    // swap between permutations - what must stay fixed is the overall
+    // canvas size and which images end up sharing a row with which.
+    for (const permuted of permutations(items)) {
+      const r = computeLayout(permuted, 'rows', opts)
+      expect(r.size).toEqual(reference.size)
+      expect(r.frames.a!.y === r.frames.c!.y).toBe(reference.frames.a!.y === reference.frames.c!.y)
+      expect(r.frames.b!.y === r.frames.c!.y).toBe(reference.frames.b!.y === reference.frames.c!.y)
+    }
+  })
 })
+
+function permutations<T>(items: T[]): T[][] {
+  if (items.length <= 1) return [items]
+  const result: T[][] = []
+  items.forEach((item, i) => {
+    const rest = [...items.slice(0, i), ...items.slice(i + 1)]
+    for (const p of permutations(rest)) result.push([item, ...p])
+  })
+  return result
+}

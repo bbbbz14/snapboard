@@ -1,0 +1,167 @@
+import { test, expect } from './fixtures'
+import type { Page } from '@playwright/test'
+
+test.use({ viewport: { width: 1200, height: 800 } })
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('/')
+})
+
+async function pageRect(page: Page) {
+  return page.locator('.board-page').evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    return { x: r.x, y: r.y, w: r.width, h: r.height }
+  })
+}
+
+function toolButton(page: Page, name: string) {
+  return page.getByRole('button', { name, exact: true })
+}
+
+/** The new button `SelectionToolbar` shows for a single selected annotation
+ * node - deliberately a different accessible name from `AnnotationToolbar`'s
+ * own "Style" button (see SelectionToolbar.tsx's note) so the two are never
+ * ambiguous when both happen to be visible at once. */
+function editStyleButton(page: Page) {
+  return page.getByRole('button', { name: 'Edit style' })
+}
+
+/** Same "scan a region, count matching pixels" technique every other
+ * annotation spec uses, since the fixture images are gradients, not flat
+ * colors. `height` is the vertical extent between the first and last match,
+ * for telling whether drawn content got taller (a bigger font size),
+ * without needing to read any digit or glyph. */
+function pixelScan(page: Page, rect: { x: number; y: number; w: number; h: number }, mode: 'red' | 'green') {
+  return page.locator('canvas.board-canvas').evaluate(
+    (el, arg) => {
+      const canvas = el as HTMLCanvasElement
+      const bcr = canvas.getBoundingClientRect()
+      const scale = canvas.width / bcr.width
+      const ctx = canvas.getContext('2d')!
+      const x0 = Math.max(0, Math.round((arg.rect.x - bcr.x) * scale))
+      const y0 = Math.max(0, Math.round((arg.rect.y - bcr.y) * scale))
+      const w = Math.min(canvas.width - x0, Math.round(arg.rect.w * scale))
+      const h = Math.min(canvas.height - y0, Math.round(arg.rect.h * scale))
+      const data = ctx.getImageData(x0, y0, w, h).data
+      let count = 0
+      let minY = Infinity
+      let maxY = -Infinity
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4
+          const r = data[i]!
+          const g = data[i + 1]!
+          const b = data[i + 2]!
+          const matches = arg.mode === 'red' ? r > 150 && g < 100 && b < 100 : g > 130 && r < 60 && b < 100
+          if (matches) {
+            count++
+            if (y < minY) minY = y
+            if (y > maxY) maxY = y
+          }
+        }
+      }
+      return { count, height: count > 0 ? maxY - minY : 0 }
+    },
+    { rect, mode },
+  )
+}
+
+test('changing color in "Edit style" recolors the already-placed box in place, and does not change the default for the next one drawn', async ({
+  page,
+  images,
+  addViaPicker,
+}) => {
+  await addViaPicker(page, images([[400, 300]]))
+  const rect = await pageRect(page)
+
+  await toolButton(page, 'Box').click()
+  const y1 = rect.y + rect.h + 60
+  await page.mouse.move(rect.x + 20, y1)
+  await page.mouse.down()
+  await page.mouse.move(rect.x + 160, y1 + 40, { steps: 5 })
+  await page.mouse.up()
+  const region1 = { x: rect.x, y: y1 - 20, w: 200, h: 100 }
+  expect((await pixelScan(page, region1, 'red')).count).toBeGreaterThan(0)
+  expect((await pixelScan(page, region1, 'green')).count).toBe(0)
+
+  await editStyleButton(page).click()
+  const popover = page.getByRole('dialog', { name: 'Style' })
+  await expect(popover).toBeVisible()
+  await page.getByRole('button', { name: '#16a34a' }).click()
+  await editStyleButton(page).click() // close
+
+  expect((await pixelScan(page, region1, 'green')).count).toBeGreaterThan(0)
+  expect((await pixelScan(page, region1, 'red')).count).toBe(0)
+
+  // Draw a second box - it must still use the tool's own default (red), not
+  // the color that was just applied to the first, already-placed box. Offset
+  // horizontally, not stacked further down - the viewport's remaining height
+  // below the board varies by engine/zoom, but there's always room to the
+  // right at the same y.
+  await toolButton(page, 'Box').click()
+  const x2 = rect.x + 260
+  await page.mouse.move(x2, y1)
+  await page.mouse.down()
+  await page.mouse.move(x2 + 140, y1 + 40, { steps: 5 })
+  await page.mouse.up()
+  const region2 = { x: x2 - 20, y: y1 - 20, w: 200, h: 100 }
+  expect((await pixelScan(page, region2, 'red')).count).toBeGreaterThan(0)
+})
+
+test('the size slider in "Edit style" thickens an already-placed box in place', async ({ page, images, addViaPicker }) => {
+  await addViaPicker(page, images([[400, 300]]))
+  const rect = await pageRect(page)
+
+  await toolButton(page, 'Box').click()
+  const y = rect.y + rect.h + 60
+  await page.mouse.move(rect.x + 20, y)
+  await page.mouse.down()
+  await page.mouse.move(rect.x + 160, y + 40, { steps: 5 })
+  await page.mouse.up()
+
+  const stripe = { x: rect.x + 90, y: y - 10, w: 1, h: 20 }
+  const before = (await pixelScan(page, stripe, 'red')).count
+
+  await editStyleButton(page).click()
+  const slider = page.getByRole('slider', { name: 'Size' })
+  await slider.focus()
+  await page.keyboard.press('End')
+  await editStyleButton(page).click()
+
+  const after = (await pixelScan(page, stripe, 'red')).count
+  expect(after).toBeGreaterThan(before)
+})
+
+test('the size slider in "Edit style" grows an already-typed text node without deleting and retyping it', async ({
+  page,
+  images,
+  addViaPicker,
+}) => {
+  await addViaPicker(page, images([[400, 300]]))
+  const rect = await pageRect(page)
+
+  await toolButton(page, 'Text').click()
+  const at = { x: rect.x + 20, y: rect.y + rect.h + 20 }
+  await page.mouse.click(at.x, at.y)
+  await page.locator('.text-edit').fill('resize me')
+  await page.keyboard.press('ControlOrMeta+Enter')
+  await expect(page.locator('.selection-status')).toHaveText('1 selected')
+
+  const region = { x: at.x - 10, y: at.y - 10, w: 280, h: 140 }
+  const before = await pixelScan(page, region, 'red')
+  expect(before.count).toBeGreaterThan(0)
+
+  await editStyleButton(page).click()
+  const slider = page.getByRole('slider', { name: 'Size' })
+  await slider.focus()
+  await page.keyboard.press('End')
+  await editStyleButton(page).click()
+
+  const after = await pixelScan(page, region, 'red')
+  expect(after.height).toBeGreaterThan(before.height)
+
+  // The content itself is untouched - re-opening for edit shows the same text.
+  await page.mouse.dblclick(at.x + 5, at.y + 5)
+  await expect(page.locator('.text-edit')).toHaveValue('resize me')
+  await page.keyboard.press('Escape')
+})

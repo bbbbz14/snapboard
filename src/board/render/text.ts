@@ -33,24 +33,25 @@ export function textLineHeight(fontSize: number): number {
 }
 
 /**
- * A thin light halo/outline drawn behind every glyph, closer to how macOS's
- * own screenshot markup tool renders text - added because the plain fill
- * alone (no shadow, no outline) read as "stiff/plain" on real screenshots,
- * and got lost outright against busy/colorful backdrops. Fixed near-white,
- * not user-configurable and not derived from the board's background/theme -
- * the same "board content, not chrome" reasoning that keeps `--annotation`
- * out of the dark-mode token group (see CLAUDE.md, Phase 5 item 1): a label
- * meant to be read off a screenshot of arbitrary content can't take its cue
- * from the *editor's* OS theme. Harmless on a plain white background (the
- * halo simply disappears into it, where a red fill alone already reads
- * fine) and is what actually rescues legibility on a photo or gradient one.
- * Scales with font size so it stays proportional at every size in
- * `ANNOTATION_SIZE_RANGE.text`, not just the default.
+ * A soft drop-shadow behind every glyph, replacing an earlier white halo -
+ * added because a plain fill alone (no shadow, no outline) read as
+ * "stiff/plain" on real screenshots and got lost outright against
+ * busy/colorful backdrops. The halo tried first (a `strokeText` outline,
+ * see git history) read as "cheap"/like a plain outline once judged against
+ * real screenshot content rather than the synthetic gradient backdrop it
+ * was compared on - a soft, low-opacity shadow reads closer to a real
+ * design tool's own text treatment. Fixed dark gray, not user-configurable
+ * and not derived from the board's background/theme - the same "board
+ * content, not chrome" reasoning that keeps `--annotation` out of the
+ * dark-mode token group (see CLAUDE.md, Phase 5 item 1): a label meant to
+ * be read off a screenshot of arbitrary content can't take its cue from
+ * the *editor's* OS theme. Blur/offset are fixed, not scaled by font size -
+ * unlike the halo's stroke width, a shadow's softness doesn't need to track
+ * glyph size to keep reading correctly across `ANNOTATION_SIZE_RANGE.text`.
  */
-const TEXT_HALO_COLOR = 'rgba(255, 255, 255, 0.9)'
-function textHaloWidth(fontSize: number): number {
-  return Math.max(2, Math.round(fontSize * 0.15))
-}
+const TEXT_SHADOW_COLOR = 'rgba(0, 0, 0, 0.45)'
+const TEXT_SHADOW_BLUR = 6
+const TEXT_SHADOW_OFFSET_Y = 2
 
 const wordSegmenter = typeof Intl !== 'undefined' ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null
 const graphemeSegmenter = typeof Intl !== 'undefined' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null
@@ -144,10 +145,9 @@ export function drawText(ctx: Ctx2D, frame: Rect, text: string, color: string, f
   ctx.save()
   ctx.font = textFont(fontSize)
   ctx.fillStyle = color
-  ctx.strokeStyle = TEXT_HALO_COLOR
-  ctx.lineWidth = textHaloWidth(fontSize)
-  ctx.lineJoin = 'round'
-  ctx.miterLimit = 2
+  ctx.shadowColor = TEXT_SHADOW_COLOR
+  ctx.shadowBlur = TEXT_SHADOW_BLUR
+  ctx.shadowOffsetY = TEXT_SHADOW_OFFSET_Y
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
   const maxWidth = Math.max(1, frame.w - TEXT_PADDING * 2)
@@ -156,10 +156,6 @@ export function drawText(ctx: Ctx2D, frame: Rect, text: string, color: string, f
   for (let i = 0; i < lines.length; i++) {
     const x = frame.x + TEXT_PADDING
     const y = frame.y + TEXT_PADDING + i * lineHeight
-    // Halo first, so the fill draws crisp on top of it rather than the
-    // other way round - a stroke drawn over a fill would eat into the
-    // glyph's own edges instead of just surrounding them.
-    ctx.strokeText(lines[i]!, x, y)
     ctx.fillText(lines[i]!, x, y)
   }
   ctx.restore()

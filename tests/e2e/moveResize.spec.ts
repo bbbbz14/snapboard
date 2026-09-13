@@ -88,19 +88,26 @@ test('dragging a node moves it, and the move survives export (invariant 1)', asy
   expect(await download.path()).toBeTruthy()
 })
 
-test('shrinking from a corner handle uncovers the board behind it', async ({ page, images, addViaPicker }) => {
-  await addViaPicker(page, images([[400, 300]]))
+test('shrinking from a corner handle uncovers the board behind it, if something else still anchors the board edge', async ({ page, images, addViaPicker }) => {
+  // Two images stacked, not one - with only one node on the board, shrinking
+  // it now also shrinks the whole board to fit (fitBoardToContent, see the
+  // dedicated test below), leaving nothing to "uncover". With a second,
+  // untouched node still anchoring the board's bottom edge, shrinking the
+  // top node away from it stays a pure reveal - the board itself doesn't
+  // resize because the bounding box's bottom edge is unaffected.
+  await addViaPicker(page, images([[400, 300], [400, 300]]))
   await page.getByRole('button', { name: 'Plain' }).click()
+  await page.getByRole('button', { name: 'Stacked' }).click()
   const rect = await pageRect(page)
 
-  await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2)
+  await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h * 0.25)
   const node = await selectionScreenRect(page)
   const seHandle = { x: node.x + node.w, y: node.y + node.h }
 
   const farCorner = { x: seHandle.x - 3, y: seHandle.y - 3 }
   const before = await pixelAt(page, farCorner.x, farCorner.y)
 
-  // Drag the se handle inward to shrink the image toward its own center.
+  // Drag the se handle inward to shrink the top image toward its own center.
   await page.mouse.move(seHandle.x, seHandle.y)
   await page.mouse.down()
   await page.mouse.move(node.x + node.w / 2, node.y + node.h / 2, { steps: 8 })
@@ -113,4 +120,36 @@ test('shrinking from a corner handle uncovers the board behind it', async ({ pag
   expect(after[2]).toBeGreaterThan(240)
   const diff = Math.abs(before[0]! - after[0]!) + Math.abs(before[1]! - after[1]!) + Math.abs(before[2]! - after[2]!)
   expect(diff).toBeGreaterThan(20)
+  // And the board itself didn't resize - the bottom image still anchors its
+  // bounding box edge, so there was nothing for fitBoardToContent to trim.
+  const rectAfter = await pageRect(page)
+  expect(Math.round(rectAfter.w)).toBe(Math.round(rect.w))
+  expect(Math.round(rectAfter.h)).toBe(Math.round(rect.h))
+})
+
+test('shrinking the only image on the board shrinks the board to fit it too, leaving no dead margin', async ({
+  page,
+  images,
+  addViaPicker,
+}) => {
+  await addViaPicker(page, images([[400, 300]]))
+  await page.getByRole('button', { name: 'Plain' }).click()
+  const rect = await pageRect(page)
+
+  await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2)
+  const node = await selectionScreenRect(page)
+  const seHandle = { x: node.x + node.w, y: node.y + node.h }
+
+  // Shrink the image toward its own center - with nothing else on the
+  // board, this used to leave the old, larger board size behind as dead
+  // margin (the exact bug report fitBoardToContent closes: board.size stays
+  // frozen once free-form editing starts, invariant 4 only protects frames).
+  await page.mouse.move(seHandle.x, seHandle.y)
+  await page.mouse.down()
+  await page.mouse.move(node.x + node.w / 2, node.y + node.h / 2, { steps: 8 })
+  await page.mouse.up()
+
+  const rectAfter = await pageRect(page)
+  expect(rectAfter.w).toBeLessThan(rect.w * 0.8)
+  expect(rectAfter.h).toBeLessThan(rect.h * 0.8)
 })
