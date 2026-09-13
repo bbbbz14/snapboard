@@ -17,6 +17,7 @@ import type { Point, Rect } from '@/lib/geometry'
 import { boundsOf, rectFromPoints, translate } from '@/lib/geometry'
 import { ZoomControls } from '@/ui/ZoomControls'
 import { SelectionToolbar, type StyleTarget } from '@/ui/SelectionToolbar'
+import { ContextMenu } from '@/ui/ContextMenu'
 import { CropToolbar } from '@/ui/CropToolbar'
 import { AnnotationToolbar } from '@/ui/AnnotationToolbar'
 import { ANNOTATION_SIZE_RANGE, clampAnnotationSize, type SizableAnnotationTool } from '@/board/model/annotationDefaults'
@@ -158,6 +159,11 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // every other drag in this file which commits on plain pointer-up.
   const [cropSession, setCropSession] = useState<{ id: NodeId; bounds: Rect } | null>(null)
   const cropWindowRef = useRef<Rect | null>(null)
+  // Right-click context menu (Phase 5 item 7) - a second entry point to the
+  // exact same actions SelectionToolbar already exposes, so this only ever
+  // needs the click point; the actions themselves are wired below exactly
+  // like the toolbar's own props.
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const cropDragRef = useRef<{ corner: Corner } | null>(null)
   const cropOverlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const cropToolbarRef = useRef<HTMLDivElement>(null)
@@ -1177,6 +1183,39 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     [tool, board.nodes, viewport, setSelection],
   )
 
+  // Right-click opens a context menu for whatever node is under the
+  // pointer, selecting it first if it wasn't already part of the current
+  // selection (right-clicking a node that's already part of a multi-
+  // selection keeps the whole selection, so Duplicate/Delete apply to all
+  // of it - same as SelectionToolbar's own buttons would). A crop session
+  // is modal (see the pointer effect's own note) and an armed tool has
+  // nothing selectable to act on yet, so both bail out after suppressing
+  // the browser's own menu. Right-clicking empty space also suppresses the
+  // native menu but opens nothing - there's no selection-scoped action to
+  // offer there.
+  const onCanvasContextMenu = useCallback(
+    (e: ReactMouseEvent<HTMLCanvasElement>) => {
+      e.preventDefault()
+      if (cropSession || tool !== 'select') {
+        setContextMenu(null)
+        return
+      }
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const rect = canvas.getBoundingClientRect()
+      const point = screenToBoard(cameraRef.current, viewport, { x: e.clientX - rect.left, y: e.clientY - rect.top })
+      const hitId = hitTest(board.nodes, point)
+      if (!hitId) {
+        setContextMenu(null)
+        return
+      }
+      const current = useBoardStore.getState().selectedIds
+      if (!current.includes(hitId)) setSelection([hitId])
+      setContextMenu({ x: e.clientX, y: e.clientY })
+    },
+    [cropSession, tool, board.nodes, viewport, setSelection],
+  )
+
   const onTextEditKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Escape') {
@@ -1260,6 +1299,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         role="img"
         aria-label={`Board with ${imageCount} image${imageCount === 1 ? '' : 's'}`}
         onDoubleClick={onCanvasDoubleClick}
+        onContextMenu={onCanvasContextMenu}
       />
       <canvas ref={interactionCanvasRef} className="board-interaction" aria-hidden="true" />
       <canvas ref={cropOverlayCanvasRef} className="board-crop-overlay" aria-hidden="true" />
@@ -1290,6 +1330,17 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         onStyleAdjustEnd={endAdjustment}
       />
       <CropToolbar ref={cropToolbarRef} onConfirm={confirmCrop} onCancel={cancelCrop} />
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onCrop={canCrop ? beginCrop : undefined}
+          onDuplicate={duplicateSelected}
+          onBringToFront={bringToFront}
+          onDelete={deleteSelected}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
       <ZoomControls
         percent={percent}
         onZoomOut={() => zoomByFactor(1 / ZOOM_STEP)}

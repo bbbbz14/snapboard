@@ -72,6 +72,8 @@ export const en = {
   'selection.style': 'Edit style',
   'selection.styleTitle': 'Color & size',
 
+  'contextMenu.label': 'Selection actions',
+
   'crop.confirm': 'Done',
   'crop.cancel': 'Cancel',
 
@@ -115,6 +117,35 @@ export const en = {
   'cleared.message': 'Board cleared',
   'cleared.restore': 'Restore',
   'cleared.dismiss': 'Dismiss',
+
+  'help.openButton': 'Keyboard shortcuts (?)',
+  'help.title': 'Keyboard shortcuts',
+  'help.close': 'Close',
+  'help.sectionGeneral': 'General',
+  'help.sectionView': 'View & pan',
+  'help.sectionSelection': 'Selection',
+  'help.sectionTools': 'Annotate',
+  'help.sectionEditing': 'Editing',
+  'help.openHelp': 'Show this help',
+  'help.escape': 'Cancel tool, deselect, or cancel crop',
+  'help.undo': 'Undo',
+  'help.redo': 'Redo',
+  'help.copy': 'Copy to clipboard',
+  'help.zoomIn': 'Zoom in',
+  'help.zoomOut': 'Zoom out',
+  'help.fit': 'Fit to view',
+  'help.reset100': 'Reset to 100%',
+  'help.pan': 'Pan the board',
+  'help.duplicate': 'Duplicate selection',
+  'help.bringToFront': 'Bring to front',
+  'help.delete': 'Delete selection',
+  'help.arrow': 'Arrow tool',
+  'help.box': 'Box tool',
+  'help.text': 'Text tool',
+  'help.marker': 'Number marker tool',
+  'help.redact': 'Redact tool',
+  'help.commitText': 'Finish editing text',
+  'help.confirmCrop': 'Confirm crop',
 } as const
 
 export type MessageKey = keyof typeof en

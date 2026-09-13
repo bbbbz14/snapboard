@@ -28,9 +28,13 @@ const GAP_MAX = 80
 interface Props {
   copied: boolean
   onCopy: () => void
+  /** Opens the shortcut cheatsheet (HelpModal), lifted to App.tsx since it
+   * must also work from the empty-board state, unlike every other action in
+   * this bar. */
+  onHelp: () => void
 }
 
-export function TopBar({ copied, onCopy }: Props) {
+export function TopBar({ copied, onCopy, onHelp }: Props) {
   const board = useBoardStore((s) => s.board)
   const store = useBoardStore()
   const gapId = useId()
@@ -210,6 +214,12 @@ export function TopBar({ copied, onCopy }: Props) {
           </button>
         </>
       )}
+      {/* Unconditional (unlike everything else above, gated on `hasImages`)
+          - a first-time user on the empty state is exactly who most needs
+          the cheatsheet. */}
+      <button className="btn" aria-label={t('help.openButton')} title={t('help.openButton')} onClick={onHelp}>
+        ?
+      </button>
     </header>
   )
 }

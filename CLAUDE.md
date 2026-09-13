@@ -500,6 +500,134 @@ run to run. Not investigated further since it's out of this item's scope
 regression this session introduced - worth a real look next time that area
 of the code is touched.
 
+**Phase 5 items 7 (right-click context menu) and 8 (help modal / shortcut
+cheatsheet, opened with `?`) are both built and verified this session -
+`npm run verify` green (typecheck + 243 unit + 33 renderer parity on 3
+engines + 297/303 e2e passed, 5 skipped by design plus the same 1
+pre-existing chromium-only `annotationEdit.spec.ts` flake item 6's own note
+already documents, unrelated to this session - this session added 11 new
+e2e cases (6 in the new `tests/e2e/contextMenu.spec.ts` + 5 in the new
+`tests/e2e/help.spec.ts`) × 3 engines = 33, all green) - but **not yet
+committed, pushed, or deployed**, pending the user's go-ahead. See "Phase 5
+items 7 and 8" below for the full writeup, including two real bugs this
+session's own new e2e coverage caught in the new code itself (not
+pre-existing) before either was declared done.
+
+### Phase 5 items 7 and 8 — done: right-click context menu, help modal / shortcut cheatsheet
+
+Built this session. `npm run verify` green (typecheck + 243 unit + 33
+renderer parity on 3 engines + 297/303 e2e passed, 5 skipped by design plus
+1 pre-existing flake, same counts as the top note above).
+
+- **Item 7 (`src/ui/ContextMenu.tsx`) is deliberately just a second entry
+  point to the exact same four actions `SelectionToolbar` already exposes**
+  (Crop/Duplicate/Bring to front/Delete) - no new store actions, per the
+  Phase 5 list's own framing of this item. Right-clicking a node selects it
+  first if it wasn't already part of the current selection (a right-click on
+  a node that's already part of a multi-selection keeps the whole selection,
+  so Duplicate/Delete still apply to all of it); right-clicking empty space
+  suppresses the browser's native menu but opens nothing, since there's no
+  selection-scoped action to offer there. Crop is gated the identical way
+  `SelectionToolbar`'s own Crop button already is (`selectedIds.length === 1
+  && node.kind === 'image'`) - reusing `BoardCanvas`'s existing `canCrop`/
+  `beginCrop` rather than recomputing the rule a second time. Positioned at
+  the click point via the same "measure once rendered, then clamp to the
+  viewport" technique `ExportMenu` already uses for its own anchor-relative
+  positioning, and reuses `useFocusTrap` the same way every other popover
+  does, with a `null` `anchorRef` (there's no anchor button for a right
+  click) - the hook already tolerates that, falling back to whatever had
+  focus before the menu opened.
+- **Real bug this item's own e2e coverage caught immediately - every single
+  `contextMenu.spec.ts` case failed identically on all 3 engines the first
+  time it ran, "menu never becomes visible":** the first version also added
+  a `document.addEventListener('contextmenu', ...)` inside `ContextMenu`'s
+  own effect, intended to close/reposition the menu if the user right-clicks
+  elsewhere. That listener gets attached *while the very `contextmenu` event
+  that opened the menu is still bubbling toward `document`* - React commits
+  the newly-mounted component and flushes its effects synchronously within
+  the same event dispatch, so the new listener is live in time to catch that
+  same still-in-flight event once it continues past the component and
+  reaches `document`, self-cancelling the menu the instant it opens. Fixed
+  by deleting that listener outright - it was never necessary in the first
+  place: any mouse button's `mousedown` (including the right button) already
+  fires *before* its own `contextmenu` does, so the existing
+  `mousedown`-outside-closes listener already covers "right-click elsewhere"
+  correctly with no risk of catching its own opening event.
+- **Item 8 (`src/ui/HelpModal.tsx`) is a static reference built by hand from
+  `BoardCanvas.tsx`'s own keydown handler(s)** - every binding grouped into
+  General/View & pan/Selection/Annotate/Editing sections, shown next to a
+  literal key label (via `modKey()` for `Ctrl` vs `Cmd`, same helper
+  `toolbar.copyTitle` already uses). Cross-checked against every `key ===`/
+  `e.key`/`code ===` site in `src/` while writing it - CLAUDE.md's own
+  existing shortcut list (`+ - 0 1 Esc Del/Backspace D F A R T N C` plus the
+  four modifier combos) was accurate but missed two real bindings the
+  cheatsheet now also lists: **`Space` held for click-drag panning**
+  (`BoardCanvas.tsx`'s pan effect - a genuine, discoverable interaction nowhere
+  else documents), and plain **`Enter`** to confirm an in-progress crop
+  session, distinct from `Ctrl/Cmd+Enter` to commit a text edit. Opened via
+  `?` (a global `window` keydown listener in `App.tsx`, not inside
+  `BoardCanvas.tsx` where every other shortcut lives - `BoardCanvas` only
+  mounts once `board.nodes.length > 0`, but a first-time user on the empty
+  state is exactly who most needs this) or a small, always-visible `?`
+  button added to the far right of `TopBar` (the one button in that bar not
+  gated on `hasImages`, for the same reason).
+- **Two real bugs, both caught by this item's own e2e coverage, not by
+  reasoning about the code - worth remembering before building another
+  "swallow the page's shortcuts while X is open" modal:**
+  1. **The first version relied on React's `onKeyDown` prop on the modal's
+     backdrop `<div>`, calling `stopPropagation()` there to keep every
+     keypress from leaking to `BoardCanvas`'s global `window` shortcut
+     listener while the modal was open.** That prop is delegated through
+     React's own listener attached at the root DOM container, not a real
+     listener on the backdrop element itself - relying on its
+     `stopPropagation` to reliably block the event from ever reaching
+     `window` did not hold up: the "Escape closes the modal" case failed
+     (Escape stopped working at all) and, more surprisingly, the "keys don't
+     leak underneath" case *also* failed the other way (pressing `A` still
+     armed the arrow tool on the board behind the modal). **Fixed** by
+     attaching a genuine `addEventListener('keydown', ...)` directly to the
+     backdrop's own DOM node (via a ref, the same pattern `useFocusTrap`
+     itself already uses for its Tab-trap listener) instead of going through
+     React's synthetic prop - a real listener on a real node is guaranteed
+     by the DOM's own bubble order to run after `useFocusTrap`'s Tab-handling
+     (a descendant) and before anything outside this subtree, with no
+     dependence on exactly where React's internal delegation happens to sit
+     relative to `document`. Also folded the Escape-closes-the-modal logic
+     into this same listener rather than a second, separate `document`-level
+     one - one place for this to go wrong instead of two racing.
+  2. **Even with a real listener on the backdrop's own node, one case still
+     leaked through - `webkit` only:** pressing `A` immediately after the
+     modal became visible still armed the arrow tool, but only in WebKit.
+     Root cause: `useFocusTrap`'s `requestAnimationFrame` (which moves focus
+     into the modal on open) can still be pending when the very next key is
+     pressed - Playwright's `press()` can fire before that frame has run,
+     apparently more consistently reproducible under WebKit's timing than
+     the other two engines here. While focus is still wherever it was
+     *before* the modal opened (outside the backdrop's subtree entirely), an
+     event targeting it never bubbles through the backdrop's listener at
+     all - there's nothing wrong with that listener itself, it simply never
+     sees an event whose target isn't one of its descendants. **Fixed** with
+     a second, independent safety net: a *capture-phase* listener on
+     `window` (the very first stop in the entire event path, regardless of
+     the current target) that steps aside the instant the event's target is
+     already inside the modal's own subtree (so Tab-trap navigation and the
+     Close button's keyboard activation are completely unaffected), and
+     otherwise stops propagation and handles Escape itself. This covers the
+     race unconditionally, regardless of engine timing, rather than chasing
+     a timing fix for `useFocusTrap`'s own `raf` specifically.
+- **Deliberately not done, scoped to exactly what these two items ask for:**
+  no new store actions for item 7 (see above - it is purely a second UI
+  surface over four actions that already exist); no persistence of anything
+  for item 8 (a static reference has nothing to persist); no attempt to make
+  item 8's shortcut list dynamically generated from the keydown handler's own
+  source (it's a hand-built, one-time list per this item's own framing in the
+  Phase 5 plan - "by this point every shortcut... is known and stable...not
+  something that needs updating per-item going forward"); no right-click
+  support for annotation nodes' own color/size editing (`SelectionToolbar`'s
+  "Edit style" button) - the Phase 5 list names Crop/Duplicate/Bring to
+  front/Delete specifically, and style-editing already has its own discovery
+  path (the swatch button that appears in the same toolbar).
+
 ### Phase 5 item 6 — done: friendly error messages
 
 Built this session. `npm run verify` green (typecheck + 243 unit + 33
@@ -2669,17 +2797,19 @@ made so later items can build on earlier ones instead of redoing them:
    under START HERE above. Also fixed a real pre-existing bug this audit
    found: the rejection toasts were bypassing `en.ts` entirely via a
    hardcoded duplicate in `boardStore.ts`.
-7. ⬜ **Right-click context menu.** A second entry point to the same
-   selection actions `SelectionToolbar` already exposes (Crop/Duplicate/
-   Bring to front/Delete) - no new store actions needed, just a new UI
-   surface over existing ones.
-8. ⬜ **Help page / shortcut cheatsheet, opened with `?`.** By this point
-   every shortcut across Phase 2–4 is known and stable, so this is a single
-   static reference, not something that needs updating per-item going
-   forward. `?` was checked against every existing binding during item 1's
-   audit and is free; the full set currently taken is `+ - 0 1 Esc
-   Del/Backspace D F A R T N C` plus `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`,
-   `Ctrl/Cmd+Shift+C` and `Ctrl/Cmd+Enter`.
+7. ✅ **Right-click context menu.** Done - see "Phase 5 items 7 and 8"
+   under START HERE above. A second entry point to the same selection
+   actions `SelectionToolbar` already exposes (Crop/Duplicate/Bring to
+   front/Delete) - no new store actions, just a new UI surface over
+   existing ones, exactly as planned.
+8. ✅ **Help page / shortcut cheatsheet, opened with `?`.** Done - see
+   "Phase 5 items 7 and 8" under START HERE above. A single static
+   reference built by hand from every shortcut currently bound, plus two
+   real bindings this guide's own list had missed (`Space` held to pan,
+   and plain `Enter` to confirm a crop session) - the full set is now
+   `+ - 0 1 Esc Del/Backspace D F A R T N C ?` plus `Ctrl/Cmd+Z`,
+   `Ctrl/Cmd+Shift+Z`, `Ctrl/Cmd+Shift+C`, `Ctrl/Cmd+Enter`, and `Enter`
+   (crop-session-only).
 9. ⬜ **Animation / micro-interactions.** Deliberately late - polish on top
    of UI that's already visually settled (dark mode, gradients, a11y) costs
    less rework than polishing first and having the earlier items change

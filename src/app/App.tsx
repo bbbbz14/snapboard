@@ -4,6 +4,7 @@ import { BoardCanvas } from '@/ui/BoardCanvas'
 import { EmptyState } from '@/ui/EmptyState'
 import { RecoveryBar } from '@/ui/RecoveryBar'
 import { ClearedBar } from '@/ui/ClearedBar'
+import { HelpModal } from '@/ui/HelpModal'
 import { Toasts } from '@/ui/Toasts'
 import { useBoardStore } from '@/board/store/boardStore'
 import { usePasteImages, useDropImages } from '@/hooks/useImageInput'
@@ -20,10 +21,29 @@ export function App() {
   // (Phase 2 item 9) - lifted here, the nearest common ancestor, so both see
   // the same "copied" button-state timer instead of each owning its own.
   const { copied, onCopy } = useCopyAction()
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const onFiles = useCallback((files: File[]) => void addFiles(files), [addFiles])
   usePasteImages(onFiles)
   const drag = useDropImages(onFiles)
+
+  // `?` opens the shortcut cheatsheet. Registered here, not inside
+  // BoardCanvas.tsx (where every other shortcut lives) - BoardCanvas only
+  // mounts once `board.nodes.length > 0`, but a first-time user on the empty
+  // state is exactly who most needs this, and it has no reason to depend on
+  // there being any board content anyway.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== '?') return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const target = e.target as HTMLElement | null
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
+      e.preventDefault()
+      setHelpOpen((v) => !v)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // Runs once, before the user can commit any action of their own - later
   // hydrates would risk clobbering an edit the user already made.
@@ -44,7 +64,7 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar copied={copied} onCopy={onCopy} />
+      <TopBar copied={copied} onCopy={onCopy} onHelp={() => setHelpOpen(true)} />
       <RecoveryBar />
       <ClearedBar />
       <div className="stage" ref={stageRef}>
@@ -55,6 +75,7 @@ export function App() {
         )}
       </div>
       {drag.dragging && <div className="dropzone">{t('drop.overlay', { count: drag.count })}</div>}
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
       <Toasts />
     </div>
   )
