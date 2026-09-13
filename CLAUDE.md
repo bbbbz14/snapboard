@@ -66,14 +66,18 @@ Push and deploy both worked cleanly on the first try; a same-session
 "Phase 5 item 2" below for the full writeup, including one deferred finding
 for item 5 (the text-edit overlay's contrast).
 
-**Item 3 (minimum top-bar overflow fix) is also done**, shipped locally as
-commit `aebdbd2` - **not yet pushed or deployed**, per the user's explicit
-"commit first, continue next session" instruction. It went out bundled with
-a batch of real-usage feedback fixes found by the user actually using the
-live site (not part of the planned Phase 5 list) - see "Phase 5 item 3"
-below for the full writeup of both. `npm run verify` green (typecheck + 218
-unit + 27 renderer parity on 3 engines + 229/234 e2e passed, 5 skipped by
-design, same 5 as always).
+**Item 3 (minimum top-bar overflow fix) is also done**, shipped as commit
+`aebdbd2` (recorded in `57459f5`), and as of this session (2026-09-13) has
+also been **pushed to `main` and deployed to the live site** - the push and
+deploy were held over from the prior session per the user's "commit first,
+continue next session" instruction, and this session's first action, on the
+user's approval, was to run both. Push and deploy both worked cleanly on the
+first try; a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
+returned a fresh `200`. It went out bundled with a batch of real-usage
+feedback fixes found by the user actually using the live site (not part of
+the planned Phase 5 list) - see "Phase 5 item 3" below for the full writeup
+of both. `npm run verify` green (typecheck + 218 unit + 27 renderer parity
+on 3 engines + 229/234 e2e passed, 5 skipped by design, same 5 as always).
 
 **Next up (approved this session, not yet built): a 3-part revision to the
 five Phase 4 annotation tools** (arrow/box/text/marker/redact), reopening
@@ -297,15 +301,16 @@ worked cleanly on the first try; a same-session `curl -o /dev/null -w
 
 ### Phase 5 item 3 — done: top-bar overflow fix (plus a batch of real-usage feedback fixes)
 
-Shipped locally as commit `aebdbd2` - **committed, but deliberately not
-pushed or deployed yet**, per the user's explicit instruction to commit and
-update this Guide, then continue in a fresh session. `npm run verify`
-green (typecheck + 218 unit + 27 renderer parity on 3 engines + 229/234 e2e
-passed, 5 skipped by design, same 5 as always). This came from the user
-actually using the deployed live site and reporting back what felt wrong -
-four of the five things below aren't on the planned Phase 5 list at all,
-they just happened to touch the same files as item 3 so they shipped
-together.
+Shipped as commit `aebdbd2`, held un-pushed for one session per the user's
+explicit instruction to commit and update this Guide, then continue in a
+fresh session - **pushed to `main` and deployed to the live site in the
+next session (2026-09-13)**, on the user's approval, as that session's first
+action. `npm run verify` green (typecheck + 218 unit + 27 renderer parity on
+3 engines + 229/234 e2e passed, 5 skipped by design, same 5 as always). This
+came from the user actually using the deployed live site and reporting back
+what felt wrong - four of the five things below aren't on the planned
+Phase 5 list at all, they just happened to touch the same files as item 3
+so they shipped together.
 
 - **Real bug, not a design choice: annotations were forcing the whole
   board to `layout: 'free'`.** The user asked "why does drawing an arrow
@@ -1421,19 +1426,20 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and Phase 5 items 1–2 (design system cleanup, dark mode)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and Phase 5 items 1–3 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after Phase 5 item 2's commit (`87fd9df`, dark mode verification pass
-— the `.btn--done` hover-specificity fix, see the START HERE note above),
-and both worked cleanly again on the first try (no re-auth, no DNS re-check
-needed). Live site now serves all of Phase 2 (items 1–9), the Clear board
-addition, Phase 3, the complete Phase 4 (items 1–6), and Phase 5 items 1–2.
-Deploy script itself reported success (`Published.` + the live URL); a
-same-session `curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh
-`200`. (The custom domain sits behind a CDN edge cache with a 10-minute
+in the session right after Phase 5 item 3's commit (`57459f5`, top-bar
+overflow fix + the annotation-layout-freeze/drag-on-auto-layout bug fixes,
+see the START HERE note above), and both worked cleanly again on the first
+try (no re-auth, no DNS re-check needed). Live site now serves all of
+Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete
+Phase 4 (items 1–6), and Phase 5 items 1–3. Deploy script itself reported
+success (`Published.` + the live URL); a same-session `curl -o /dev/null -w
+'%{http_code}'` for `/` returned a fresh `200`. (The custom domain sits
+behind a CDN edge cache with a 10-minute
 `max-age`, so a stale bundle hash can be observed for a few minutes right
 after a deploy — not a deploy failure, just propagation - worth a re-check
 next session if in doubt about the *bundle* specifically, as opposed to the
