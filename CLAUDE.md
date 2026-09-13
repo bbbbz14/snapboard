@@ -135,6 +135,17 @@ all unless the popover happened to already be open - fixed with a small
 transient "Npx" badge near the toolbar. See "Phase 5 annotation revision,
 part 2" below for the full writeup of both, plus the halo work.
 
+**Phase 5 item 4 (6 gradient backgrounds) is now built and verified, shipped
+as commit `a8007b5` - not yet pushed to `main` or deployed to the live
+site**, pending the user's go-ahead (same "check first, outward-facing
+actions aren't automatic" rule the guide already states below). `npm run
+verify` green (typecheck + 243 unit + 33 renderer parity on 3 engines - 11
+scenes now, up from 10, the new one is a plain-style gradient scene added
+specifically for this item - + 256/261 e2e passed, 5 skipped by design, same
+5 as always). See "Phase 5 item 4" below for the full writeup, including two
+real bugs this item's own new tests caught in themselves (not in the app)
+before it was declared done.
+
 Still open and still needing the user: the Slack/LINE/Jira/Gmail/Word/Figma/
 Google Docs paste results table. Not doable from inside this environment.
 
@@ -188,6 +199,89 @@ and the two real test-suite bugs this round's own e2e coverage surfaced.
   pixel-diff check (see below) proved it *is* Anuphan, loading and applying
   correctly; Anuphan's own type design is simply a modern, loopless one.
   Not to be re-raised as a font-loading bug.
+
+### Phase 5 item 4 — done: 6 gradient backgrounds
+
+Built this session, shipped as commit `a8007b5` - not yet pushed to `main`
+or deployed to the live site, pending the user's go-ahead. `npm run verify`
+green (typecheck + 243 unit + 33 renderer parity on 3 engines + 256/261 e2e
+passed, 5 skipped by design, same 5 as always).
+
+- **`Background` gained a third variant** - `{ type: 'gradient'; from:
+  string; to: string }` - alongside 6 new named entries in `BACKGROUNDS`
+  (`src/board/model/types.ts`): Sunrise, Ocean, Mint, Berry, Dusk, Midnight,
+  each a well-known 2-stop pair rather than an invented one. Fixed presets,
+  not a custom color picker - the same "no decision nothing asked for yet"
+  scope cut every annotation tool's color choice already made before the
+  annotation revision reopened it for those specifically. Board content, so
+  none of the 6 follow the OS theme, same reasoning as `--annotation`/
+  `--checker*`.
+- **`renderScene.ts`'s fill branches on the new type**: `ctx.createLinearGradient(0,
+  0, size.w, size.h)` - corner-to-corner, not axis-aligned, so it reads as
+  one consistent diagonal sweep regardless of the board's own aspect ratio.
+  `drawBadge`'s ring-color ternary (`background.type === 'solid' ? ... :
+  BADGE_RING_ON_TRANSPARENT`) needed no code change at all - flagged ahead
+  of time as a blast-radius risk, but the existing "anything non-solid falls
+  back to the same translucent ring" logic was already the right behavior
+  for a gradient (there's no single color to match), not a gap - only the
+  comment was updated to say so explicitly.
+- **The picker moved from 3 inline top-bar swatches to a popover
+  (`src/ui/BackgroundMenu.tsx`)**, opened from a single new "Background"
+  button, rather than adding 6 more swatches inline - the standing
+  mobile-overflow finding (item 3's own note) was an explicit reason to
+  choose this over the simpler inline extension. Same fixed-position/
+  anchor-measured-from-`getBoundingClientRect()` pattern `ExportMenu.tsx`
+  already established, including the same "don't special-case the anchor
+  button in the outside-click listener" behavior (a click there both closes
+  and toggles in the same event, which nets out correctly - verified, not
+  just assumed, since a naive reading suggests it could double-fire; this
+  mirrors `ExportMenu`'s own unmodified listener exactly rather than
+  inventing a different mechanism). The toggle button itself shows a small
+  live preview swatch (`.swatch--preview`) of the board's current
+  background, via a new shared `backgroundSwatchStyle()` helper also used by
+  the popover's own 3×3 grid of options.
+- **`tests/render/harness.ts`'s `SceneSpec.background` widened from a
+  3-value literal union to `BackgroundName`** (all of `BACKGROUNDS`'s keys),
+  so the parity harness could address a gradient scene at all.
+  `tests/render/render.spec.ts` gained one new parity scene (`gradientOcean`,
+  **`style: 'plain'`, deliberately not `'card'`**) and one dedicated
+  corner-to-corner color check.
+- **Two real bugs, both caught by this item's own new tests failing against
+  themselves, not against the app - worth remembering before adding another
+  render-parity scene:**
+  1. The new parity scene at `style: 'card'` pushed Chromium's max channel
+     error to 4 against the existing shared tolerance table's `≤ 2` - not a
+     product bug, but the well-documented ADR-002/007 tile-shadow-edge
+     antialiasing gap showing up more visibly when the backdrop it's
+     composited against is a gradient instead of a flat color, which this
+     scene wasn't meant to measure in the first place. Fixed by using
+     `style: 'plain'` for this scene instead, which has no shadow/rounded
+     corners to trigger that unrelated effect - not by loosening the shared
+     tolerance table, which stays scoped to the card/soft-style scenes it
+     already covered.
+  2. The new `gradientCorners` harness function sampled `bm.width - 1`/
+     `bm.height - 1` (`bm` being the decoded `ImageBitmap`) **after** calling
+     `bm.close()` on it - on at least one engine here, `close()` zeroes those
+     two properties, silently turning "sample the last pixel" into "sample
+     (-1, -1)", which reads as always-transparent (alpha 0) regardless of
+     what's actually drawn there. All 3 engines failed identically, which is
+     what made this look like a real bug at first. Fixed by reading the
+     backing `OffscreenCanvas`'s own `c.width`/`c.height` instead - those are
+     set once at construction and are never affected by closing an unrelated
+     bitmap. Worth checking first if any future harness function reads an
+     `ImageBitmap`'s dimensions after `.close()`.
+- `tests/e2e/board.spec.ts`, `privacy.spec.ts`, and `screenshots.spec.ts` all
+  clicked the old inline `Black` swatch button directly and needed a
+  one-line change each (open the `Background` popover first) - found by
+  running the full `npm run e2e` suite, not by reasoning ahead of time; a
+  targeted `grep` afterward confirmed those were the only three call sites.
+- **Deliberately not done, scoped to what "6 gradients" alone needs:** no
+  custom color/angle picker (fixed presets only, see above); no gradient
+  option added to `AnnotationSettingsPopover`/redact/any annotation tool
+  (this item is board-background only, unrelated to per-node annotation
+  color); no persistence of the chosen background beyond what already
+  applies to the whole `Board` (background has always been part of `Board`,
+  so autosave/undo already cover it for free - nothing new to wire up).
 
 ### Phase 5 annotation revision, part 3 — done: text box grows/shrinks with content
 
@@ -923,7 +1017,10 @@ so they shipped together.
   as before) - nothing shrinks illegibly before the bar itself starts
   scrolling. This is **not** all of item 11 (mobile lite) - just the floor
   so item 4 (6 gradient backgrounds, which grows the swatch row from 4
-  controls to 10) doesn't make a known finding worse.
+  controls to 10) doesn't make a known finding worse. (Item 4 ended up
+  moving the background picker to a popover instead of growing the inline
+  row at all - see its own note under START HERE - but the reasoning here
+  for building the overflow floor first still holds.)
 - **That overflow fix nearly broke the Phase 3 export options popover, and
   is the one part of this batch worth remembering in detail:** `overflow`
   on any ancestor clips absolutely-positioned descendants regardless of
@@ -2206,21 +2303,12 @@ made so later items can build on earlier ones instead of redoing them:
    START HERE above. `.topbar` now scrolls horizontally instead of
    squishing chips/buttons illegibly; this is **not** all of item 11
    (mobile lite) - just enough that item 4 below is safe to add.
-4. ⬜ **6 gradient backgrounds.** `Background` (`src/board/model/types.ts`)
-   is currently `{ type: 'solid' } | { type: 'transparent' }` - this item
-   needs a third variant and a `renderScene.ts` fill path for it. No
-   concrete 6 gradients are specified anywhere in the product plan; picking
-   them is part of this item's own work, not something to look up.
-   **Blast radius was audited and is small - 6 real sites** - but one of
-   them is easy to miss: `renderScene.ts`'s `drawBadge` picks its ring color
-   with `background.type === 'solid' ? background.color : <white>`, so a
-   gradient would silently fall through to the transparent-board fallback
-   and needs its own branch. `exportBoard.ts`'s JPEG backdrop check is
-   already safe (it only tests for `'transparent'`, and a gradient is
-   opaque). The others: the `renderScene` fill itself, `BACKGROUNDS` in
-   `types.ts`, `SWATCHES` in `TopBar.tsx`, and `tests/render/harness.ts`.
-   Strongly consider putting the picker in a popover (the `ExportMenu`
-   pattern) rather than 10 inline swatches, for the reason item 3 exists.
+4. ✅ **6 gradient backgrounds.** Done - see "Phase 5 item 4" under START
+   HERE above. Shipped, not yet pushed/deployed. `Background` gained a
+   `{ type: 'gradient'; from; to }` variant plus 6 named presets; the picker
+   became a popover (`BackgroundMenu.tsx`, the `ExportMenu` pattern) instead
+   of growing the inline swatch row, so this doesn't make the standing
+   mobile-overflow finding worse.
 5. ⬜ **Accessibility pass** (focus rings, ARIA, full keyboard
    operability). Partly already true by construction (every Phase 2–4
    tool has a keyboard shortcut, canvas already gets an `aria-live` status
