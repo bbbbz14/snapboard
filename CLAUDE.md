@@ -473,9 +473,12 @@ by design, same 5 as always).
   by that specific number. Worth a real Lighthouse pass on a real machine
   if that exact score is ever needed.
 
-**Phase 5 item 6 (friendly error messages) is also done this session** -
-built, `npm run verify` green, committed locally, **not yet pushed to
-`main` or deployed to the live site**, pending the user's go-ahead. See
+**Phase 5 item 6 (friendly error messages) is now done, shipped as commit
+`62094db`, pushed to `main`, and deployed to the live site**, on the
+user's approval. Push and deploy both worked cleanly on the first try;
+the `gh-pages` branch's own last commit reads `Deploy 62094db` (confirmed
+via `git fetch origin gh-pages` + `git log`) and a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. See
 "Phase 5 item 6" below for the full writeup, including a real pre-existing
 bug this audit found: the file-rejection toasts (`toast.rejected.*`) were
 never actually reading from `src/i18n/en.ts` at all - a second, hardcoded
@@ -2432,19 +2435,19 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–5 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass), all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), and the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–6 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages), all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), and the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after Phase 5 item 5's own commit (`2d3f789`, see the START HERE note
+right after Phase 5 item 6's own commit (`62094db`, see the START HERE note
 above), on the user's approval, and both worked cleanly again on the first
 try (no re-auth, no DNS re-check needed). Live site now serves all of
 Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete Phase 4
-(items 1–6), Phase 5 items 1–5, all 3 parts of the annotation revision,
+(items 1–6), Phase 5 items 1–6, all 3 parts of the annotation revision,
 real-usage feedback round 2, and the third round of real-usage feedback.
 Deploy script itself reported success (`Published.` + the live URL); the
-`gh-pages` branch's own last commit reads `Deploy 2d3f789` (confirmed via
+`gh-pages` branch's own last commit reads `Deploy 62094db` (confirmed via
 `git fetch origin gh-pages` + `git log`, not just the deploy script's own
 message) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
 returned a fresh `200`. (The
