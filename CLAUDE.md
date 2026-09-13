@@ -79,34 +79,18 @@ the planned Phase 5 list) - see "Phase 5 item 3" below for the full writeup
 of both. `npm run verify` green (typecheck + 218 unit + 27 renderer parity
 on 3 engines + 229/234 e2e passed, 5 skipped by design, same 5 as always).
 
-**Next up (approved this session, not yet built): a 3-part revision to the
-five Phase 4 annotation tools** (arrow/box/text/marker/redact), reopening
-scope every one of those items deliberately cut at the time ("no color
-picker," "no size choice" - see each item's own note below) because nothing
-had asked for it yet. Something has now: the user tested the live site and
-wants Lightshot-style controls. Explicitly sequenced so the two text-only
-parts don't collide with each other mid-flight:
+**A 3-part revision to the five Phase 4 annotation tools**
+(arrow/box/text/marker/redact) is in progress, reopening scope every one of
+those items deliberately cut at the time ("no color picker," "no size
+choice" - see each item's own note below) because nothing had asked for it
+yet. Something has now: the user tested the live site and wants
+Lightshot-style controls. Explicitly sequenced so the two text-only parts
+don't collide with each other mid-flight:
 
-1. **Size (thickness) + color for every annotation tool, adjusted by
-   scrolling the mouse wheel while a tool is armed** (a Lightshot-style
-   interaction, but meant to end up smoother/nicer-looking than Lightshot's
-   own). Concrete defaults approved: **7 colors** - red `#dc2626` (today's
-   only color, keep as default), orange `#f97316`, yellow `#eab308`, green
-   `#16a34a`, blue `#0ea5e9`, purple `#9333ea`, black `#111827` (black
-   chosen over white - better contrast on the light backgrounds/real
-   screenshots this app actually gets used on). **Size limits:** arrow/box
-   stroke 2-12px (today's fixed values are `ARROW_STROKE_WIDTH=4`/
-   `BOX_STROKE_WIDTH=3`), marker diameter 24-64px (today `MARKER_DIAMETER=36`),
-   text font-size 14-40px (today `TEXT_FONT_SIZE=22`) - all in
-   `src/board/render/*.ts`. **Redact is the one exception:** color changes
-   are safe to add (still a fully-opaque fill, no opacity dial, so this
-   doesn't reopen the see-through-redaction risk item 5 was scoped to avoid)
-   but **no size control** - a redaction has no "thickness," its size is
-   already the dragged rectangle. Needs a new small UI (a popover off the
-   floating `AnnotationToolbar`, the same pattern `ExportMenu` already
-   established) plus per-tool state and a live preview while dragging, the
-   same one-source-of-truth reasoning the existing preview/commit pair
-   already uses for every annotation kind.
+1. ✅ **Done - size (thickness) + color for every annotation tool, adjusted
+   by scrolling the mouse wheel while a tool is armed.** Built this session,
+   shipped locally as commit `26c6761` - **not yet pushed or deployed**. See
+   "Phase 5 annotation revision, part 1" below for the full writeup.
 2. **A new font pairing for the text tool, plus a subtle shadow/halo for
    legibility** - the user found the current self-hosted Inter+Anuphan pair
    ([styles.css](src/app/styles.css)'s `'Snapboard Annotation'` face) reads
@@ -139,6 +123,145 @@ Chrome/Edge DevTools is no longer an open question either - the user
 confirmed on a real desktop build that DevTools wins, so this is now a known,
 accepted limitation (see Phase 2 item 9's note and the shortcut cheatsheet,
 Phase 5 item 8), not a thing to test or fix.
+
+### Phase 5 annotation revision, part 1 — done: color + size for every tool
+
+Built this session, shipped locally as commit `26c6761` - **not yet pushed
+or deployed**, pending the user's go-ahead. `npm run verify` green
+(typecheck + 228 unit + 27 renderer parity on 3 engines + 244/249 e2e
+passed, 5 skipped by design, same 5 as always - the new
+`tests/e2e/annotationSettings.spec.ts` added 5 cases × 3 engines = 15, all
+passed on the first run, no new skips). Also manually verified in a real
+browser via a throwaway Playwright screenshot script (not committed) -
+the popover positions correctly above the bottom-left toolbar, swatch
+selection and the size slider both work, and redact's popover correctly
+shows no size row.
+
+- **New shared module, `src/board/model/annotationDefaults.ts`** - the
+  7-color palette (`ANNOTATION_COLORS`, red `#dc2626` first/default, per
+  the user's approved list), the `Tool`/`AnnotationTool`/
+  `SizableAnnotationTool` type aliases (previously an inline union repeated
+  three times across the codebase), and `ANNOTATION_SIZE_RANGE` - the
+  min/max/default for arrow/box's stroke width, marker's diameter, and
+  text's font size, carrying forward the exact numbers each tool already
+  shipped with (`ARROW_STROKE_WIDTH=4`, `BOX_STROKE_WIDTH=3`,
+  `MARKER_DIAMETER=36`, `TEXT_FONT_SIZE=22`) so an existing board renders
+  identically. Deliberately its own file, not `model/types.ts` - `types.ts`
+  is imported *by* the render files (`renderScene.ts` etc.), so putting the
+  size range there and having e.g. `arrow.ts` import its own default back
+  out would have created a circular import; this module has no dependents
+  of its own, so both model and render layers can depend on it safely.
+- **Redact's real default is `#000000`, not the palette's "black" swatch
+  (`#111827`) and not `DEFAULT_ANNOTATION_COLOR` (red)** - the one
+  deliberate exception, and worth remembering before touching this again.
+  `tests/e2e/redact.spec.ts` reads back the exported pixel under a
+  never-recolored redaction and asserts `[0, 0, 0, 255]` as proof the
+  content is unrecoverable; switching the untouched default to red or to
+  the slightly-off-black palette swatch would have broken that proof
+  silently. `REDACT_DEFAULT_COLOR` (`src/board/render/redact.ts`) is the
+  named constant for this - the redact color *picker* still offers the same
+  7-swatch palette as every other tool for UI consistency, so picking
+  "black" from it deliberately gives `#111827`, not pure black; only the
+  factory-default, never-touched value has to stay `#000000`.
+- **Model change:** `ArrowNode`/`BoxNode`/`TextNode` gained a `size: number`
+  field (stroke width, stroke width, font size respectively); `RedactNode`
+  gained `color: string` (it had none at all before, by design - see item
+  5's own note - this reopens that only as far as approved: a fill color
+  choice, still fully opaque, no opacity dial, so the see-through-redaction
+  risk item 5 was scoped to avoid still doesn't exist). `MarkerNode` needed
+  **no new field** - its diameter was already fully encoded in `frame.w`/`h`
+  (see `drawMarker`'s own note on deriving radius from `frame.w`), so only
+  `markerFrame`'s call site needed to take a diameter parameter instead of
+  reading the old module constant. Every node's `color` field is plain
+  `string`, not the 7-value literal union `AnnotationColor` - same
+  reasoning the Slate-background removal already established: stored data
+  must decode fine even if a future palette change removes a swatch a
+  board was actually saved with.
+- **Render functions were already parameter-shaped for this, mostly.**
+  `strokeArrow`/`strokeBox` already took `color`/`lineWidth` as parameters,
+  not module constants - only their call sites (`renderScene.ts`,
+  `BoardCanvas.tsx`'s drag-preview) needed to switch from the old
+  `ARROW_STROKE_WIDTH`/`BOX_STROKE_WIDTH` constants to a per-node or
+  per-tool-setting value. `fillRedact` gained a `color` parameter it never
+  had. `drawText`/`textFont`/`textHeight` needed real threading, not just a
+  call-site change - font size affects wrapping math, so `TEXT_FONT_SIZE`
+  and the derived `TEXT_LINE_HEIGHT` constant both had to become parameters
+  (`textFont(fontSize)`, the new `textLineHeight(fontSize)` function,
+  `textHeight(lineCount, fontSize)`) - the one tool that needed more than a
+  call-site swap.
+- **New store state, `toolSettings`** (`src/board/store/boardStore.ts`) -
+  per-tool `{ color, size? }`, seeded from `ANNOTATION_SIZE_RANGE`'s
+  defaults (redact from `REDACT_DEFAULT_COLOR`, see above). Deliberately
+  **not** part of `Board` and **not** autosaved or undo/redo-tracked - same
+  "what to draw next, not arranged content" reasoning `selectedIds`/camera/
+  export options already established; picking a color for the *next* arrow
+  doesn't need to survive a reload or be undoable any more than the camera
+  position does. `setToolColor`/`setToolSize` (clamped via
+  `clampAnnotationSize`) and `adjustToolSize` (a relative nudge, for the
+  wheel) are the three new actions. `addArrow`/`addBox`/`addMarker`/
+  `addRedact`/`commitText`'s create branch all now read `s.toolSettings.*`
+  instead of the old hardcoded `DEFAULT_ANNOTATION_COLOR` - a text re-edit
+  still leaves an existing node's `color`/`size` untouched, same as before.
+- **Scroll-wheel handling** (`BoardCanvas.tsx`'s existing wheel effect,
+  previously pan-or-zoom-only): ctrl/cmd+wheel still zooms even while a
+  tool is armed (so the user can zoom in for precision without backing out
+  of the tool first); otherwise, while a *sizable* tool (arrow/box/text/
+  marker - not redact, which has no size dimension, not `'select'`) is
+  armed, a plain wheel nudges that tool's size by 1 instead of panning.
+  One step per wheel *event*, not per `deltaY` unit, so a fast trackpad
+  flick just means more events, which already reads as faster - no extra
+  velocity math needed.
+- **"Live preview while dragging" needed no new plumbing for arrow/box/
+  redact** - `drawInteraction`'s existing draft-preview code already calls
+  `strokeArrow`/`strokeBox`/`fillRedact` on every pointermove using
+  whatever `toolSettings` currently holds (now a subscribed store value in
+  `BoardCanvas`, added to `drawInteraction`'s `useCallback` deps); since
+  React re-renders the component whenever `toolSettings` changes,
+  scrolling the wheel *while mid-drag* (not just before starting one)
+  already picks up the new size/color on the very next paint, for free.
+- **New popover, `src/ui/AnnotationSettingsPopover.tsx`** - same
+  `position: fixed`-anchored-from-a-real-`getBoundingClientRect()` pattern
+  `ExportMenu` established, but anchored *upward* (`bottom`/`left`, not
+  `top`/`right`) since `AnnotationToolbar` lives at the bottom of the
+  viewport, not inside a scrolling top bar. Opened from a new trailing
+  settings button in `AnnotationToolbar.tsx` (a colored dot matching the
+  armed tool's current color), disabled while `tool === 'select'` - there's
+  no tool context to adjust yet, matching this revision's own "while a tool
+  is armed" framing. The popover closes and reopens correctly on repeat
+  clicks of that same button (its outside-mousedown-close listener
+  explicitly excludes the anchor button itself, so the button's own
+  `onClick` toggle isn't fought by the popover trying to close itself first
+  in the same click) and auto-closes if the tool ever reverts to `'select'`
+  out from under it (committing an annotation, or Escape).
+- **`.annotation-toolbar__btn.is-active`'s background is now set inline
+  per-tool** (`toolSettings[tool].color`), not solely the fixed `--annotation`
+  CSS token from item 1 - that token is still the *fallback* (kept in
+  `styles.css` for before the inline style is set, and still deliberately
+  unthemed - it's still previewing board content, not chrome), but the
+  actual armed-tool color now varies with the user's choice, which a single
+  CSS custom property can't express on its own.
+- `tests/unit/marker.test.ts` and `tests/unit/text.test.ts` updated for the
+  new required parameters (`markerFrame(point, diameter)`,
+  `textHeight(lineCount, fontSize)`, `textLineHeight(fontSize)`);
+  `tests/unit/boardStore.test.ts` gained a `toolSettings` block (defaults
+  including redact's black exception, `setToolColor`/`setToolSize`
+  clamping, `adjustToolSize` nudging and clamping at the edges, and that a
+  newly created arrow/marker/text/redact actually picks up the currently
+  armed color/size). `tests/e2e/annotationSettings.spec.ts` (new) covers
+  the settings button's disabled/enabled state, the popover's contents for
+  a sizable tool vs. redact's color-only version, that picking a color
+  actually changes the next arrow drawn (a real green-pixel check, not just
+  a DOM assertion), that scrolling the wheel while armed changes the
+  displayed size live, and that the size slider actually changes drawn
+  stroke thickness (measured by counting reddish pixels in a vertical
+  scan-line through a box's stroke, before and after).
+- **Deliberately not done, scoped to what "size + color" alone needs:** no
+  persistence of `toolSettings` across a reload (a UI preference, not board
+  content, same as export options); no color/size choice for anything
+  beyond the five existing annotation kinds; no attempt to guarantee icon
+  contrast against every one of the 7 swatch colors on the armed-tool
+  button (e.g. white glyph on the yellow swatch) - not asked for, and every
+  other design tool with a color-swatch button has the same trade-off.
 
 ### Phase 5 item 1 — done: design system cleanup
 
