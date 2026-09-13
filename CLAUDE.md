@@ -517,6 +517,21 @@ items 7 and 8" below for the full writeup, including two real bugs this
 session's own new e2e coverage caught in the new code itself (not
 pre-existing) before either was declared done.
 
+**Phase 5 item 9 (animation / micro-interactions) is now done, committed
+locally, not yet pushed to `main` or deployed to the live site**, pending
+the user's go-ahead. Scoped to exactly the three pieces the user approved
+up front: entrance animation for every popover/modal (ExportMenu,
+BackgroundMenu, AnnotationSettingsPopover, ContextMenu, HelpModal - fade +
+a small scale/translate, deliberately entrance-only, no exit animation, see
+"Phase 5 item 9" below for why), toast enter+exit, and hover/press feedback
+on every clickable control that was missing a transition/`:active` state.
+`npm run verify` green (typecheck + 243 unit + 33 renderer parity on 3
+engines + 298/303 e2e passed, 5 skipped by design, same 5 as always - **the
+1 pre-existing chromium-only `annotationEdit.spec.ts` flake item 6's note
+first found is now fixed, not just carried forward**, see below). Also
+found and fixed a real accessibility bug in `useFocusTrap` along the way -
+see "Phase 5 item 9" below for the full writeup.
+
 ### Phase 5 items 7 and 8 — done: right-click context menu, help modal / shortcut cheatsheet
 
 Built this session. `npm run verify` green (typecheck + 243 unit + 33
@@ -631,6 +646,111 @@ renderer parity on 3 engines + 297/303 e2e passed, 5 skipped by design plus
   "Edit style" button) - the Phase 5 list names Crop/Duplicate/Bring to
   front/Delete specifically, and style-editing already has its own discovery
   path (the swatch button that appears in the same toolbar).
+
+### Phase 5 item 9 — done: animation / micro-interactions
+
+Built this session. `npm run verify` green (typecheck + 243 unit + 33
+renderer parity on 3 engines + 298/303 e2e passed, 5 skipped by design,
+same 5 as always).
+
+- **Scope was fixed with the user up front, before any code, via three
+  explicit yes/no choices** (this item had no mockup or prescribed scope,
+  unlike Phase 2-4's items): popover/modal entrance animation, toast
+  enter+exit, and button/control hover-press feedback. A fourth option
+  (canvas-level selection/drag feedback) was offered and explicitly not
+  chosen - board-content rendering is a different, much larger surface than
+  a CSS transition, and nothing asked for it specifically.
+- **Popover/modal entrance only, no exit animation - a deliberate,
+  documented trade-off, not an oversight.** All five popovers/modal
+  (`ExportMenu`, `BackgroundMenu`, `AnnotationSettingsPopover`,
+  `ContextMenu`, `HelpModal`) share one `@keyframes popover-in` (fade +
+  `translateY(-4px) scale(0.98)`, ~130-160ms) added directly to their
+  existing CSS classes - no component/prop changes needed, since every one
+  of them is already unconditionally rendered while open (`{open && <X/>}`).
+  An exit animation would require keeping the component mounted a beat past
+  `onClose`, which breaks the exact invariant `useFocusTrap`'s own comment
+  documents and relies on - "mount = open, unmount = close... no `open`
+  prop needed" (Phase 5 item 5). Toasts have no such invariant (no focus
+  trap at all), so they got the full enter+exit treatment instead - see
+  below.
+- **A real, pre-existing accessibility race in `useFocusTrap.ts`, found only
+  because adding the popover-in animation made it fail far more often, not
+  by reasoning about the hook in isolation.** The hook's mount-time
+  `requestAnimationFrame` unconditionally focused the popover's first
+  focusable child, with no check for whether something had already been
+  focused inside the popover by then. This raced against anything else that
+  focuses a specific control inside the popover shortly after it opens - a
+  real keyboard user tabbing in, or (what actually surfaced it)
+  `AnnotationSettingsPopover`'s own e2e coverage calling `.focus()` on the
+  size slider right after opening it. Confirmed with a throwaway
+  instrumented test reading `document.activeElement`: **without** the new
+  animation this raced and lost about 1 time in 8 (a real but rare
+  pre-existing bug); **with** it, about 4 times in 5 - consistent with the
+  animation's extra per-frame paint work shifting when the raf actually
+  fires relative to Playwright's own round-trip timing. This is exactly the
+  pre-existing, order-dependent `annotationEdit.spec.ts` size-slider flake
+  Phase 5 item 6's own note already flagged and deliberately left
+  uninvestigated ("worth a real look next time that area of the code is
+  touched") - this was that look. **Fixed at the source, not just in the
+  test:** the raf callback now checks `container.contains(document.activeElement)`
+  first and does nothing if something inside the popover already has focus
+  - it only force-focuses the first child when focus is still genuinely
+  outside the popover (a hidden element silently having ignored an earlier
+  `.focus()` call, or the anchor button's own default-focus behavior
+  landing outside the container), which is the only case this raf ever
+  existed to handle. Confirmed the fix directly: the same instrumented test
+  went from ~80% failure to 10/10 clean with the animation still in place.
+  Two `annotationEdit.spec.ts` assertions were also hardened from a single
+  read to `expect.poll(...)`, since even with the focus race gone there's a
+  separate, genuine (if much smaller) gap between the store committing a
+  size change and the canvas repaint reflecting it - polling is the correct
+  fix for that, not a fixed sleep.
+- **A second, narrower timing issue, same root cause (reading a popover's
+  geometry while its own entrance animation is still playing):**
+  `annotationEdit.spec.ts`'s pixel-exact popover-position regression test
+  (`toBeCloseTo(btnBox.x, 0)`, added in the "third round of real-usage
+  feedback") could sample `boundingBox()` mid-animation, when the
+  `scale(0.98)` transform hasn't finished settling yet - off by ~1-2px
+  against a precision-0 assertion. Fixed by waiting out the animation
+  duration before reading positions in that one test, with a comment
+  explaining why the wait exists now (it didn't need one before this item).
+- **Toast enter+exit (`Toasts.tsx`)** - previously the store's own 4s
+  auto-dismiss timer (or a manual dismiss) removed a toast from the
+  `toasts` array and its DOM node vanished in the same instant, with only
+  the entrance (`toast-in`) animated. `Toasts.tsx` now mirrors the store's
+  array into local state instead of rendering it directly: when an id
+  leaves the store's list, the local copy marks it `exiting` and keeps
+  rendering it (with a new `.toast--exiting` CSS class - fade + slide,
+  matching the entrance) for one more ~160ms beat before actually dropping
+  it. No focus-trap or other open/close-sensitive behavior applies to a
+  toast, unlike the popovers above, so this carries none of the same risk -
+  confirmed safe against the one existing e2e reference to `.toast`
+  (`performance.spec.ts`'s "wait for a toast to appear"), which doesn't
+  depend on removal timing at all.
+- **Button/control hover-press feedback** - `.chip`, `.swatch`,
+  `.selection-toolbar__btn`, `.annotation-toolbar__btn`, `.zoom-btn`/
+  `.zoom-pct`, `.context-menu__item`, `.help-modal__close`, and
+  `.recovery-dismiss` all gained a `transition` where they had none at all
+  before (hover/color changes were instant), and the buttons/swatches
+  people click most often (chip, swatch, the three icon-button toolbars)
+  also gained a small `:active { transform: scale(...) }` press-down cue -
+  `.btn` already had both from Phase 1, so this closes the same gap
+  everywhere else. `.annotation-toolbar__btn`'s press rule is guarded with
+  `:not(:disabled)`, matching its existing disabled-opacity rule.
+  `.context-menu__item` deliberately gets the color/background transition
+  only, no press-scale - a full-width menu row scaling down reads oddly
+  compared to a small icon button doing the same.
+- **Verified live, not just via the automated suite** - started the dev
+  server, dropped a real image, and screenshotted the board and the export
+  popover mid- and post-entrance-animation; both render cleanly with no
+  layout glitches.
+- **Deliberately not done, scoped to exactly what was approved:** no exit
+  animation for the five popovers/modal (see above - a real invariant, not
+  a missed opportunity); no canvas-level selection/drag/layout-reflow
+  animation (explicitly declined up front - much larger surface, nothing
+  asked for it); no animation library or new abstraction - every effect
+  here is a plain CSS `transition`/`animation`/`@keyframes`, consistent
+  with the near-zero baseline this item inherited.
 
 ### Phase 5 item 6 — done: friendly error messages
 
@@ -2814,12 +2934,11 @@ made so later items can build on earlier ones instead of redoing them:
    `+ - 0 1 Esc Del/Backspace D F A R T N C ?` plus `Ctrl/Cmd+Z`,
    `Ctrl/Cmd+Shift+Z`, `Ctrl/Cmd+Shift+C`, `Ctrl/Cmd+Enter`, and `Enter`
    (crop-session-only).
-9. ⬜ **Animation / micro-interactions.** Deliberately late - polish on top
-   of UI that's already visually settled (dark mode, gradients, a11y) costs
-   less rework than polishing first and having the earlier items change
-   underneath it. Baseline is near zero today (two `transition` rules and
-   one `@keyframes`), and `prefers-reduced-motion` is already handled, so
-   there is nothing to unpick first.
+9. ✅ **Animation / micro-interactions.** Done - see "Phase 5 item 9" under
+   START HERE above. Scoped to entrance animation for every popover/modal,
+   toast enter+exit, and hover/press feedback on every control that was
+   missing it - found and fixed a real pre-existing accessibility race in
+   `useFocusTrap` along the way.
 10. ⬜ **i18n: Thai/English.** `src/i18n/en.ts` is already the single source
     of every user-facing string specifically so this item is "add `th.ts` +
     a switch," not a hunt through components - **re-confirmed by grep during
@@ -2999,6 +3118,23 @@ tests/render/         renderer parity harness (imports src directly, dev server 
   itself as the poll result. Poll from the Node side instead:
   `expect.poll(() => page.evaluate(...))`, which round-trips per attempt and
   actually waits for the resolved value (`tests/e2e/autosave.spec.ts`).
+- **A popover's own CSS entrance animation can starve a focus-management raf
+  that has nothing to do with animation.** Found adding the popover-in
+  entrance animation (Phase 5 item 9): `useFocusTrap`'s mount-time
+  `requestAnimationFrame` (which moves focus into a just-opened popover) has
+  always unconditionally overridden whatever already had focus, with no
+  check for "did something already focus a specific control in here." That
+  was a rare, pre-existing race (~1 in 8 in a repeated instrumented test)
+  even without any animation; adding a 130ms `animation` to the popover's own
+  CSS pushed it to ~4 in 5 - the extra per-frame paint work apparently shifts
+  when the raf actually fires relative to anything else racing it (a real
+  keyboard user tabbing in, a test's own `.focus()` call). Fixed by guarding
+  the raf with `container.contains(document.activeElement)` - it now only
+  force-focuses the first child if focus is still genuinely outside the
+  popover. Worth checking first if a future popover/modal animation seems to
+  make an *unrelated* focus or keyboard-input test flaky - the animation
+  itself is rarely the direct cause; it's more likely exposing a race that
+  already existed.
 - **Fake timers and `fake-indexeddb` don't reliably interleave.** `vi.useFakeTimers()`
   can leave IndexedDB requests never resolving (tests hang instead of failing).
   Use real, short waits around code that touches IndexedDB instead (see

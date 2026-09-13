@@ -221,12 +221,16 @@ body {
   border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background 120ms ease, color 120ms ease, transform 80ms ease;
 }
 
 .chip:hover {
   color: var(--text);
   background: var(--hover-tint);
+}
+
+.chip:active {
+  transform: scale(0.96);
 }
 
 .chip[aria-pressed='true'] {
@@ -278,10 +282,15 @@ body {
   border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
   cursor: pointer;
   padding: 0;
+  transition: transform 80ms ease, box-shadow 120ms ease;
 }
 
 .swatch[aria-pressed='true'] {
   box-shadow: 0 0 0 2px var(--accent);
+}
+
+.swatch:active {
+  transform: scale(0.9);
 }
 
 .swatch--transparent {
@@ -326,6 +335,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-2);
+  animation: popover-in 130ms ease-out;
 }
 
 .btn {
@@ -391,6 +401,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-2);
+  animation: popover-in 130ms ease-out;
 }
 
 .export-menu__row {
@@ -478,6 +489,7 @@ body {
   line-height: 1;
   color: var(--text-dim);
   cursor: pointer;
+  transition: color 120ms ease;
 }
 
 .recovery-dismiss:hover {
@@ -603,11 +615,16 @@ body {
   width: var(--control-h);
   height: var(--control-h);
   color: var(--text-dim);
+  transition: background 100ms ease, color 100ms ease, transform 80ms ease;
 }
 
 .selection-toolbar__btn:hover {
   color: var(--text);
   background: var(--hover-tint);
+}
+
+.selection-toolbar__btn:active {
+  transform: scale(0.9);
 }
 
 .selection-toolbar__btn--danger:hover {
@@ -631,6 +648,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-2);
+  animation: popover-in 130ms ease-out;
 }
 
 .context-menu__item {
@@ -647,6 +665,7 @@ body {
   padding: 7px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: background 100ms ease, color 100ms ease;
 }
 
 .context-menu__item:hover {
@@ -698,11 +717,16 @@ body {
   width: var(--control-h);
   height: var(--control-h);
   color: var(--text-dim);
+  transition: background 100ms ease, color 100ms ease, transform 80ms ease;
 }
 
 .annotation-toolbar__btn:hover {
   color: var(--text);
   background: var(--hover-tint);
+}
+
+.annotation-toolbar__btn:active:not(:disabled) {
+  transform: scale(0.9);
 }
 
 /* Deliberately --annotation as the fallback, not --danger: an armed tool
@@ -770,6 +794,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-2);
+  animation: popover-in 130ms ease-out;
 }
 
 .annotation-settings__row {
@@ -829,6 +854,11 @@ body {
   cursor: pointer;
   border-radius: var(--radius-sm);
   height: var(--control-h);
+  transition: background 100ms ease, color 100ms ease, transform 80ms ease;
+}
+
+.zoom-btn:active {
+  transform: scale(0.9);
 }
 
 .zoom-btn {
@@ -936,6 +966,18 @@ body {
   padding: 9px 15px;
   font-size: var(--text-sm);
   animation: toast-in 160ms ease-out;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+/* Applied by Toasts.tsx for the ~160ms it keeps a dismissed toast mounted
+   after it leaves the store's own `toasts` array, so the fade-out has time
+   to play instead of the DOM node disappearing the instant the 4s auto-
+   dismiss timer (or a manual dismiss) fires. Toasts have no focus trap or
+   other open/close-sensitive behavior, unlike the popovers above, so
+   delaying their unmount by a beat carries none of that risk. */
+.toast--exiting {
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
 }
 
 .toast--warn {
@@ -951,6 +993,24 @@ body {
   from {
     opacity: 0;
     transform: translateY(8px);
+  }
+}
+
+/* ---------- shared popover/modal entrance animation (Phase 5 item 9) ----------
+   One keyframe reused by every anchored popover (ExportMenu, BackgroundMenu,
+   AnnotationSettingsPopover, ContextMenu) plus the help modal - previously
+   they all appeared instantly. Deliberately entrance-only, no matching exit
+   animation: all of these only render while open (`{open && <X/>}`), which
+   is what lets `useFocusTrap` treat mount as open and unmount as close with
+   no separate `open` prop (see that hook's own comment). Animating an exit
+   would mean keeping the component mounted a beat past `onClose`, which
+   breaks exactly that invariant - not worth the accessibility regression
+   risk (stale focus-restore target on a rapid close+reopen) for a cosmetic
+   close fade. */
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
   }
 }
 
@@ -986,6 +1046,7 @@ body {
   display: grid;
   place-items: center;
   background: rgba(15, 23, 42, 0.45);
+  animation: help-backdrop-in 140ms ease-out;
 }
 
 .help-modal {
@@ -999,6 +1060,20 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-2);
+  animation: help-modal-in 160ms ease-out;
+}
+
+@keyframes help-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes help-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
 }
 
 .help-modal__header {
@@ -1022,6 +1097,7 @@ body {
   color: var(--text-dim);
   cursor: pointer;
   padding: 4px;
+  transition: color 120ms ease;
 }
 
 .help-modal__close:hover {

@@ -128,8 +128,14 @@ test('the size slider in "Edit style" thickens an already-placed box in place', 
   await page.keyboard.press('End')
   await editStyleButton(page).click()
 
-  const after = (await pixelScan(page, stripe, 'red')).count
-  expect(after).toBeGreaterThan(before)
+  // Poll rather than read once: the slider's 'End' keypress commits the new
+  // size to the store synchronously, but the canvas repaint it triggers is a
+  // separate async step (this is the pre-existing, order-dependent flake
+  // CLAUDE.md's Phase 5 item 6 note already documents for this file - a
+  // plain single read can race it, which the new popover-in entrance
+  // animation (Phase 5 item 9) makes noticeably more likely by adding extra
+  // main-thread paint work right at that moment).
+  await expect.poll(async () => (await pixelScan(page, stripe, 'red')).count).toBeGreaterThan(before)
 })
 
 test('the size slider in "Edit style" grows an already-typed text node without deleting and retyping it', async ({
@@ -157,8 +163,9 @@ test('the size slider in "Edit style" grows an already-typed text node without d
   await page.keyboard.press('End')
   await editStyleButton(page).click()
 
-  const after = await pixelScan(page, region, 'red')
-  expect(after.height).toBeGreaterThan(before.height)
+  // Poll rather than read once - see the sibling box-resize test's comment
+  // above for why a single read here can race the canvas repaint.
+  await expect.poll(async () => (await pixelScan(page, region, 'red')).height).toBeGreaterThan(before.height)
 
   // The content itself is untouched - re-opening for edit shows the same text.
   await page.mouse.dblclick(at.x + 5, at.y + 5)
@@ -188,6 +195,10 @@ test('the "Edit style" popover opens attached to the button that opened it, not 
   await button.click()
   const popover = page.getByRole('dialog', { name: 'Style' })
   await expect(popover).toBeVisible()
+  // The popover-in entrance animation (Phase 5 item 9) briefly scales/
+  // translates the popover on open - wait for it to settle (130ms) before
+  // reading its position, or this pixel-exact check can catch it mid-transition.
+  await page.waitForTimeout(200)
 
   const btnBox = (await button.boundingBox())!
   const popBox = (await popover.boundingBox())!

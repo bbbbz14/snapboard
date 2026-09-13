@@ -30,7 +30,21 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, anchorRef: RefO
     // popover: a real click's own default action can (browser-dependent)
     // focus the anchor button itself after this effect's synchronous work
     // already ran. A raf runs after both have settled.
+    //
+    // The `container.contains(...)` guard is real, not defensive filler:
+    // found this session (Phase 5 item 9) when adding a popover-open CSS
+    // animation made a pre-existing race far more visible. Anything that
+    // focuses a specific control inside the popover soon after it opens (a
+    // real keyboard user tabbing in, or a caller's own programmatic focus)
+    // could previously lose to this raf firing a moment later and yanking
+    // focus back to the first focusable child unconditionally. Only force
+    // focus in if nothing inside the container has it yet - that still
+    // covers the two cases this raf exists for (a hidden element silently
+    // ignoring an earlier .focus() call; the anchor button's own default
+    // focus sitting outside the container) without ever overriding a focus
+    // that already correctly landed inside.
     const raf = requestAnimationFrame(() => {
+      if (container.contains(document.activeElement)) return
       const first = focusables()[0]
       ;(first ?? container).focus()
     })
