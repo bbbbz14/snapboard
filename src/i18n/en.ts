@@ -47,6 +47,12 @@ export const en = {
   'background.white': 'White',
   'background.black': 'Black',
   'background.transparent': 'Transparent',
+  'background.gradientSunrise': 'Sunrise',
+  'background.gradientOcean': 'Ocean',
+  'background.gradientMint': 'Mint',
+  'background.gradientBerry': 'Berry',
+  'background.gradientDusk': 'Dusk',
+  'background.gradientMidnight': 'Midnight',
 
   'style.plain': 'Plain',
   'style.card': 'Card',

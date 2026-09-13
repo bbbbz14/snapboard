@@ -18,7 +18,8 @@ test('capture UI states', async ({ page, images, addViaPicker }) => {
 
   await page.getByRole('button', { name: 'Clear board' }).click()
   await addViaPicker(page, images([[1400, 900], [1400, 900]]))
-  await page.getByRole('button', { name: 'Black' }).click()
+  await page.getByRole('button', { name: 'Background', exact: true }).click()
+  await page.getByRole('button', { name: 'Black', exact: true }).click()
   await page.getByRole('button', { name: 'Soft' }).click()
   await page.waitForTimeout(200)
   await page.screenshot({ path: '/tmp/shots/4-compare-dark.png' })

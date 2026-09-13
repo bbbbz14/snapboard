@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useBoardStore, toRenderInput } from '@/board/store/boardStore'
-import { BACKGROUNDS, type BackgroundName, type LayoutMode, type StylePreset } from '@/board/model/types'
+import type { LayoutMode, StylePreset } from '@/board/model/types'
 import { exportBoard, exportFilename, estimatePixels, resolveScale, type ExportOptions } from '@/board/export/exportBoard'
 import { downloadBlob } from '@/board/export/clipboard'
 import { ExportMenu } from '@/ui/ExportMenu'
+import { BackgroundMenu, backgroundSwatchStyle } from '@/ui/BackgroundMenu'
 import { modKey, t } from '@/i18n/t'
 
 const LAYOUTS: { mode: LayoutMode; label: string }[] = [
@@ -12,12 +13,6 @@ const LAYOUTS: { mode: LayoutMode; label: string }[] = [
   { mode: 'columns', label: t('layout.columns') },
   { mode: 'grid', label: t('layout.grid') },
   { mode: 'steps', label: t('layout.steps') },
-]
-
-const SWATCHES: { name: BackgroundName; label: string; css: string }[] = [
-  { name: 'white', label: t('background.white'), css: '#ffffff' },
-  { name: 'black', label: t('background.black'), css: '#0b0f14' },
-  { name: 'transparent', label: t('background.transparent'), css: '' },
 ]
 
 const STYLES: { key: StylePreset; label: string }[] = [
@@ -40,21 +35,27 @@ export function TopBar({ copied, onCopy }: Props) {
   const store = useBoardStore()
   const [exportOpts, setExportOpts] = useState<ExportOptions>({ scale: 2, format: 'image/png', quality: 0.92 })
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [backgroundMenuOpen, setBackgroundMenuOpen] = useState(false)
   const headerRef = useRef<HTMLElement>(null)
   const caretRef = useRef<HTMLButtonElement>(null)
+  const backgroundBtnRef = useRef<HTMLButtonElement>(null)
 
-  // The bar itself scrolls now (item 3) - if it scrolls while the export
-  // popover is open, the popover (position: fixed, see ExportMenu.tsx)
-  // would visually detach from the caret button that anchored it. Simplest
-  // correct behavior: close it, same as an outside click already does.
+  // The bar itself scrolls now (item 3) - if it scrolls while a popover
+  // anchored to one of its buttons is open, the popover (position: fixed,
+  // see ExportMenu.tsx/BackgroundMenu.tsx) would visually detach from the
+  // button that anchored it. Simplest correct behavior: close it, same as
+  // an outside click already does.
   useEffect(() => {
-    if (!exportMenuOpen) return
+    if (!exportMenuOpen && !backgroundMenuOpen) return
     const header = headerRef.current
     if (!header) return
-    const onScroll = () => setExportMenuOpen(false)
+    const onScroll = () => {
+      setExportMenuOpen(false)
+      setBackgroundMenuOpen(false)
+    }
     header.addEventListener('scroll', onScroll)
     return () => header.removeEventListener('scroll', onScroll)
-  }, [exportMenuOpen])
+  }, [exportMenuOpen, backgroundMenuOpen])
 
   const hasImages = board.nodes.length > 0
 
@@ -84,18 +85,28 @@ export function TopBar({ copied, onCopy }: Props) {
 
       {hasImages && (
         <>
-          <div className="group" aria-label={t('toolbar.background')}>
-            {SWATCHES.map((s) => (
-              <button
-                key={s.name}
-                className={`swatch${s.name === 'transparent' ? ' swatch--transparent' : ''}`}
-                style={s.css ? { background: s.css } : undefined}
-                title={s.label}
-                aria-label={s.label}
-                aria-pressed={isBackground(board.background, s.name)}
-                onClick={() => store.setBackground(s.name)}
+          <div className="background-picker">
+            <button
+              ref={backgroundBtnRef}
+              className="btn"
+              aria-label={t('toolbar.background')}
+              aria-expanded={backgroundMenuOpen}
+              onClick={() => setBackgroundMenuOpen((v) => !v)}
+            >
+              <span
+                className={`swatch swatch--preview${board.background.type === 'transparent' ? ' swatch--transparent' : ''}`}
+                style={backgroundSwatchStyle(board.background)}
               />
-            ))}
+              {t('toolbar.background')}
+            </button>
+            {backgroundMenuOpen && (
+              <BackgroundMenu
+                current={board.background}
+                onChange={(name) => store.setBackground(name)}
+                onClose={() => setBackgroundMenuOpen(false)}
+                anchorRef={backgroundBtnRef}
+              />
+            )}
           </div>
 
           <div className="group" aria-label={t('toolbar.layout')}>
@@ -199,10 +210,4 @@ export function TopBar({ copied, onCopy }: Props) {
       )}
     </header>
   )
-}
-
-function isBackground(current: { type: string; color?: string }, name: BackgroundName): boolean {
-  const target = BACKGROUNDS[name]
-  if (target.type === 'transparent') return current.type === 'transparent'
-  return current.type === 'solid' && current.color === target.color
 }

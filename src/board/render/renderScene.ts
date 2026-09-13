@@ -114,6 +114,14 @@ export function renderScene(ctx: Ctx2D, input: RenderInput, { scale, tiles, offs
   if (input.background.type === 'solid') {
     ctx.fillStyle = input.background.color
     ctx.fillRect(0, 0, input.size.w, input.size.h)
+  } else if (input.background.type === 'gradient') {
+    // Corner-to-corner, not axis-aligned - reads as one consistent diagonal
+    // sweep regardless of the board's own aspect ratio.
+    const g = ctx.createLinearGradient(0, 0, input.size.w, input.size.h)
+    g.addColorStop(0, input.background.from)
+    g.addColorStop(1, input.background.to)
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, input.size.w, input.size.h)
   } else {
     ctx.clearRect(0, 0, input.size.w, input.size.h)
   }
@@ -251,6 +259,9 @@ function drawBadge(ctx: Ctx2D, item: RenderItem, background: Background): void {
   ctx.fillStyle = BADGE_FILL_COLOR
   ctx.fill()
   // A ring keeps the badge legible where it overlaps a dark background.
+  // Only a solid background has one single color to match; transparent and
+  // gradient boards (no fixed color to pick) both fall back to the same
+  // translucent ring, which reads fine against a gradient's whole range.
   ctx.lineWidth = 2
   ctx.strokeStyle = background.type === 'solid' ? background.color : BADGE_RING_ON_TRANSPARENT
   ctx.stroke()

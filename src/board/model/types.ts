@@ -15,6 +15,7 @@ export type ResolvedLayoutMode = Exclude<LayoutMode, 'auto' | 'free'>
 export type Background =
   | { type: 'solid'; color: string }
   | { type: 'transparent' }
+  | { type: 'gradient'; from: string; to: string }
 
 /** How images are framed. Only the shadow is expensive to draw — see ADR-002. */
 export type StylePreset = 'plain' | 'card' | 'soft'
@@ -162,6 +163,16 @@ export const BACKGROUNDS = {
   white: { type: 'solid', color: '#ffffff' },
   black: { type: 'solid', color: '#0b0f14' },
   transparent: { type: 'transparent' },
+  // Six fixed presets, not a custom color picker - same "no decision nothing
+  // asked for yet" scope cut every annotation tool's color choice already
+  // used before this revision reopened it. Board content, so these never
+  // follow the OS theme (same reasoning as --annotation/--checker*).
+  gradientSunrise: { type: 'gradient', from: '#ff5f6d', to: '#ffc371' },
+  gradientOcean: { type: 'gradient', from: '#2193b0', to: '#6dd5ed' },
+  gradientMint: { type: 'gradient', from: '#43e97b', to: '#38f9d7' },
+  gradientBerry: { type: 'gradient', from: '#fc466b', to: '#3f5efb' },
+  gradientDusk: { type: 'gradient', from: '#667eea', to: '#764ba2' },
+  gradientMidnight: { type: 'gradient', from: '#232526', to: '#414345' },
 } as const satisfies Record<string, Background>
 
 export type BackgroundName = keyof typeof BACKGROUNDS

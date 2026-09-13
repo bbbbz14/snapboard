@@ -28,7 +28,8 @@ test('a whole session runs without a single network request', async ({ page, ima
   ]))
   await page.getByRole('button', { name: 'Steps' }).click()
   await page.getByRole('button', { name: 'Soft' }).click()
-  await page.getByRole('button', { name: 'Black' }).click()
+  await page.getByRole('button', { name: 'Background', exact: true }).click()
+  await page.getByRole('button', { name: 'Black', exact: true }).click()
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Download' }).click(),

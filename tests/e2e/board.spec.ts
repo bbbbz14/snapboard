@@ -51,7 +51,10 @@ test('changing layout, background and style redraws the board', async ({ page, i
   await page.getByRole('button', { name: 'Stacked' }).click()
   expect(await sizeOf()).not.toBe(before)
 
-  await page.getByRole('button', { name: 'Black' }).click()
+  // Background is now a popover (item 4 - a picker for 3 flat presets + 6
+  // gradients, not 9 inline swatches), opened from its own toggle button.
+  await page.getByRole('button', { name: 'Background', exact: true }).click()
+  await page.getByRole('button', { name: 'Black', exact: true }).click()
   await page.getByRole('button', { name: 'Soft' }).click()
   await expect(canvas).toBeVisible()
 })

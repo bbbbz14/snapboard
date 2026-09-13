@@ -7,7 +7,7 @@ import { renderScene, type RenderInput } from '@/board/render/renderScene'
 import { TileCache } from '@/board/render/tileCache'
 import { computeLayout, type LayoutItem } from '@/board/layout/computeLayout'
 import { exportBoard, resolveScale } from '@/board/export/exportBoard'
-import { BACKGROUNDS, type StylePreset } from '@/board/model/types'
+import { BACKGROUNDS, type BackgroundName, type StylePreset } from '@/board/model/types'
 import type { Size } from '@/lib/geometry'
 
 async function bitmapOf(w: number, h: number, hue: number): Promise<ImageBitmap> {
@@ -24,7 +24,7 @@ interface SceneSpec {
   sizes: [number, number][]
   mode: 'auto' | 'rows' | 'columns' | 'grid' | 'compare' | 'steps'
   style: StylePreset
-  background: 'white' | 'black' | 'transparent'
+  background: BackgroundName
   gap?: number
   padding?: number
 }
@@ -134,6 +134,29 @@ async function alphaAtCorner(spec: SceneSpec) {
   return { alpha: ctx.getImageData(1, 1, 1, 1).data[3] }
 }
 
+/** Proves the gradient fill actually varies corner-to-corner, not just that
+ * it renders opaque - the parity scene above only proves preview and export
+ * agree with each other, not that either is a real gradient. */
+async function gradientCorners(spec: SceneSpec) {
+  const scene = await buildScene(spec)
+  const { blob } = await exportBoard(scene, { scale: 1, format: 'image/png' })
+  const bm = await createImageBitmap(blob)
+  // Read c.width/height, not bm.width/height, for the corner sample below -
+  // ImageBitmap.close() zeroes those out on at least one engine here, which
+  // silently turned "sample the last pixel" into "sample (-1,-1)" (out of
+  // bounds, always transparent) the first time this was written.
+  const c = new OffscreenCanvas(bm.width, bm.height)
+  const ctx = c.getContext('2d')!
+  ctx.drawImage(bm, 0, 0)
+  bm.close()
+  const topLeft = ctx.getImageData(0, 0, 1, 1).data
+  const bottomRight = ctx.getImageData(c.width - 1, c.height - 1, 1, 1).data
+  return {
+    topLeft: [topLeft[0], topLeft[1], topLeft[2], topLeft[3]],
+    bottomRight: [bottomRight[0], bottomRight[1], bottomRight[2], bottomRight[3]],
+  }
+}
+
 async function exportSizes(spec: SceneSpec) {
   const scene = await buildScene(spec)
   const out: Record<string, unknown> = {}
@@ -147,5 +170,5 @@ async function exportSizes(spec: SceneSpec) {
 const guardScale = ({ size, requested }: { size: Size; requested: number }) => resolveScale(size, requested)
 
 Object.assign(window as unknown as Record<string, unknown>, {
-  harness: { parityWithTiles, badgePixel, alphaAtCorner, exportSizes, guardScale },
+  harness: { parityWithTiles, badgePixel, alphaAtCorner, gradientCorners, exportSizes, guardScale },
 })

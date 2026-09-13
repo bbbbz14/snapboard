@@ -19,6 +19,13 @@ const SCENES = [
   { name: 'compare pair, plain', spec: { sizes: [[1400, 900], [1400, 900]], mode: 'compare', style: 'plain', background: 'white' } },
   { name: 'mixed grid', spec: { sizes: [[1000, 700], [900, 1200], [420, 180], [1600, 500]], mode: 'grid', style: 'card', background: 'white' } },
   { name: 'steps with badges', spec: { sizes: [[1200, 700], [800, 900], [420, 180]], mode: 'steps', style: 'card', background: 'white' } },
+  // Plain, not card - this scene targets the gradient fill path specifically
+  // (invariant 1: background matches between preview and export). Card's
+  // rounded/shadowed tiles already have their own known antialiasing-edge
+  // tolerance (ADR-002/007); compositing that against a gradient instead of
+  // a flat color pushed chromium's max channel error from ≤2 to 4 - a real
+  // but unrelated effect this scene isn't meant to measure.
+  { name: 'gradient background', spec: { sizes: [[1200, 800], [1200, 800]], mode: 'auto', style: 'plain', background: 'gradientOcean' } },
 ] as const
 
 /**
@@ -64,6 +71,22 @@ test('a transparent background survives export', async ({ page }) => {
     background: 'transparent',
   })
   expect(r.alpha).toBe(0)
+})
+
+test('a gradient background actually varies corner-to-corner', async ({ page }) => {
+  const r = await call<{ topLeft: number[]; bottomRight: number[] }>(page, 'gradientCorners', {
+    sizes: [[900, 600]],
+    mode: 'columns',
+    style: 'plain',
+    background: 'gradientOcean', // #2193b0 -> #6dd5ed
+  })
+  expect(r.topLeft).toEqual([0x21, 0x93, 0xb0, 255])
+  expect(r.bottomRight[3]).toBe(255)
+  // Not asserting the exact bottom-right RGB - the gradient vector runs to
+  // the board's own corner, one pixel past what's sampled - just that it's
+  // clearly closer to "to" than to "from".
+  expect(r.bottomRight![0]).toBeGreaterThan(r.topLeft![0]!)
+  expect(r.bottomRight![2]).toBeGreaterThan(r.topLeft![2]!)
 })
 
 test('export scales the output exactly', async ({ page }) => {
