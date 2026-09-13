@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useBoardStore, toRenderInput } from '@/board/store/boardStore'
 import type { LayoutMode, StylePreset } from '@/board/model/types'
 import { exportBoard, exportFilename, estimatePixels, resolveScale, type ExportOptions } from '@/board/export/exportBoard'
@@ -33,6 +33,7 @@ interface Props {
 export function TopBar({ copied, onCopy }: Props) {
   const board = useBoardStore((s) => s.board)
   const store = useBoardStore()
+  const gapId = useId()
   const [exportOpts, setExportOpts] = useState<ExportOptions>({ scale: 2, format: 'image/png', quality: 0.92 })
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [backgroundMenuOpen, setBackgroundMenuOpen] = useState(false)
@@ -109,7 +110,7 @@ export function TopBar({ copied, onCopy }: Props) {
             )}
           </div>
 
-          <div className="group" aria-label={t('toolbar.layout')}>
+          <div className="group" role="group" aria-label={t('toolbar.layout')}>
             {board.layout === 'free' ? (
               // The first manual move/resize flips layout to 'free' (see
               // boardStore.setFrames) - relayout() then refuses to touch the
@@ -135,7 +136,7 @@ export function TopBar({ copied, onCopy }: Props) {
             )}
           </div>
 
-          <div className="group" aria-label={t('toolbar.style')}>
+          <div className="group" role="group" aria-label={t('toolbar.style')}>
             {STYLES.map((s) => (
               <button
                 key={s.key}
@@ -148,9 +149,10 @@ export function TopBar({ copied, onCopy }: Props) {
             ))}
           </div>
 
-          <label className="slider">
+          <label className="slider" htmlFor={gapId}>
             {t('spacing.gapWithPercent', { percent: Math.round((board.gap / GAP_MAX) * 100) })}
             <input
+              id={gapId}
               type="range"
               min={0}
               max={GAP_MAX}

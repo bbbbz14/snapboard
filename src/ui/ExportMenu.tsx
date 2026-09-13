@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import type { Size } from '@/lib/geometry'
 import type { ExportFormat, ExportOptions } from '@/board/export/exportBoard'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { t } from '@/i18n/t'
 
 const SCALES: (1 | 2 | 3)[] = [1, 2, 3]
@@ -24,7 +25,10 @@ interface Props {
  */
 export function ExportMenu({ opts, pixels, downscaledTo, onChange, onClose, anchorRef }: Props) {
   const ref = useRef<HTMLDivElement>(null)
+  const qualityId = useId()
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
+
+  useFocusTrap(ref, anchorRef)
 
   useLayoutEffect(() => {
     const rect = anchorRef.current?.getBoundingClientRect()
@@ -55,11 +59,12 @@ export function ExportMenu({ opts, pixels, downscaledTo, onChange, onClose, anch
       className="export-menu"
       role="dialog"
       aria-label={t('toolbar.exportOptions')}
+      tabIndex={-1}
       style={pos ? { top: pos.top, right: pos.right } : { visibility: 'hidden' }}
     >
       <div className="export-menu__row">
         <span className="export-menu__label">{t('export.format')}</span>
-        <div className="group">
+        <div className="group" role="group" aria-label={t('export.format')}>
           <button className="chip" aria-pressed={opts.format === 'image/png'} onClick={() => setFormat('image/png')}>
             {t('export.formatPng')}
           </button>
@@ -71,7 +76,7 @@ export function ExportMenu({ opts, pixels, downscaledTo, onChange, onClose, anch
 
       <div className="export-menu__row">
         <span className="export-menu__label">{t('export.scale')}</span>
-        <div className="group">
+        <div className="group" role="group" aria-label={t('export.scale')}>
           {SCALES.map((s) => (
             <button key={s} className="chip" aria-pressed={opts.scale === s} onClick={() => setScale(s)}>
               {s}x
@@ -81,9 +86,10 @@ export function ExportMenu({ opts, pixels, downscaledTo, onChange, onClose, anch
       </div>
 
       {opts.format === 'image/jpeg' && (
-        <label className="slider">
+        <label className="slider" htmlFor={qualityId}>
           {t('export.quality')}
           <input
+            id={qualityId}
             type="range"
             min={0.5}
             max={1}

@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { ANNOTATION_COLORS } from '@/board/model/annotationDefaults'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { t } from '@/i18n/t'
 
 interface Props {
@@ -55,7 +56,10 @@ export function AnnotationSettingsPopover({
   anchorRef,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
+  const sizeId = useId()
   const [pos, setPos] = useState<{ bottom: number; left: number } | null>(null)
+
+  useFocusTrap(ref, anchorRef)
 
   useLayoutEffect(() => {
     const rect = anchorRef.current?.getBoundingClientRect()
@@ -97,6 +101,7 @@ export function AnnotationSettingsPopover({
       className="annotation-settings"
       role="dialog"
       aria-label={t('annotate.settings')}
+      tabIndex={-1}
       style={pos ? { bottom: pos.bottom, left: pos.left } : { visibility: 'hidden' }}
     >
       <div className="annotation-settings__row">
@@ -117,9 +122,10 @@ export function AnnotationSettingsPopover({
       </div>
 
       {size != null && sizeRange && (
-        <label className="slider">
+        <label className="slider" htmlFor={sizeId}>
           {t('annotate.size')}
           <input
+            id={sizeId}
             type="range"
             min={sizeRange.min}
             max={sizeRange.max}

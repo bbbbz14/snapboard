@@ -301,6 +301,174 @@ and the two real test-suite bugs this round's own e2e coverage surfaced.
   correctly; Anuphan's own type design is simply a modern, loopless one.
   Not to be re-raised as a font-loading bug.
 
+**Phase 5 item 5 (accessibility pass) is now built and verified, not yet
+pushed to `main` or deployed to the live site, pending the user's
+go-ahead.** All 4 concrete gaps item 1/2's audits found and deliberately
+deferred are closed this session: a new shared hook
+(`src/hooks/useFocusTrap.ts`) gives all three anchored popovers
+(`ExportMenu`, `BackgroundMenu`, `AnnotationSettingsPopover` - not just
+`ExportMenu`, which is the one the audit named, but all three share the
+identical pattern and therefore the identical gap) a real focus trap, focus
+moved in on open, and focus restored to the button that opened them on
+close; `TopBar`'s Layout/Style chip groups (and `ExportMenu`'s
+Format/Scale groups, found to have the same gap while fixing the named
+one) gained `role="group"` next to their existing `aria-label` - a plain
+`<div>` has no implicit role, so `aria-label` alone is commonly dropped by
+screen readers; the gap/quality/annotation-size sliders gained explicit
+`htmlFor`/`id` pairing instead of relying only on implicit label-wrapping;
+and `.text-edit`'s background changed from a 70%-translucent `--surface`
+(real contrast depended on whatever image content sits underneath -
+measured as low as 2.64:1 dark / 3.20:1 light, both failing AA) to a new
+fixed, opaque `--text-edit-bg` token (`#ffffff`, deliberately outside the
+dark-mode block like every other board-content token) chosen to guarantee
+>=4.5:1 against the also-fixed `--annotation` red regardless of theme or
+underlying content - confirmed at exactly 4.83:1 in both themes via a real
+`getComputedStyle`+relative-luminance probe, not just computed on paper.
+A real bug in this session's own new code was caught and fixed before
+declaring it done: the initial "move focus into the popover" call raced
+against the popover's own `visibility:hidden`-until-positioned render and
+the browser's default focus-on-click behavior, so focus silently failed to
+move on the very first attempt - fixed by deferring that call to a
+`requestAnimationFrame`. All of this was verified live via a throwaway
+Playwright script (not committed): focus enters each popover on open, Tab
+never escapes any of the three, focus returns to the triggering button on
+Escape, and the `.text-edit` contrast reads 4.83:1 in both a light- and a
+dark-color-scheme browser context. **Lighthouse itself is not installed in
+this environment**, so the Phase 5-level "a11y > 95" target is closed only
+as "these 4 named gaps are fixed and verified by other means," not by that
+specific tool - worth a real Lighthouse run on a real machine if that exact
+number is ever needed. No new automated test was added - same call item
+2's dark-mode verification pass made for its own no-new-test fixes: these
+are DOM/CSS-level accessibility properties existing e2e specs were never
+asserting on either way, so nothing regressed and nothing new needed
+covering by the suite itself. `npm run verify` green (typecheck + 243 unit
++ 33 renderer parity on 3 engines + 265/270 e2e passed, 5 skipped by
+design, same 5 as always - unchanged counts, confirming nothing else moved).
+See "Phase 5 item 5" below for the full writeup.
+
+### Phase 5 item 5 — done: accessibility pass (4 concrete gaps)
+
+Built this session, verified, not yet pushed to `main` or deployed to the
+live site, pending the user's go-ahead. `npm run verify` green (typecheck +
+243 unit + 33 renderer parity on 3 engines + 265/270 e2e passed, 5 skipped
+by design, same 5 as always).
+
+- **Scope was exactly the 4 gaps item 1's and item 2's own audits already
+  named and deliberately deferred here** - not a fresh audit from scratch.
+  Re-reading those two items' notes first, before touching anything, is
+  what turned this into "close 4 known findings" rather than "re-discover
+  what's wrong."
+- **New shared hook, `src/hooks/useFocusTrap.ts`** - gives a `role="dialog"`
+  popover a real focus trap (Tab/Shift+Tab cycle within it, never escaping
+  to the page behind), moves focus into it on open, and restores focus to
+  whichever element opened it on close. Used by all **three** of the
+  codebase's anchored popovers - `ExportMenu`, `BackgroundMenu`, and
+  `AnnotationSettingsPopover` - not just `ExportMenu`, which is the one
+  item 1/2's audit named. Reading all three confirmed they share the exact
+  same "anchored position + outside-click/Escape closes" pattern (documented
+  in each one's own comments as copied from `ExportMenu`), and therefore the
+  exact same missing-focus-management gap - fixing only the named one would
+  have left the other two (one of them, `AnnotationSettingsPopover`, added
+  *after* the audit that found this) with the identical defect.
+  Since each of these three components only renders while open (the parent
+  does `{open && <Menu .../>}`), mount = open and unmount = close, so a
+  plain mount/unmount effect covers every close path (Escape, outside
+  click, picking an option that calls `onClose`, the anchor button
+  re-toggling, `TopBar`'s scroll-closes-the-popover behavior) for free -
+  no `open` prop had to be threaded into the hook at all.
+- **Real bug in this session's own new code, caught by a throwaway
+  Playwright script before declaring this done, not shipped and found
+  later:** the hook's first version called `.focus()` on the popover's
+  first focusable child synchronously inside its `useEffect`. Two things
+  can beat that call: the popover renders `visibility: hidden` until a
+  separate `useLayoutEffect` measures its anchor button's
+  `getBoundingClientRect()` and sets real coordinates (all three popovers
+  do this - the position depends on where the button that opened them
+  actually is), and a hidden element cannot take focus at all - calling
+  `.focus()` on it is a silent no-op, not an error. Separately, a real
+  browser click's own default action can focus the clicked anchor button
+  itself, and depending on timing that can happen after this effect's
+  synchronous work already ran. A first pass at the verification script
+  showed focus staying on the anchor button in all three popovers -
+  exactly this symptom. **Fixed** by deferring the initial-focus call to a
+  `requestAnimationFrame`, which reliably runs after both the position
+  update and any competing default browser focus behavior have settled.
+  Re-ran the same script after the fix - passed on all three.
+- **`TopBar`'s Layout and Style chip groups gained `role="group"`** next to
+  the `aria-label` they already had - a plain `<div>` has no implicit ARIA
+  role (it computes to `generic`), and `aria-label` on a role-less/generic
+  element is commonly dropped by screen readers rather than exposed as a
+  group name. `AnnotationSettingsPopover`'s own color-swatch group already
+  did this correctly (`role="group"` + `aria-label`, from Phase 5 annotation
+  revision part 1) - grepping for every other `className="group"` in
+  `src/ui/` while fixing the named `TopBar` case turned up `ExportMenu`'s
+  Format and Scale groups had no `role` *or* `aria-label` at all, so those
+  got both, not just the two `TopBar` groups the audit named.
+- **The gap slider (`TopBar`), the JPG-quality slider (`ExportMenu`), and
+  the annotation-size slider (`AnnotationSettingsPopover`) all gained an
+  explicit `htmlFor`/`id` pair** between their wrapping `<label>` and
+  `<input>`, instead of relying only on the implicit association from
+  nesting. All three already had an `aria-label` on the `<input>` too
+  (which wins for accessible-name computation regardless), so this changes
+  nothing about what a screen reader announces - it closes the literal
+  "not *explicitly* associated" gap the audit named, for tools/linters that
+  specifically check for `for`/`id` rather than accepting implicit nesting.
+  Checked against every e2e selector that touches these three sliders
+  (`getByLabel('Gap')`, `getByRole('slider', { name: 'Size' })` ×4 in
+  `annotationSettings.spec.ts`/`annotationEdit.spec.ts`) before making the
+  change - all still pass unchanged, since the `aria-label` (unchanged)
+  is what those selectors were always matching against, not the label
+  text.
+- **`.text-edit`'s contrast fix - the one gap of the 4 that needed a real
+  design decision, not just markup.** The overlay's background was
+  `color-mix(in srgb, var(--surface) 70%, transparent)` - translucent,
+  composited live over whatever image content the user is annotating. Its
+  real contrast against the also-fixed `--annotation` red text therefore
+  depends on the pixels underneath it, which is exactly why item 2's audit
+  measured it as low as 2.64:1 in dark mode and 3.20:1 in light mode (both
+  failing AA 4.5:1) against one particular click point - a different click
+  point could measure better or worse, since nothing about the mechanism
+  guarantees a floor. **Fixed** by making the backing fully opaque instead
+  of translucent: a new token, `--text-edit-bg: #ffffff`, placed in the
+  board-content group in `:root` (deliberately absent from the
+  `prefers-color-scheme: dark` block, same as `--annotation`/`--checker*`
+  right above it) - it has to stay fixed for the same reason `--annotation`
+  does: it exists specifically to guarantee contrast against a color that
+  itself never changes with the theme, so following the theme would
+  reintroduce exactly the failure being fixed in one of the two modes.
+  White against `#dc2626` computes to **~4.83:1 from relative luminance
+  alone** (no compositing left to vary, since the backing is now fully
+  opaque) - confirmed live via `getComputedStyle` + the actual relative-
+  luminance formula in a real browser, in both a light- and dark-
+  color-scheme context, both reading exactly 4.83:1 regardless of what
+  image content sits underneath (unlike before, this is now provably
+  content-independent, not just re-measured at a different point and
+  hoped to generalize).
+- **No new automated test added** - same call item 2's dark-mode
+  verification pass made for its own bug fixes (`.btn--done`'s hover
+  cascade): these are DOM/CSS-level properties (focus location, tab order,
+  role attributes, computed contrast) that no existing e2e spec asserts on
+  either way, so nothing in the suite could have regressed and nothing new
+  needed covering by it. Verification was a throwaway Playwright script
+  (not committed, same disposable-tool pattern the halo-vs-shadow
+  comparison and the Thai-font pixel-diff both used) that drove all three
+  popovers through open → check-focus-is-inside → Tab-loop →
+  Escape → check-focus-restored, plus the `.text-edit` contrast probe in
+  both color schemes.
+- **Deliberately not done, scoped to exactly the 4 named gaps:** no
+  `aria-modal="true"` on the three popovers - they close on outside click
+  like a menu, not only on an explicit dismiss like a true modal dialog, so
+  marking them fully modal to assistive tech would overstate what they
+  actually do; no broader ARIA/keyboard audit beyond what item 1/2 already
+  found (the "partly already true by construction" list in the Phase 5
+  section below - shortcuts, the canvas `aria-live` region,
+  `:focus-visible`, `prefers-reduced-motion` - was re-confirmed still true
+  in passing, not re-built); no Lighthouse run - the tool isn't installed
+  in this environment, so the Phase 5-level "a11y > 95" target is closed
+  only as "these 4 named gaps are fixed and verified by other means," not
+  by that specific number. Worth a real Lighthouse pass on a real machine
+  if that exact score is ever needed.
+
 ### Phase 5 item 4 — done: 6 gradient backgrounds
 
 Built this session, shipped as commit `a8007b5` - not yet pushed to `main`
@@ -2412,24 +2580,11 @@ made so later items can build on earlier ones instead of redoing them:
    became a popover (`BackgroundMenu.tsx`, the `ExportMenu` pattern) instead
    of growing the inline swatch row, so this doesn't make the standing
    mobile-overflow finding worse.
-5. ⬜ **Accessibility pass** (focus rings, ARIA, full keyboard
-   operability). Partly already true by construction (every Phase 2–4
-   tool has a keyboard shortcut, canvas already gets an `aria-live` status
-   region - see item 2's own note under Phase 2 above; `:focus-visible`
-   outlines, `prefers-reduced-motion`, and `aria-label`/`aria-pressed` on
-   every component already exist too). **Four concrete gaps were found
-   during item 1's and item 2's audits and deliberately left here rather
-   than fixed in passing:** `ExportMenu` has `role="dialog"` but no focus
-   trap and does not restore focus on close; the `TopBar` chip groups have
-   no `role="group"` + label, so a screen reader reads five unrelated
-   buttons; the gap slider has no explicitly associated label; and the
-   text-edit overlay (`.text-edit`) measures **2.64:1 contrast in dark mode
-   and 3.20:1 in light mode** (both below AA, measured via a real
-   `getImageData` pixel probe against the actual composited background, see
-   "Phase 5 item 2" under START HERE) - a pre-existing gap in both themes,
-   not something dark mode introduced. Item 1 closed the *chrome* contrast
-   half of this item (see its note) - these four are what's left, plus the
-   Lighthouse a11y > 95 check itself.
+5. ✅ **Accessibility pass** (the 4 concrete gaps item 1/2's audits found).
+   Done - see "Phase 5 item 5" under START HERE above. Lighthouse itself
+   isn't installed in this environment, so the a11y > 95 target is still
+   unmeasured by that specific tool - the 4 named gaps are closed and
+   verified by other means (see the note).
 6. ⬜ **Friendly error messages everywhere.** Audit every existing
    toast/rejection message (`src/i18n/en.ts`'s `toast.rejected.*` etc.) for
    tone, not just correctness - most already exist from Phase 1, so this is

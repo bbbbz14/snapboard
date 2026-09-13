@@ -63,6 +63,18 @@
      both of which promise "this is the red that will be drawn". Lightening it
      in dark mode would make that promise false. */
   --annotation: #dc2626;
+  /* Opaque and fixed, not `--surface` translucent-over-content, specifically
+     for `.text-edit` below: the live textarea overlay sits on top of
+     arbitrary image content, so a translucent backing's real contrast against
+     the also-fixed `--annotation` red depends on whatever pixels happen to be
+     underneath - measured as low as 2.64:1 in dark mode / 3.20:1 in light mode
+     (Phase 5 item 2's audit), both below AA regardless of theme. An opaque
+     white guarantees >=4.5:1 against #dc2626 (~4.83:1, computed from relative
+     luminance, not sampled - exact because there's no compositing left to
+     vary) no matter what's drawn underneath or which theme is active, so it
+     has to stay out of the dark-mode block same as every other board-content
+     token above.  */
+  --text-edit-bg: #ffffff;
   --checker: #c9cfd8;
   --checker-base: #ffffff;
   --checker-image: linear-gradient(45deg, var(--checker) 25%, transparent 25%),
@@ -555,7 +567,7 @@ body {
   min-height: 1.35em;
   border: 1px dashed var(--accent);
   border-radius: 4px;
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  background: var(--text-edit-bg);
   color: var(--annotation);
   font-family: 'Snapboard Annotation', ui-sans-serif, system-ui, sans-serif;
   font-weight: 600;

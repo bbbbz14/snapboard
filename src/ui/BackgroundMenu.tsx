@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { BACKGROUNDS, type Background, type BackgroundName } from '@/board/model/types'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { t } from '@/i18n/t'
 
 const NAMES = Object.keys(BACKGROUNDS) as BackgroundName[]
@@ -41,6 +42,8 @@ export function BackgroundMenu({ current, onChange, onClose, anchorRef }: Props)
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
+  useFocusTrap(ref, anchorRef)
+
   useLayoutEffect(() => {
     const rect = anchorRef.current?.getBoundingClientRect()
     if (rect) setPos({ top: rect.bottom + 6, left: rect.left })
@@ -72,6 +75,7 @@ export function BackgroundMenu({ current, onChange, onClose, anchorRef }: Props)
       className="background-menu"
       role="dialog"
       aria-label={t('toolbar.background')}
+      tabIndex={-1}
       style={pos ? { top: pos.top, left: pos.left } : { visibility: 'hidden' }}
     >
       {NAMES.map((name) => (
