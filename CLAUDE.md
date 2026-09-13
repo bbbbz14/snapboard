@@ -134,7 +134,216 @@ confirmed on a real desktop build that DevTools wins, so this is now a known,
 accepted limitation (see Phase 2 item 9's note and the shortcut cheatsheet,
 Phase 5 item 8), not a thing to test or fix.
 
+**A second round of real-usage feedback (2026-09-13, later the same day) -
+four things fixed/shipped in one combined commit (`2950020`), pushed to
+`main`, and deployed to the live site.** Push and deploy both worked cleanly
+on the first try; the `gh-pages` branch's own last commit reads
+`Deploy 2950020` (confirmed via `git fetch origin gh-pages` + `git log`) and
+a same-session `curl -o /dev/null -w '%{http_code}'` for `/` returned a
+fresh `200` - the served bundle hash hadn't rolled over yet at that exact
+moment, same CDN-cache caveat as always (see "Live site status" below), not
+a deploy failure. `npm run verify` green (typecheck + 237 unit + 27
+renderer parity on 3 engines + 261 e2e - 256 passed, 5 skipped by design,
+same 5 as always - this round added 5 new unit cases plus a new
+`tests/e2e/annotationEdit.spec.ts` with 3 cases × 3 engines = 9, all green
+on the first full run after fixing the issues described below). See
+"Real-usage feedback round 2" below for the full writeup of all four items
+and the two real test-suite bugs this round's own e2e coverage surfaced.
+
+- **Board auto-fit to content** - closes the exact bug reported: rearranging
+  a taller multi-row auto-layout into one shorter row by hand used to leave
+  the old, larger canvas behind as dead margin in every export/copy, because
+  `board.size` was frozen the instant the board left auto mode (invariant 4
+  only ever protected frames, not size). `setFrames` now re-fits `board.size`
+  to the content's own bounding box + padding on every manual move/resize.
+- **Auto-layout `rows` mode no longer depends on file order** - dropping
+  files and picking them via "Choose files" could produce a different,
+  worse arrangement for the *identical* set of images, because the OS gives
+  each path a different file order and the old greedy row-packer had no
+  look-ahead. It now sorts a copy by aspect ratio before packing.
+- **Already-placed annotations can now be recolored/resized without being
+  deleted and redrawn** - a new "Edit style" button in `SelectionToolbar`,
+  shown for a single selected arrow/box/text/marker/redact, opens the same
+  popover `AnnotationToolbar` uses but edits that node directly.
+- **Text's white halo (part 2, right above) was replaced with a soft
+  drop-shadow** - live-compared against real screenshot content, not just
+  the synthetic gradient backdrop the halo itself was chosen on, and judged
+  "cheap-looking" - see "Real-usage feedback round 2" for the comparison
+  method and the exact values chosen.
+- **Investigated and closed, not a bug:** the deployed Thai text looked
+  like a generic system font with no "hua" (the loop Thai consonants
+  traditionally carry) instead of the premium Inter+Anuphan pairing - a
+  pixel-diff check (see below) proved it *is* Anuphan, loading and applying
+  correctly; Anuphan's own type design is simply a modern, loopless one.
+  Not to be re-raised as a font-loading bug.
+
+### Real-usage feedback round 2 — done: board auto-fit, order-independent layout, edit-in-place annotation style, drop-shadow text, font check
+
+Built this session, shipped as commit `2950020`, pushed to `main`, and
+deployed to the live site - see the note under START HERE above for the
+push/deploy confirmation and `npm run verify` counts.
+
+- **Board auto-fit to content (`fitBoardToContent` in `boardStore.ts`).**
+  The user's repro: drop 2 tall portrait screenshots + 1 long horizontal one,
+  auto-layout picks `rows` and (depending on file order) ends up putting the
+  portraits in one row and the wide one in a second row below - a taller
+  board than the user wants. Dragging the wide one up next to the portraits
+  to make one short horizontal strip by hand correctly switches the board
+  to `'free'` (invariant 4), but `board.size` used to stay frozen at the
+  *old*, taller value forever after - relayout() only skips recomputing
+  frames for a free board, and there was nothing else that ever revisited
+  `size`. Every export/copy from then on carried dead margin above/below the
+  actual content. `setFrames` now finishes by calling `fitBoardToContent`,
+  which measures the bounding box of every node's frame (images *and*
+  annotations - an annotation sitting outside the image area must still
+  count, or the fit could clip it) and, if the box's extent actually
+  changed, resizes `board.size` to `bounds + padding*2` and **translates
+  every node by the same (dx, dy)** so the arrangement itself never moves
+  relative to itself - only the shared canvas origin shifts, exactly like
+  `computeLayout.ts`'s own `finalize()` already does to an auto layout's
+  internal coordinates. Deliberately narrow-scoped to `setFrames` only (the
+  exact commit path the bug report hit) - `deleteSelected`/
+  `duplicateSelected`/`commitCrop` can theoretically leave `'free'`-mode dead
+  space too (e.g. deleting the bottom-most node), but that's a different,
+  not-yet-reported gap and adding it there wasn't asked for.
+- **This one change had a wide, mostly-mechanical test-suite blast radius,
+  worth remembering before touching `setFrames` again:** every existing
+  unit test that calls `setFrames` and then asserts an exact absolute frame
+  value needed updating, because the fit now re-centers content to sit
+  exactly `padding` from the edge whenever the bounding box's own extent
+  changes - `tests/unit/boardStore.test.ts`'s fix was to read the *shift*
+  off an untouched sibling node (e.g. the still-there image) rather than
+  hardcode the new numbers. More seriously, **4 pre-existing e2e tests**
+  (`moveResize.spec.ts`, `marker.spec.ts`, `selectionActions.spec.ts`,
+  `shortcuts.spec.ts`) broke because they compute page-pixel coordinates
+  *before* a drag and reuse them *after* it - previously safe, since a move
+  never used to change `board.size` or the camera's fit-to-view zoom. Now
+  that it can, those coordinates go stale the instant the board resizes.
+  Fixed by re-measuring the relevant node's/board's on-screen rect live
+  *after* the move in all four, rather than reusing pre-move numbers - see
+  each file's own diff for the exact technique (`selectionScreenRect`/
+  `pageRect` called again post-move). One test's own *premise* had to change
+  outright: `moveResize.spec.ts`'s "shrinking from a corner handle uncovers
+  the board behind it" used a single-image board, where shrinking the only
+  image now *also* shrinks the board to match (the fix working exactly as
+  intended) - rewritten to use two stacked images instead, so the untouched
+  second image still anchors the bounding box and the original "reveals
+  background, board stays the same size" assertion is still a real, correct
+  invariant to check.
+- **Auto-layout `rows` mode is no longer sensitive to input order
+  (`layoutRows` in `computeLayout.ts`).** Root cause, confirmed by reading
+  the actual code path both ways: drag-drop reads file order from
+  `DataTransferItemList` (`useImageInput.ts`), the "Choose files" button
+  reads it from the OS dialog's own `FileList` (`EmptyState.tsx`) - two
+  different orderings for the identical set of files, both feeding
+  `addFiles` with zero reordering anywhere in between. `layoutRows`'s
+  packer is a single-pass greedy bin-fill with no look-ahead, so which
+  images end up sharing a row (and therefore how good the result looks) was
+  a direct function of that arbitrary order. Fixed by having `layoutRows`
+  pack a copy sorted by aspect ratio (`[...items].sort(...)`, stable, so
+  already-adjacent similarly-shaped images keep their relative order)
+  instead of `items` as given - the same set of images now always produces
+  the same grouping regardless of which order they arrived in. Deliberately
+  scoped to `rows` only: `steps`/`columns` intentionally preserve the user's
+  own drop order (it's what numbering means in `steps`), and `grid` is only
+  ever chosen when shapes are already similar, so order barely matters
+  there. `tests/unit/computeLayout.test.ts` gained a case that runs every
+  permutation of a 2-portrait + 1-very-wide set (the user's own repro shape)
+  through `computeLayout` and asserts the row-membership pattern (which
+  images share a row with which) is identical across all of them, and that
+  the resulting canvas size doesn't change either - not a byte-for-byte
+  `toEqual` on the frames themselves, since two same-shaped portraits
+  swapping which one lands on the left is cosmetically arbitrary and *does*
+  differ between permutations.
+- **Already-placed annotations can now be recolored/resized in place,
+  reopening a cut Phase 4/annotation-revision-part-1 made ("no post-hoc
+  editing beyond text content - delete and redraw").** New store actions
+  `setNodeColor(id, color)` and `setNodeSize(id, size)` (`boardStore.ts`),
+  distinct from `setToolColor`/`setToolSize` which only ever change the
+  *next* tool default (`toolSettings`) - these mutate the selected node's
+  own fields directly. `setNodeSize` handles arrow/box (their own `size`
+  field, clamped) and marker (no `size` field - see `MarkerNode`'s own
+  note - so it recomputes `frame` via `markerFrame` centered on the
+  *unchanged* center point) but deliberately not text: a font-size change
+  also changes the wrapped line count, which needs a real `measureText`
+  only `BoardCanvas` has, so `commitText` gained an optional 4th `size`
+  parameter instead, and `BoardCanvas`'s new `onStyleSizeChange` computes
+  the new wrapped `frame.h` the same way `finishEditingText` already does
+  before calling it. Redact keeps color-only, same as every other tool's
+  settings popover. New `SelectionToolbar` prop `style` (a `StyleTarget` -
+  color, size-or-null, size-range-or-null) drives a new settings button,
+  reusing `AnnotationSettingsPopover` completely unchanged - that component
+  never actually depended on "tool" vs "node" as a concept, just color/size
+  values and callbacks, so no changes to it were needed at all.
+- **Real bug this surfaced, caught by a strict-mode Playwright error, not
+  by reasoning:** the new button's accessible name ("Edit style") and
+  `AnnotationToolbar`'s existing one ("Style") both exist in the DOM at
+  once the instant a one-shot tool's shape is left selected (every tool
+  here) - fine as distinct exact names, but `tests/e2e/annotationSettings.spec.ts`'s
+  own `settingsButton` helper queried `getByRole('button', { name: 'Style' })`
+  *without* `exact: true`, and Playwright's non-exact name matching is
+  substring-based, so "Style" matched "Edit style" too. Fixed by adding
+  `exact: true` to that one pre-existing helper - the two buttons' names are
+  fine as they are, this was purely a test-selector fix.
+- **Text's white halo (from part 2, above) replaced with a soft
+  drop-shadow** (`TEXT_SHADOW_COLOR = 'rgba(0, 0, 0, 0.45)'`,
+  `TEXT_SHADOW_BLUR = 6`, `TEXT_SHADOW_OFFSET_Y = 2` in `render/text.ts`,
+  via `ctx.shadowBlur`/`shadowOffsetY` around a single `fillText` - no more
+  `strokeText` pass at all). The halo had been chosen over a shadow in
+  part 2's own live comparison, but that comparison was judged on a
+  synthetic gradient backdrop; seeing the halo on real screenshot content
+  this session, the user judged it "cheap-looking, like a plain stroke."
+  Compared three options again, properly this time - a thinner halo, the
+  original halo, and a soft shadow - via a throwaway self-contained
+  HTML/canvas comparison page (`scratch-text-treatment-comparison.html`,
+  repo-root, untracked, not committed - delete it or leave it, it's
+  disposable) rendering all three across a busy gradient, a light UI-style
+  screenshot, and a photo-like backdrop, using the app's own exact canvas
+  primitives (`ctx.strokeText`/`ctx.shadowBlur`, not CSS `text-shadow`) so
+  the comparison wasn't itself misleading about what would actually render.
+  **User's call: the soft shadow.** Not scaled by font size (unlike the
+  halo's stroke width) - a shadow's softness doesn't need to track glyph
+  size to keep reading correctly across `ANNOTATION_SIZE_RANGE.text`, and
+  `STYLE_PRESETS`' own image-shadow values (card/soft) are fixed regardless
+  of image size for the same reason. Verified at both 1x preview and a real
+  3x download (not just visual inspection at 1x) that the shadow scales
+  sensibly rather than reading thinner/thicker relative to the enlarged
+  text - it does, matching the existing image-shadow code's own established
+  (and already cross-engine-tested) use of the identical `ctx.shadowBlur`
+  mechanism.
+- **Investigated and closed: the deployed Thai text is not falling back to
+  a system font - it really is Anuphan, verified by a pixel-diff, not just
+  re-reading the CSS.** The user's report: on the live site, Thai text
+  annotations render in a font with no "hua" (the loop/curl Thai
+  consonants like ก/ถ/ภ traditionally carry) - looked like a fallback, not
+  the "premium" pairing item 3 of Phase 4 built. Checked for real against
+  the live URL: `document.fonts` shows both faces `status: "loaded"`
+  (200 responses for both `.woff2` files, confirmed via a real Playwright
+  session against `https://snapboard.kaomatumaraiwa.com`, not just reading
+  the bundler output) - so the font *is* loading. The decisive check:
+  rendered the same Thai string three ways on the live page - through the
+  app's actual `"Snapboard Annotation"` family, through Anuphan's own
+  `.woff2` loaded directly under a distinct throwaway `FontFace` name, and
+  through the plain system-font fallback stack - and diffed the resulting
+  `getImageData` pixel buffers. The app's rendering and the directly-loaded
+  Anuphan came back **byte-for-byte identical** (`diff: 0`); both differed
+  hugely from the system fallback (`diff: ~350000`). Conclusion: this is
+  Anuphan's own genuine type design - a modern, loopless Thai letterform
+  style, a real and increasingly common design choice for contemporary Thai
+  UI fonts - correctly loading and correctly applied, not a bug. (Separately,
+  the throwaway comparison page built for the halo-vs-shadow decision above
+  used a generic system-font stack rather than the real Anuphan/Inter
+  @font-face, which is why *that* page's Thai sample looked different from
+  the live site - a limitation of that one comparison tool, not evidence of
+  anything wrong with the deployed app.) Not to be re-raised as a
+  font-loading bug; a *preference* for a looped Thai font instead would be
+  a new, separate design decision, not something this investigation itself
+  calls for.
+
 ### Phase 5 annotation revision, part 2 — done: two part-1 bugs fixed, halo added
+**(The halo this section describes was replaced by a soft drop-shadow later
+the same day - see "Real-usage feedback round 2" above. Left unedited here
+as the historical record of why a halo was tried first.)**
 
 Built this session, shipped as commit `b6f1d5c`, pushed to `main`, and
 deployed to the live site. Push and deploy both worked cleanly on the first
@@ -1693,26 +1902,26 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–3 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes), and parts 1–2 of the annotation revision (color + size for every tool, plus the two part-1 bug fixes and the text halo)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–3 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes), parts 1–2 of the annotation revision (color + size for every tool, plus the two part-1 bug fixes), and "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after the annotation revision's part 2 commit (`b6f1d5c`, two part-1
-bug fixes plus the text halo, see the START HERE note above), and both
-worked cleanly again on the first try (no re-auth, no DNS re-check
-needed). Live site now serves all of Phase 2 (items 1–9), the Clear board
-addition, Phase 3, the complete Phase 4 (items 1–6), Phase 5 items 1–3, and
-annotation-revision parts 1–2. Deploy script itself reported success
+right after "real-usage feedback round 2"'s commit (`2950020`, see the
+START HERE note above), and both worked cleanly again on the first try (no
+re-auth, no DNS re-check needed). Live site now serves all of Phase 2
+(items 1–9), the Clear board addition, Phase 3, the complete Phase 4
+(items 1–6), Phase 5 items 1–3, annotation-revision parts 1–2, and
+real-usage feedback round 2. Deploy script itself reported success
 (`Published.` + the live URL); the `gh-pages` branch's own last commit reads
-`Deploy b6f1d5c` (confirmed via `git fetch origin gh-pages` + `git log`, not
+`Deploy 2950020` (confirmed via `git fetch origin gh-pages` + `git log`, not
 just the deploy script's own message) and a same-session
 `curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. (The
 custom domain sits behind a CDN edge cache with a 10-minute
 `max-age`, so a stale bundle hash can be observed for a few minutes right
 after a deploy — not a deploy failure, just propagation - worth a re-check
 next session if in doubt about the *bundle* specifically, as opposed to the
-page. This session actually observed it: the root `curl` came back `200`
+page. This kept happening again this round: the root `curl` came back `200`
 immediately, but the bundle hash in the served HTML still matched the
 *previous* build for a few minutes, while the `gh-pages` branch itself
 already had the new one.)
