@@ -136,15 +136,19 @@ transient "Npx" badge near the toolbar. See "Phase 5 annotation revision,
 part 2" below for the full writeup of both, plus the halo work.
 
 **Phase 5 item 4 (6 gradient backgrounds) is now built and verified, shipped
-as commit `a8007b5` - not yet pushed to `main` or deployed to the live
-site**, pending the user's go-ahead (same "check first, outward-facing
-actions aren't automatic" rule the guide already states below). `npm run
-verify` green (typecheck + 243 unit + 33 renderer parity on 3 engines - 11
-scenes now, up from 10, the new one is a plain-style gradient scene added
-specifically for this item - + 256/261 e2e passed, 5 skipped by design, same
-5 as always). See "Phase 5 item 4" below for the full writeup, including two
-real bugs this item's own new tests caught in themselves (not in the app)
-before it was declared done.
+as commits `a8007b5` (feature) and `0bd757a` (this Guide) - held un-pushed
+and un-deployed per the user's explicit instruction (2026-09-13) to update
+this Guide and continue in a fresh session**, the same pattern item 3 used
+earlier in this same phase. **The next session's first action, on the
+user's approval, should be `git push origin master:main` then `bash
+scripts/deploy-pages.sh`** - both are one command away and nothing else is
+blocking them; see "Live site status" below for the exact commands and the
+CDN-cache caveat. `npm run verify` green (typecheck + 243 unit + 33
+renderer parity on 3 engines - 11 scenes now, up from 10, the new one is a
+plain-style gradient scene added specifically for this item - + 256/261 e2e
+passed, 5 skipped by design, same 5 as always). See "Phase 5 item 4" below
+for the full writeup, including two real bugs this item's own new tests
+caught in themselves (not in the app) before it was declared done.
 
 Still open and still needing the user: the Slack/LINE/Jira/Gmail/Word/Figma/
 Google Docs paste results table. Not doable from inside this environment.
