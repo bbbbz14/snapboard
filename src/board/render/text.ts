@@ -16,10 +16,17 @@ const TEXT_FONT_WEIGHT = 600
 
 /** Breathing room inside the frame so glyphs don't touch its edges. */
 export const TEXT_PADDING = 8
-/** Fixed width for a freshly-placed text box - not user-resizable, same
- * scope cut arrow/box already made for their own geometry. Height instead
- * grows automatically with the wrapped line count, computed by `textHeight`. */
-export const TEXT_DEFAULT_WIDTH = 240
+/** Width bounds for the "grows with content" model (Phase 5 annotation
+ * revision part 3) - a text box is never user-resized directly (same scope
+ * cut arrow/box already made for their own geometry), but unlike the old
+ * fixed 240px width, it now tracks its own content: starting at
+ * `TEXT_MIN_WIDTH` when empty, growing horizontally with each keystroke to
+ * fit the widest unwrapped line, and stopping at `TEXT_MAX_WIDTH` - beyond
+ * that point `wrapText` takes over instead of the box growing further.
+ * Height still grows automatically with the wrapped line count, computed by
+ * `textHeight`, unchanged from before. */
+export const TEXT_MIN_WIDTH = 32
+export const TEXT_MAX_WIDTH = 480
 
 export function textFont(fontSize: number): string {
   return `${TEXT_FONT_WEIGHT} ${fontSize}px ${TEXT_FONT_FAMILY}`
@@ -109,6 +116,22 @@ function wrapParagraph(measure: (s: string) => number, paragraph: string, maxWid
   }
   pushLine(current)
   return lines
+}
+
+/**
+ * The width a text box should be to fit `text` on unwrapped lines, clamped
+ * to [`TEXT_MIN_WIDTH`, `TEXT_MAX_WIDTH`] - callers recompute this on every
+ * keystroke (see BoardCanvas's `onTextEditChange`) so the box grows *and
+ * shrinks* horizontally as content changes, the same way Lightshot's own
+ * text tool behaves. Only measures each `\n`-delimited line as a whole, not
+ * through `wrapText` - the point of this function is to find the width that
+ * would make wrapping unnecessary in the first place; once the natural width
+ * would exceed `TEXT_MAX_WIDTH`, this returns the max and `wrapText` (using
+ * that same max as its `maxWidth`) takes over instead.
+ */
+export function textAutoWidth(measure: (s: string) => number, text: string): number {
+  const widest = Math.max(0, ...text.split('\n').map((line) => measure(line)))
+  return Math.min(TEXT_MAX_WIDTH, Math.max(TEXT_MIN_WIDTH, widest + TEXT_PADDING * 2))
 }
 
 function breakToWidth(measure: (s: string) => number, token: string, maxWidth: number): string[] {

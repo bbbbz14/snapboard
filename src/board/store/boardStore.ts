@@ -193,11 +193,12 @@ interface BoardState {
    * and same layout-preserving reasoning as `addArrow`. */
   addBox: (start: Point, end: Point) => void
   /** Creates a new text node (`id: null`) or re-commits an existing one after
-   * a re-edit, in both cases with `frame` already reflecting the final
-   * wrapped height - BoardCanvas computes that via `wrapText`/`textHeight`
-   * (render/text.ts) using the same measurement `drawText` uses, since the
-   * store itself stays free of any canvas/DOM dependency (unlike geometry,
-   * text layout needs a real `measureText`, which only the caller has).
+   * a re-edit, in both cases with `frame` already reflecting the box's
+   * content-fitted width and final wrapped height - BoardCanvas computes
+   * both via `textAutoWidth`/`wrapText`/`textHeight` (render/text.ts) using
+   * the same measurement `drawText` uses, since the store itself stays free
+   * of any canvas/DOM dependency (unlike geometry, text layout needs a real
+   * `measureText`, which only the caller has).
    * Trimmed-empty text creates nothing (`id: null`) or deletes the node
    * (`id` given) - same "a stray click creates nothing" rule arrow/box use,
    * extended to "an emptied-out text box doesn't linger as a blank

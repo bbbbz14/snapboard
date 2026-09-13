@@ -10,7 +10,7 @@ import { snapMove, type SnapGuide } from '@/board/interact/snap'
 import { strokeArrow } from '@/board/render/arrow'
 import { strokeBox } from '@/board/render/box'
 import { fillRedact } from '@/board/render/redact'
-import { TEXT_DEFAULT_WIDTH, TEXT_PADDING, ensureAnnotationFont, textFont, textHeight, textLineHeight, wrapText } from '@/board/render/text'
+import { TEXT_MIN_WIDTH, TEXT_PADDING, ensureAnnotationFont, textAutoWidth, textFont, textHeight, textLineHeight, wrapText } from '@/board/render/text'
 import type { Board, NodeId } from '@/board/model/types'
 import { boardToScreen, fitCamera, panBy, screenToBoard, zoomAt, type Camera } from '@/board/view/camera'
 import type { Point, Rect } from '@/lib/geometry'
@@ -725,10 +725,12 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       }
 
       if (tool === 'text') {
-        // No drag to track - a single click is enough to place a fixed-width
-        // box (see TEXT_DEFAULT_WIDTH); the tool reverts to 'select'
-        // immediately, same one-shot pattern as arrow/box, but the actual
-        // store commit waits until editing finishes (see finishEditingText).
+        // No drag to track - a single click is enough to place a box that
+        // starts at TEXT_MIN_WIDTH (empty text has nothing to fit yet) and
+        // grows with what's typed (see textAutoWidth); the tool reverts to
+        // 'select' immediately, same one-shot pattern as arrow/box, but the
+        // actual store commit waits until editing finishes (see
+        // finishEditingText).
         // `preventDefault` matters here in a way it doesn't for arrow/box:
         // a plain mousedown's own default action is to shift focus to
         // document.body (canvas isn't focusable) once this event finishes
@@ -739,7 +741,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         // would exist for a single frame and then vanish, having "committed"
         // itself with whatever (empty) text it had at that instant.
         e.preventDefault()
-        setEditingText({ id: null, point: toBoardPoint(e), width: TEXT_DEFAULT_WIDTH, text: '', fontSize: toolSettings.text.size })
+        setEditingText({ id: null, point: toBoardPoint(e), width: TEXT_MIN_WIDTH, text: '', fontSize: toolSettings.text.size })
         setTool('select')
         return
       }
@@ -1168,8 +1170,20 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     [cancelEditingText, finishEditingText],
   )
 
+  // Recomputes the box's width on every keystroke (see textAutoWidth) so it
+  // grows - and shrinks, on a delete - horizontally with the content, up to
+  // TEXT_MAX_WIDTH, instead of the old fixed 240px. The height auto-grow
+  // below (native textarea scrollHeight) is unrelated and unchanged.
   const onTextEditChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
-    setEditingText((current) => (current ? { ...current, text: e.target.value } : current))
+    const text = e.target.value
+    const ctx = canvasRef.current?.getContext('2d')
+    setEditingText((current) => {
+      if (!current) return current
+      if (!ctx) return { ...current, text }
+      ctx.font = textFont(current.fontSize)
+      const width = textAutoWidth((s) => ctx.measureText(s).width, text)
+      return { ...current, text, width }
+    })
     e.target.style.height = 'auto'
     e.target.style.height = `${e.target.scrollHeight}px`
   }, [])
@@ -1203,9 +1217,13 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         if (!ctx) return
         const clamped = clampAnnotationSize('text', size)
         ctx.font = textFont(clamped)
-        const maxWidth = Math.max(1, selectedNode.frame.w - TEXT_PADDING * 2)
+        // Refits width too, not just height - a bigger font needs more room
+        // to stay unwrapped, the same "grows with content" rule typing
+        // itself already follows (see onTextEditChange/textAutoWidth).
+        const width = textAutoWidth((s) => ctx.measureText(s).width, selectedNode.text)
+        const maxWidth = Math.max(1, width - TEXT_PADDING * 2)
         const lines = wrapText((s) => ctx.measureText(s).width, selectedNode.text, maxWidth)
-        commitText(selectedNode.id, { ...selectedNode.frame, h: textHeight(lines.length, clamped) }, selectedNode.text, clamped)
+        commitText(selectedNode.id, { ...selectedNode.frame, w: width, h: textHeight(lines.length, clamped) }, selectedNode.text, clamped)
         return
       }
       setNodeSize(selectedNode.id, size)

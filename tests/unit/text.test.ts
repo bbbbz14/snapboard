@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { textHeight, textLineHeight, wrapText } from '@/board/render/text'
+import { TEXT_MAX_WIDTH, TEXT_MIN_WIDTH, TEXT_PADDING, textAutoWidth, textHeight, textLineHeight, wrapText } from '@/board/render/text'
 import { ANNOTATION_SIZE_RANGE } from '@/board/model/annotationDefaults'
 
 const FONT_SIZE = ANNOTATION_SIZE_RANGE.text.default
@@ -81,5 +81,36 @@ describe('textHeight', () => {
 describe('textLineHeight', () => {
   it('scales with font size', () => {
     expect(textLineHeight(40)).toBeGreaterThan(textLineHeight(14))
+  })
+})
+
+describe('textAutoWidth', () => {
+  it('clamps empty text to the minimum width', () => {
+    expect(textAutoWidth(monospace(10), '')).toBe(TEXT_MIN_WIDTH)
+  })
+
+  it('fits a short line exactly, padding included', () => {
+    expect(textAutoWidth(monospace(10), 'hi')).toBe(20 + TEXT_PADDING * 2)
+  })
+
+  it('grows with more content', () => {
+    const short = textAutoWidth(monospace(10), 'hi')
+    const longer = textAutoWidth(monospace(10), 'hello there')
+    expect(longer).toBeGreaterThan(short)
+  })
+
+  it('shrinks back down when content shrinks', () => {
+    const long = textAutoWidth(monospace(10), 'a fairly long line of text')
+    const short = textAutoWidth(monospace(10), 'hi')
+    expect(short).toBeLessThan(long)
+  })
+
+  it('caps at TEXT_MAX_WIDTH instead of growing forever', () => {
+    const huge = 'x'.repeat(200)
+    expect(textAutoWidth(monospace(10), huge)).toBe(TEXT_MAX_WIDTH)
+  })
+
+  it('uses the widest of several explicit lines, not the last one', () => {
+    expect(textAutoWidth(monospace(10), 'short\na much longer line\nmid')).toBe(textAutoWidth(monospace(10), 'a much longer line'))
   })
 })

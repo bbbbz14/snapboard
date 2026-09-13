@@ -74,11 +74,13 @@ export interface BoxNode {
 
 /** A short text label - "ข้อความ" in the product plan's Phase 4 feature
  * list. Like `BoxNode`, `frame` is not derived: `x`/`y` are where the user
- * clicked to place it and `w` is fixed at creation, so every generic
- * frame-based helper (move, duplicate, hitTest) already does the right
- * thing with no per-kind branch. `h` is the one field that isn't fixed - it
- * tracks the wrapped line count and is recomputed (via `textHeight` in
- * render/text.ts) every time `text` changes, not just once at creation. */
+ * clicked to place it, so every generic frame-based helper (move, duplicate,
+ * hitTest) already does the right thing with no per-kind branch. Unlike
+ * `BoxNode`, neither `w` nor `h` is fixed at creation - both track the
+ * content, growing (and shrinking) with it: `w` fits the widest unwrapped
+ * line up to a cap, `h` fits the resulting wrapped line count (via
+ * `textAutoWidth`/`textHeight` in render/text.ts), recomputed every time
+ * `text` changes, not just once at creation. */
 export interface TextNode {
   kind: 'text'
   id: NodeId
