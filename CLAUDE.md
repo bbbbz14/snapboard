@@ -135,23 +135,120 @@ all unless the popover happened to already be open - fixed with a small
 transient "Npx" badge near the toolbar. See "Phase 5 annotation revision,
 part 2" below for the full writeup of both, plus the halo work.
 
-**Phase 5 item 4 (6 gradient backgrounds) is now built and verified, shipped
-as commits `a8007b5` (feature) and `0bd757a` (this Guide) - held un-pushed
-and un-deployed per the user's explicit instruction (2026-09-13) to update
-this Guide and continue in a fresh session**, the same pattern item 3 used
-earlier in this same phase. **The next session's first action, on the
-user's approval, should be `git push origin master:main` then `bash
-scripts/deploy-pages.sh`** - both are one command away and nothing else is
-blocking them; see "Live site status" below for the exact commands and the
-CDN-cache caveat. `npm run verify` green (typecheck + 243 unit + 33
-renderer parity on 3 engines - 11 scenes now, up from 10, the new one is a
-plain-style gradient scene added specifically for this item - + 256/261 e2e
-passed, 5 skipped by design, same 5 as always). See "Phase 5 item 4" below
-for the full writeup, including two real bugs this item's own new tests
-caught in themselves (not in the app) before it was declared done.
+**Phase 5 item 4 (6 gradient backgrounds) is now built, verified, pushed to
+`main`, and deployed to the live site**, shipped as commits `a8007b5`
+(feature) and `0bd757a` (this Guide) - held un-pushed for one session per
+the user's explicit instruction (2026-09-13) to update this Guide and
+continue in a fresh session, the same pattern item 3 used earlier in this
+same phase, then pushed and deployed in the next session **together with
+the "third round of real-usage feedback" bug fixes below**, on the user's
+approval, in one combined push+deploy pass. Push and deploy both worked
+cleanly on the first try; see "Live site status" below for the confirmation
+details (shared with the bug-fix round, since they went out together).
+`npm run verify` green (typecheck + 243 unit + 33 renderer parity on 3
+engines - 11 scenes now, up from 10, the new one is a plain-style gradient
+scene added specifically for this item - + 256/261 e2e passed, 5 skipped by
+design, same 5 as always). See "Phase 5 item 4" below for the full writeup,
+including two real bugs this item's own new tests caught in themselves (not
+in the app) before it was declared done.
 
 Still open and still needing the user: the Slack/LINE/Jira/Gmail/Word/Figma/
 Google Docs paste results table. Not doable from inside this environment.
+
+**Third round of real-usage feedback (2026-09-13) - three bugs found, fixed,
+and verified this session, shipped as commit `baaa915`, pushed to `main`
+together with Phase 5 item 4 (gradient backgrounds, above - both went out in
+the same push+deploy pass, on the user's explicit approval), and deployed
+to the live site.** Push and deploy both worked cleanly on the first try;
+the `gh-pages` branch's own last commit reads `Deploy baaa915` (confirmed
+via `git fetch origin gh-pages` + `git log`) and a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. All
+three bugs were in flows the user actually used on the live site, not
+caught by any existing test - each fix below shipped with a new regression
+test that reproduces the bug against the pre-fix code first (confirmed to
+fail), then passes against the fix.
+
+1. **The "Edit style" color/size popover opened far away from the button
+   that opened it, instead of attached to it.** Root cause confirmed by
+   reading the CSS, not guessed: `.selection-toolbar` (`src/app/styles.css`)
+   is positioned with `transform: translate(-50%, calc(-100% - 10px))` to
+   center itself above the selection. A CSS `transform` on an ancestor
+   creates a new containing block for any `position: fixed` descendant - the
+   same class of bug the `ExportMenu`/`.topbar` gotcha already documents
+   (Phase 5 item 3's note), just via `transform` instead of `overflow`.
+   `AnnotationSettingsPopover` was a plain DOM child of `.selection-toolbar`
+   and computed its `position: fixed` coordinates from `window.innerHeight`/
+   `getBoundingClientRect()`, assuming they're viewport-relative - inside a
+   transformed ancestor they weren't, so the popover landed nowhere near the
+   button. Specific to the `SelectionToolbar` path - `AnnotationToolbar`'s
+   own settings button (bottom-left, no `transform` on its container)
+   already positioned correctly, which is exactly why part 1's original
+   `annotationSettings.spec.ts` e2e suite never caught this: it only
+   exercises the still-armed-tool flow, not the edit-existing-node one.
+   **Fixed** by rendering `AnnotationSettingsPopover` through a React portal
+   to `document.body`, so it's no longer a descendant of whatever transform
+   its anchor's ancestor happens to have. Confirmed live (a throwaway
+   Playwright script, not committed): the popover now sits pixel-aligned
+   with the button's left edge, 6px above it. New e2e case in
+   `tests/e2e/annotationEdit.spec.ts` asserts the popover's bounding box is
+   within 20px of the button, not just that it exists in the DOM.
+2. **Dragging the size slider on an already-placed node felt
+   flickery/laggy, "like it's broken."** Root cause confirmed by reading
+   `boardStore.ts`: `setNodeColor`, `setNodeSize`, and the re-edit branch of
+   `commitText` all called `commitBoard` directly on every single
+   invocation - unlike the gap slider, which was explicitly wrapped in
+   `beginAdjustment`/`endAdjustment` back in Phase 2 item 7 specifically to
+   stop a continuous drag from pushing dozens of undo-history entries and
+   doing a full commit on every tick. That batching was never applied when
+   `setNodeColor`/`setNodeSize`/`commitText`'s size parameter were added in
+   "real-usage feedback round 2" - so every 'input' event while dragging the
+   size slider (many per second) did a full board commit, history push, and
+   asset reconcile, the same per-tick cost item 7's own note already
+   identified as the problem. **Fixed** by threading two new optional
+   `AnnotationSettingsPopover` props, `onAdjustStart`/`onAdjustEnd`, wired
+   to the size `<input>`'s pointerdown/keydown → pointerup/keyup - the exact
+   same four-event pattern `TopBar`'s gap slider already uses - and only
+   passed by `SelectionToolbar` (whose `onSizeChange` mutates `Board`
+   state). `AnnotationToolbar`'s own use of the same popover only ever
+   changes `toolSettings` (never routed through undo history to begin with),
+   so it leaves them unset. Confirmed live: a 10-step slider drag now
+   collapses into exactly one undo step. New e2e case in
+   `annotationEdit.spec.ts` mirrors `undoRedo.spec.ts`'s existing gap-slider
+   test structure for this.
+3. **The text tool's live-editing box would drop a word to a second line
+   while typing, well before the box's content-driven width (Phase 5
+   annotation revision part 3) should have needed to wrap at all.** Root
+   cause confirmed by reading the CSS and reproducing it: `.text-edit` is
+   `box-sizing: border-box` with a 1px border on each side, but
+   `textAutoWidth` (the function that sizes the overlay) only ever reserved
+   room for the padding, not the border - so the overlay's real content area
+   was 2px narrower than what `ctx.measureText` had just calculated as an
+   *exact* fit with zero spare margin. That 2px was enough for the browser's
+   own text layout to wrap the last character to a new line on almost any
+   line close to its fitted width - which, while actively typing, is most
+   lines. **Fixed** by adding `TEXT_EDIT_BORDER_PX` (`BoardCanvas.tsx`) and
+   inflating only the overlay's own CSS width by `2 * TEXT_EDIT_BORDER_PX` -
+   never `editingText.width` itself, which stays exactly `textAutoWidth`'s
+   result since that's also the committed node's real `frame.w` (export/
+   hit-testing/undo all use it, and the committed render has no border to
+   account for in the first place). Confirmed by reproducing the bug against
+   the pre-fix code first (a growing single line jumped to a second line
+   after only 2-3 characters) and then confirming zero such jumps post-fix
+   across a full test sentence, both via a throwaway Playwright script and
+   the new committed case in `tests/e2e/text.spec.ts` ("typing a growing
+   single line does not wrap early, before the box reaches
+   TEXT_MAX_WIDTH").
+4. The user's separate description of needing to "click through the color
+   button again" to reach resize was a symptom of bug 1, not a fourth bug -
+   once the popover renders in the wrong place, a click aimed at the
+   (invisible-to-the-user) real slider location can miss and hit the canvas
+   instead, forcing a re-open. No separate fix was needed for it once bug 1
+   was fixed.
+
+`npm run verify` green (typecheck + 243 unit + 33 renderer parity on 3
+engines + 265/270 e2e passed, 5 skipped by design, same 5 as always - this
+round added 3 new e2e cases × 3 engines = 9, all green on the first full run
+after the fixes).
 
 **Decided this session (2026-09-13), no longer open - do not raise these
 again:** real Safari/Firefox confirmation and manual-checklist E2 (HEIC) /
@@ -2089,21 +2186,23 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–3 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes), all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), and "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–4 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds), all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), and the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after annotation-revision part 3's commit (`42828bc`, see the START
-HERE note above), and both worked cleanly again on the first try (no
-re-auth, no DNS re-check needed). Live site now serves all of Phase 2
-(items 1–9), the Clear board addition, Phase 3, the complete Phase 4
-(items 1–6), Phase 5 items 1–3, all 3 parts of the annotation revision, and
-real-usage feedback round 2. Deploy script itself reported success
-(`Published.` + the live URL); the `gh-pages` branch's own last commit reads
-`Deploy 42828bc` (confirmed via `git fetch origin gh-pages` + `git log`, not
-just the deploy script's own message) and a same-session
-`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. (The
+right after the third-round bug-fix commit (`baaa915`, see the START HERE
+note above) - that same push/deploy pass also carried Phase 5 item 4, held
+un-pushed from the prior session - and both worked cleanly again on the
+first try (no re-auth, no DNS re-check needed). Live site now serves all of
+Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete Phase 4
+(items 1–6), Phase 5 items 1–4, all 3 parts of the annotation revision,
+real-usage feedback round 2, and the third round of real-usage feedback.
+Deploy script itself reported success (`Published.` + the live URL); the
+`gh-pages` branch's own last commit reads `Deploy baaa915` (confirmed via
+`git fetch origin gh-pages` + `git log`, not just the deploy script's own
+message) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
+returned a fresh `200`. (The
 custom domain sits behind a CDN edge cache with a 10-minute
 `max-age`, so a stale bundle hash can be observed for a few minutes right
 after a deploy — not a deploy failure, just propagation - worth a re-check
