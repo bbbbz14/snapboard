@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import { ANNOTATION_COLORS } from '@/board/model/annotationDefaults'
 import { t } from '@/i18n/t'
 
@@ -11,6 +12,20 @@ interface Props {
   size: number | null
   sizeRange: { min: number; max: number } | null
   onSizeChange: (size: number) => void
+  /** Opens/closes a `boardStore.beginAdjustment`/`endAdjustment` window
+   * around the whole slider drag, same as `TopBar`'s gap slider - only
+   * passed by `SelectionToolbar`, whose `onSizeChange` mutates an
+   * already-placed node's `Board` state (`setNodeSize`/`commitText`) and so,
+   * without this, would push one full undo-history entry (and one full
+   * board re-commit) per 'input' event of the drag, the exact "50+ entries
+   * for one gesture" problem Phase 2 item 7 already fixed once for the gap
+   * slider - just never applied here when this edit-in-place feature was
+   * added later. `AnnotationToolbar`'s own use of this popover only ever
+   * changes `toolSettings` (not `Board`), which was never routed through
+   * undo history in the first place, so it has nothing to batch and leaves
+   * these undefined. */
+  onAdjustStart?: (() => void) | undefined
+  onAdjustEnd?: (() => void) | undefined
   onClose: () => void
   /** The toolbar's settings button - measured once on mount to position
    * this (fixed-position, see styles.css) popover above it, mirroring
@@ -28,7 +43,17 @@ interface Props {
  * BoardCanvas's wheel handler) - this popover is the explicit, discoverable
  * way to do the same thing, not a separate setting.
  */
-export function AnnotationSettingsPopover({ color, onColorChange, size, sizeRange, onSizeChange, onClose, anchorRef }: Props) {
+export function AnnotationSettingsPopover({
+  color,
+  onColorChange,
+  size,
+  sizeRange,
+  onSizeChange,
+  onAdjustStart,
+  onAdjustEnd,
+  onClose,
+  anchorRef,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ bottom: number; left: number } | null>(null)
 
@@ -52,7 +77,21 @@ export function AnnotationSettingsPopover({ color, onColorChange, size, sizeRang
     }
   }, [onClose, anchorRef])
 
-  return (
+  // Rendered through a portal, not as a plain child of the anchor's own
+  // toolbar - `SelectionToolbar` (one of the two toolbars this popover can be
+  // opened from) is positioned with a CSS `transform` (see styles.css), and a
+  // `transform` on an ancestor creates a new containing block for any
+  // `position: fixed` descendant. Left as a normal child, this popover's
+  // `bottom`/`left` (computed above from `window.innerHeight`/
+  // `getBoundingClientRect()`, which assume a viewport-relative fixed
+  // position) would resolve against the transformed toolbar's own small box
+  // instead - landing far from the button that opened it. `AnnotationToolbar`
+  // has no `transform` on its container, which is why this only ever showed
+  // up on the "edit an already-placed annotation" path. A portal to
+  // `document.body` sidesteps the containing-block chain entirely, so this
+  // stays correct regardless of what transform/filter an anchor's ancestor
+  // has now or gains later.
+  return createPortal(
     <div
       ref={ref}
       className="annotation-settings"
@@ -87,11 +126,16 @@ export function AnnotationSettingsPopover({ color, onColorChange, size, sizeRang
             step={1}
             value={size}
             onChange={(e) => onSizeChange(Number(e.target.value))}
+            onPointerDown={onAdjustStart}
+            onPointerUp={onAdjustEnd}
+            onKeyDown={onAdjustStart}
+            onKeyUp={onAdjustEnd}
             aria-label={t('annotate.size')}
           />
           <span className="annotation-settings__value">{size}px</span>
         </label>
       )}
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -27,6 +27,11 @@ interface Props {
   style?: StyleTarget | undefined
   onStyleColorChange?: ((color: string) => void) | undefined
   onStyleSizeChange?: ((size: number) => void) | undefined
+  /** Batches a whole size-slider drag into one undo step - see
+   * `AnnotationSettingsPopover`'s own note on why this popover (unlike
+   * `AnnotationToolbar`'s) needs it at all. */
+  onStyleAdjustStart?: (() => void) | undefined
+  onStyleAdjustEnd?: (() => void) | undefined
 }
 
 /**
@@ -39,7 +44,17 @@ interface Props {
  * prop starting hidden below.
  */
 export const SelectionToolbar = forwardRef<HTMLDivElement, Props>(function SelectionToolbar(
-  { onCrop, onDuplicate, onBringToFront, onDelete, style, onStyleColorChange, onStyleSizeChange },
+  {
+    onCrop,
+    onDuplicate,
+    onBringToFront,
+    onDelete,
+    style,
+    onStyleColorChange,
+    onStyleSizeChange,
+    onStyleAdjustStart,
+    onStyleAdjustEnd,
+  },
   ref,
 ) {
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -80,6 +95,8 @@ export const SelectionToolbar = forwardRef<HTMLDivElement, Props>(function Selec
           size={style.size}
           sizeRange={style.sizeRange}
           onSizeChange={onStyleSizeChange}
+          onAdjustStart={onStyleAdjustStart}
+          onAdjustEnd={onStyleAdjustEnd}
           onClose={() => setSettingsOpen(false)}
           anchorRef={settingsBtnRef}
         />

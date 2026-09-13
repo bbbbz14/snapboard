@@ -175,3 +175,42 @@ test('double-clicking a text node re-opens it for editing and lets you fix its c
   await expect(page.locator('.text-edit')).toHaveValue('fixed now')
   await page.keyboard.press('Escape')
 })
+
+test('typing a growing single line does not wrap early, before the box reaches TEXT_MAX_WIDTH', async ({
+  page,
+  images,
+  addViaPicker,
+}) => {
+  // Regression test: `.text-edit` is `box-sizing: border-box` with a 1px
+  // border on each side, but `textAutoWidth`'s width (what the overlay's CSS
+  // width was set to) only ever reserved room for the padding, not the
+  // border - so the overlay's real content area was 2px narrower than what
+  // `ctx.measureText` had just calculated as an exact fit. A single growing
+  // line would wrap to a second line mid-word, well before the box actually
+  // reached TEXT_MAX_WIDTH (480). See CLAUDE.md's "third round of real-usage
+  // feedback" note. `scrollHeight` jumping by a full line's worth on a
+  // single character insert (typed one at a time, no `\n` involved) is what
+  // an unwanted wrap looks like from the outside.
+  await addViaPicker(page, images([[400, 300]]))
+  const rect = await pageRect(page)
+
+  await textToolButton(page).click()
+  const at = { x: rect.x + 20, y: rect.y + rect.h + 20 }
+  await page.mouse.click(at.x, at.y)
+  const editor = page.locator('.text-edit')
+  await expect(editor).toBeFocused()
+
+  const text = 'the quick brown fox jumps over the lazy dog and then runs'
+  let baseline: number | null = null
+  for (let i = 1; i <= text.length; i++) {
+    await page.keyboard.type(text[i - 1]!, { delay: 0 })
+    const info = await editor.evaluate((el: HTMLTextAreaElement) => ({
+      scrollHeight: el.scrollHeight,
+      width: parseFloat(el.style.width),
+    }))
+    if (info.width >= 470) break // approaching TEXT_MAX_WIDTH - wrapping here is expected, stop
+    if (baseline === null) baseline = info.scrollHeight
+    expect(info.scrollHeight).toBe(baseline)
+  }
+  await page.keyboard.press('Escape')
+})

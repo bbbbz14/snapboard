@@ -165,3 +165,74 @@ test('the size slider in "Edit style" grows an already-typed text node without d
   await expect(page.locator('.text-edit')).toHaveValue('resize me')
   await page.keyboard.press('Escape')
 })
+
+test('the "Edit style" popover opens attached to the button that opened it, not far away', async ({ page, images, addViaPicker }) => {
+  // Regression test: `SelectionToolbar` (unlike `AnnotationToolbar`) is
+  // positioned with a CSS `transform`, which creates a new containing block
+  // for the popover's `position: fixed` - without rendering the popover
+  // through a portal, its `bottom`/`left` (computed assuming a
+  // viewport-relative fixed position) resolved against the transformed
+  // toolbar's own small box instead, landing far from the button. See
+  // CLAUDE.md's "third round of real-usage feedback" note.
+  await addViaPicker(page, images([[400, 300]]))
+  const rect = await pageRect(page)
+
+  await toolButton(page, 'Box').click()
+  const y = rect.y + rect.h + 60
+  await page.mouse.move(rect.x + 20, y)
+  await page.mouse.down()
+  await page.mouse.move(rect.x + 160, y + 40, { steps: 5 })
+  await page.mouse.up()
+
+  const button = editStyleButton(page)
+  await button.click()
+  const popover = page.getByRole('dialog', { name: 'Style' })
+  await expect(popover).toBeVisible()
+
+  const btnBox = (await button.boundingBox())!
+  const popBox = (await popover.boundingBox())!
+  expect(popBox.x).toBeCloseTo(btnBox.x, 0)
+  // The popover sits directly above the button - a small, fixed gap, not
+  // "somewhere else on the page".
+  const gap = btnBox.y - (popBox.y + popBox.height)
+  expect(gap).toBeGreaterThanOrEqual(0)
+  expect(gap).toBeLessThan(20)
+})
+
+test('dragging the size slider in "Edit style" is one undo step, not one per tick', async ({ page, images, addViaPicker }) => {
+  // Regression test: `setNodeSize`/`commitText` (unlike `setGap`) weren't
+  // wrapped in `beginAdjustment`/`endAdjustment`, so every 'input' event of
+  // a slider drag pushed a full undo-history entry and a full board commit -
+  // the same "50+ entries for one gesture" problem already fixed once for
+  // the gap slider (see CLAUDE.md's "third round of real-usage feedback").
+  await addViaPicker(page, images([[400, 300]]))
+  const rect = await pageRect(page)
+
+  await toolButton(page, 'Box').click()
+  const y = rect.y + rect.h + 60
+  await page.mouse.move(rect.x + 20, y)
+  await page.mouse.down()
+  await page.mouse.move(rect.x + 160, y + 40, { steps: 5 })
+  await page.mouse.up()
+
+  await editStyleButton(page).click()
+  const value = page.locator('.annotation-settings__value')
+  const before = await value.innerText()
+
+  const slider = page.getByRole('slider', { name: 'Size' })
+  const box = (await slider.boundingBox())!
+  await page.mouse.move(box.x + 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height / 2, { steps: 5 })
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2, { steps: 5 })
+  await page.mouse.move(box.x + box.width * 0.9, box.y + box.height / 2, { steps: 5 })
+  await page.mouse.up()
+
+  const afterDrag = await value.innerText()
+  expect(afterDrag).not.toBe(before)
+
+  // One undo reverts the whole drag, back to the pre-gesture value - not one
+  // step per tick.
+  await page.keyboard.press('Control+z')
+  await expect(value).toHaveText(before)
+})

@@ -39,6 +39,24 @@ const GUIDE_COLOR = '#f43f5e'
 /** Screen-px distance within which a drag snaps to an edge/center. */
 const SNAP_THRESHOLD_PX = 8
 
+/** `.text-edit`'s own CSS border width (see styles.css) - the live-editing
+ * overlay is the one place a border exists at all (the committed render has
+ * none), and `.text-edit` is `box-sizing: border-box`, so that border eats
+ * into the same box `textAutoWidth` sized to exactly fit the text with zero
+ * spare room. Left uncompensated, the overlay's actual content area was 2px
+ * (1px each side) narrower than what `ctx.measureText` assumed would fit on
+ * one line - enough for the browser's own text layout to wrap the last
+ * character to a second line while typing, on lines close to the fitted
+ * width, even though the committed text (measured and drawn the same way,
+ * but with no border to eat into) would never have wrapped there. Added to
+ * the overlay's own CSS width only - never to `editingText.width` itself,
+ * which stays exactly `textAutoWidth`'s result since that's also the
+ * committed node's real `frame.w` (export/hit-testing/undo all use it) and
+ * has no border to account for. Not scaled by `camera.zoom`: the CSS border
+ * itself is a fixed 1px regardless of zoom (see styles.css), so the room it
+ * eats on screen is always exactly 2px, not 2px worth of board-space units. */
+const TEXT_EDIT_BORDER_PX = 1
+
 /** 3x displays cost 2.25x the fill rate of 2x for no visible gain here. */
 const MAX_DPR = 2
 /** Breathing room around the board when it is fit to the viewport, in CSS px. */
@@ -159,6 +177,8 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   const bringToFront = useBoardStore((s) => s.bringToFront)
   const setNodeColor = useBoardStore((s) => s.setNodeColor)
   const setNodeSize = useBoardStore((s) => s.setNodeSize)
+  const beginAdjustment = useBoardStore((s) => s.beginAdjustment)
+  const endAdjustment = useBoardStore((s) => s.endAdjustment)
   const undo = useBoardStore((s) => s.undo)
   const redo = useBoardStore((s) => s.redo)
   const tool = useBoardStore((s) => s.tool)
@@ -402,7 +422,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       const topLeft = boardToScreen(camera, viewport, editingText.point)
       editBox.style.left = `${topLeft.x}px`
       editBox.style.top = `${topLeft.y}px`
-      editBox.style.width = `${editingText.width * camera.zoom}px`
+      editBox.style.width = `${editingText.width * camera.zoom + TEXT_EDIT_BORDER_PX * 2}px`
       editBox.style.fontSize = `${editingText.fontSize * camera.zoom}px`
       editBox.style.lineHeight = `${textLineHeight(editingText.fontSize) * camera.zoom}px`
       editBox.style.padding = `${TEXT_PADDING * camera.zoom}px`
@@ -1266,6 +1286,8 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         style={styleTarget}
         onStyleColorChange={onStyleColorChange}
         onStyleSizeChange={onStyleSizeChange}
+        onStyleAdjustStart={beginAdjustment}
+        onStyleAdjustEnd={endAdjustment}
       />
       <CropToolbar ref={cropToolbarRef} onConfirm={confirmCrop} onCancel={cancelCrop} />
       <ZoomControls
