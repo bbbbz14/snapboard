@@ -57,14 +57,16 @@ shipped (`132126d`), pushed to `main`, and deployed to the live site** -
 see "Phase 5 item 1" below for the full writeup.
 
 **Item 2 (dark mode) is also done - built this session as the verification
-pass item 1 set it up to be, plus one real bug the pass found and fixed.**
+pass item 1 set it up to be, plus one real bug the pass found and fixed -
+shipped (`87fd9df`), pushed to `main`, and deployed to the live site.**
 `npm run verify` green (typecheck + 218 unit + 27 renderer parity on 3
 engines + 234 e2e - 229 passed, 5 skipped by design, same 5 as always).
-**Not committed, pushed, or deployed yet** - see "Phase 5 item 2" below for
-the full writeup, then check with the user before shipping it.
+Push and deploy both worked cleanly on the first try; a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. See
+"Phase 5 item 2" below for the full writeup, including one deferred finding
+for item 5 (the text-edit overlay's contrast).
 
-**Next up: item 3 (minimum top-bar overflow fix)**, once item 2 is approved
-and shipped.
+**Next up: item 3 (minimum top-bar overflow fix).**
 
 **One ordering change was approved this session** (see item 1's note and the
 Phase 5 list below): the minimum top-bar overflow fix moves *ahead* of item
@@ -175,8 +177,10 @@ deployed to the live site. `npm run verify` green.
 
 ### Phase 5 item 2 — done: dark mode (verification pass)
 
-Built this session. `npm run verify` green. **Not committed, pushed, or
-deployed yet** - the user was asked to approve the work before it goes out.
+Built this session, shipped as commit `87fd9df`, pushed to `main`, and
+deployed to the live site. `npm run verify` green. Push and deploy both
+worked cleanly on the first try; a same-session `curl -o /dev/null -w
+'%{http_code}'` for `/` returned a fresh `200`.
 
 - **No theme toggle** - `prefers-color-scheme` alone stays the only
   mechanism, confirmed by re-reading item 1's own note and manual-checklist
@@ -1280,16 +1284,16 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and Phase 5 item 1 (design system cleanup)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and Phase 5 items 1–2 (design system cleanup, dark mode)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after Phase 5 item 1's commit (`132126d`, design system cleanup —
-token split + three contrast fixes, see the START HERE note above), and
-both worked cleanly again on the first try (no re-auth, no DNS re-check
+right after Phase 5 item 2's commit (`87fd9df`, dark mode verification pass
+— the `.btn--done` hover-specificity fix, see the START HERE note above),
+and both worked cleanly again on the first try (no re-auth, no DNS re-check
 needed). Live site now serves all of Phase 2 (items 1–9), the Clear board
-addition, Phase 3, the complete Phase 4 (items 1–6), and Phase 5 item 1.
+addition, Phase 3, the complete Phase 4 (items 1–6), and Phase 5 items 1–2.
 Deploy script itself reported success (`Published.` + the live URL); a
 same-session `curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh
 `200`. (The custom domain sits behind a CDN edge cache with a 10-minute
