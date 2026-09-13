@@ -517,10 +517,14 @@ items 7 and 8" below for the full writeup, including two real bugs this
 session's own new e2e coverage caught in the new code itself (not
 pre-existing) before either was declared done.
 
-**Phase 5 item 9 (animation / micro-interactions) is now done, committed
-locally, not yet pushed to `main` or deployed to the live site**, pending
-the user's go-ahead. Scoped to exactly the three pieces the user approved
-up front: entrance animation for every popover/modal (ExportMenu,
+**Phase 5 item 9 (animation / micro-interactions) is now done, verified,
+pushed to `main`, and deployed to the live site**, shipped as commit
+`efbf37e`, on the user's approval. Push and deploy both worked cleanly on
+the first try; the `gh-pages` branch's own last commit reads
+`Deploy efbf37e` (confirmed via `git fetch origin gh-pages` + `git log`)
+and a same-session `curl -o /dev/null -w '%{http_code}'` for `/` returned a
+fresh `200`. Scoped to exactly the three pieces the user approved up front:
+entrance animation for every popover/modal (ExportMenu,
 BackgroundMenu, AnnotationSettingsPopover, ContextMenu, HelpModal - fade +
 a small scale/translate, deliberately entrance-only, no exit animation, see
 "Phase 5 item 9" below for why), toast enter+exit, and hover/press feedback
@@ -2687,19 +2691,19 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–8 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet), all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), and the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–9 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions), all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), and the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap)
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after Phase 5 items 7+8's own commit (`99124a1`, see the START HERE
+right after Phase 5 item 9's own commit (`efbf37e`, see the START HERE
 note above), on the user's approval, and both worked cleanly on the first
 try (no re-auth, no DNS re-check needed). Live site now serves all of
 Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete Phase 4
-(items 1–6), Phase 5 items 1–8, all 3 parts of the annotation revision,
+(items 1–6), Phase 5 items 1–9, all 3 parts of the annotation revision,
 real-usage feedback round 2, and the third round of real-usage feedback.
 Deploy script itself reported success (`Published.` + the live URL); the
-`gh-pages` branch's own last commit reads `Deploy 99124a1` (confirmed via
+`gh-pages` branch's own last commit reads `Deploy efbf37e` (confirmed via
 `git fetch origin gh-pages` + `git log`, not just the deploy script's own
 message) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
 returned a fresh `200`. (The
