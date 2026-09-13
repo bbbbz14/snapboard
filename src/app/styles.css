@@ -358,8 +358,17 @@ body {
 
 /* The transient "Copied" state of the primary button - it keeps
    .btn--primary's white --accent-text, so this has to be the solid token,
-   not the brighter text-weight --success. */
+   not the brighter text-weight --success. Needs its own :hover:not(:disabled)
+   rule at the same specificity as .btn--primary's own hover rule above - the
+   cursor is still sitting on the button right after the click that produced
+   this state, and without this, .btn--primary:hover:not(:disabled) (three
+   selector components vs. .btn--done's one) would win the cascade and paint
+   the "success" state back over in the darkened accent blue. */
 .btn--done {
+  background: var(--success-solid);
+}
+
+.btn--done:hover:not(:disabled) {
   background: var(--success-solid);
 }
 

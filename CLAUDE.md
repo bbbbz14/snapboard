@@ -54,14 +54,17 @@ skips).
 
 **Phase 5 (polish) is in progress. Item 1 (design system cleanup) is done,
 shipped (`132126d`), pushed to `main`, and deployed to the live site** -
-see "Phase 5 item 1" below for the full writeup. `npm run verify` green
-(typecheck + 218 unit + 27 renderer parity on 3 engines + 234 e2e - 229
-passed, 5 skipped by design, same 5 as always). Push and deploy both
-worked cleanly on the first try; a same-session `curl -o /dev/null -w
-'%{http_code}'` for `/` returned a fresh `200`. **Next up: item 2 (dark
-mode)**, which item 1 deliberately reduced to a verification pass rather
-than new plumbing - read item 1's note first, especially the two token
-groups and why board-content colors must stay unthemed.
+see "Phase 5 item 1" below for the full writeup.
+
+**Item 2 (dark mode) is also done - built this session as the verification
+pass item 1 set it up to be, plus one real bug the pass found and fixed.**
+`npm run verify` green (typecheck + 218 unit + 27 renderer parity on 3
+engines + 234 e2e - 229 passed, 5 skipped by design, same 5 as always).
+**Not committed, pushed, or deployed yet** - see "Phase 5 item 2" below for
+the full writeup, then check with the user before shipping it.
+
+**Next up: item 3 (minimum top-bar overflow fix)**, once item 2 is approved
+and shipped.
 
 **One ordering change was approved this session** (see item 1's note and the
 Phase 5 list below): the minimum top-bar overflow fix moves *ahead* of item
@@ -71,16 +74,21 @@ scrolling on mobile. It is not the whole of item 11 (mobile lite) - just
 enough that item 4 does not make a known finding worse. This is now item 3
 in the numbered list below (items renumbered accordingly).
 
-Still open and still needing the user (carried over since Phase 2/3): real
-Safari/Firefox confirmation, the Slack/LINE/Jira/Gmail/Word/Figma/Google
-Docs paste results table, whether `Ctrl/Cmd+Shift+C` loses to Chrome/Edge
-DevTools on a real desktop build, and manual-checklist E2 (HEIC) / E4
-(>50MB). None are doable from inside this environment.
+Still open and still needing the user: the Slack/LINE/Jira/Gmail/Word/Figma/
+Google Docs paste results table. Not doable from inside this environment.
+
+**Decided this session (2026-09-13), no longer open - do not raise these
+again:** real Safari/Firefox confirmation and manual-checklist E2 (HEIC) /
+E4 (>50MB) are explicitly skipped by the user. `Ctrl/Cmd+Shift+C` vs
+Chrome/Edge DevTools is no longer an open question either - the user
+confirmed on a real desktop build that DevTools wins, so this is now a known,
+accepted limitation (see Phase 2 item 9's note and the shortcut cheatsheet,
+Phase 5 item 8), not a thing to test or fix.
 
 ### Phase 5 item 1 — done: design system cleanup
 
-Built this session. `npm run verify` green. **Not committed, pushed, or
-deployed yet** - the user was asked to approve the work before it goes out.
+Built this session, shipped as commit `132126d`, pushed to `main`, and
+deployed to the live site. `npm run verify` green.
 
 - **The audit that preceded it found dark mode was already half-built, the
   same way Phase 3 found most of its own feature list already existed:**
@@ -164,6 +172,75 @@ deployed yet** - the user was asked to approve the work before it goes out.
   next); no a11y changes beyond the contrast values above (`role="group"` on
   the chip groups and `ExportMenu`'s missing focus trap were both found
   during the audit and belong to item 4 - see the Phase 5 list below).
+
+### Phase 5 item 2 — done: dark mode (verification pass)
+
+Built this session. `npm run verify` green. **Not committed, pushed, or
+deployed yet** - the user was asked to approve the work before it goes out.
+
+- **No theme toggle** - `prefers-color-scheme` alone stays the only
+  mechanism, confirmed by re-reading item 1's own note and manual-checklist
+  E7. Nothing in this session's audit turned up a reason to add one.
+- **Verification method, not eyeballing:** launched the real app under
+  Playwright with `colorScheme: 'dark'` emulation (the same mechanism a real
+  OS dark-mode setting triggers) and walked through every chrome surface
+  item 1's audit named - empty state, the warn toast, the board with images,
+  the selection toolbar, the export menu popover, an armed annotation tool
+  (arrow and redact, both using the deliberately-unthemed `--annotation`
+  preview color), the text-edit overlay, the Copy→"Copied" button, the
+  free-layout banner, and the cleared-board bar. Screenshotted each one, and
+  for the two that looked suspicious in the screenshot, followed up with a
+  `getComputedStyle` + `getImageData` probe to get an exact contrast ratio
+  instead of judging by eye - the same "measured, not eyeballed" standard
+  item 1 set for its own three contrast fixes.
+- **Real bug found and fixed, independent of dark mode but only ever
+  surfaced by actually looking at the hover state right after a real
+  click:** `.btn--done` (Copy's "Copied" confirmation, item 1's `--success-solid`
+  fix) was losing to `.btn--primary:hover:not(:disabled)` in the cascade -
+  the hover rule has three selector components (class + `:hover` +
+  `:not()`) against `.btn--done`'s one, so it always won regardless of
+  source order. Since the pointer is still sitting on the button the instant
+  it flips to "Copied" (that's literally what the user just clicked), this
+  wasn't an edge case - it was the *common* case, and it silently repainted
+  the confirmation back to a darkened accent blue, in both themes, the whole
+  time item 1 believed the green fix was shipped. Confirmed via a
+  `getImageData` pixel probe: `rgb(21,128,64)` (`--success-solid`) with the
+  pointer elsewhere, `color(srgb 0.107 0.383 0.811)` (mathematically exactly
+  88% of dark-mode `--accent-solid` toward black - the hover formula) with
+  the pointer on the button. Fixed with one added rule,
+  `.btn--done:hover:not(:disabled) { background: var(--success-solid); }`,
+  matching the winning rule's specificity so source order (declared after)
+  decides it correctly. See `src/app/styles.css`'s `.btn--done` comment.
+- **Real gap found, deliberately not fixed here - handed to item 5
+  instead:** the text-edit overlay (`.text-edit`, live-typing background)
+  measures at **2.64:1** contrast in dark mode via the same pixel-probe
+  method (composited `--surface` at 70% opacity over the actual underlying
+  image pixel at a real click point, against the fixed `--annotation` red
+  text). That's below AA - but the *same* probe against light mode measured
+  **3.20:1**, also below AA. This is a pre-existing legibility gap in both
+  themes, not something dark mode introduced or made qualitatively worse
+  (2.64 vs 3.20 is the same failure, not a new one), and the overlay is a
+  live-editing affordance, not the final render (export draws the same red
+  via plain `fillText`, no background box, per invariant 1) - so it doesn't
+  belong to "verify dark mode follows the rules," it belongs to item 5's
+  accessibility pass, which already owns two other contrast-shaped findings
+  from item 1's audit. Noted here so item 5 doesn't have to rediscover it.
+- **Everything else checked out clean:** the chip groups' pressed/hover
+  states, the annotation-toolbar armed-tool red highlight (arrow and redact
+  both checked), the export menu popover's format/size controls and pixel
+  estimate text, the warn toast (`#fbbf24` on `#161b22`, item 1's own fix),
+  the free-layout banner's blue link, the selection toolbar and its
+  duplicate/front/delete/crop icons, and the cleared-board bar's "Restore"
+  link all rendered with the same contrast item 1 measured for light mode -
+  no new dark-mode-only regression turned up in any of them.
+- **Deliberately not done:** no changes to the board-content token group
+  (`--annotation`, `--checker*`) - re-confirmed correct by this pass, not
+  touched, per item 1's own rule that they must never follow the OS theme.
+  No `@media (max-width)` work - that's item 3, next. No fix for the
+  text-edit contrast gap above - that's item 5's, and fixing it here would
+  have meant deciding item 5's approach (a fixed high-contrast backing vs.
+  changing the annotation color's dark-mode behavior) without having done
+  item 5's own audit first.
 
 ### Phase 4 item 6 — done: crop (per-image, not the whole board)
 
@@ -1180,14 +1257,15 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
   slider commonly still has focus right after a drag, the exact moment a
   user reaches for undo *or* copy, so a modifier shortcut must not be caught
   by the broader guard the plain shortcuts use.
-- **Real, unverified risk carried forward, not fixed:** Chrome/Edge bind
+- **Confirmed conflict, not just a risk anymore:** Chrome/Edge bind
   `Ctrl/Cmd+Shift+C` to DevTools' inspect-element mode as a browser-chrome
-  accelerator, not a page-level one - `preventDefault()` in this app's
-  keydown handler may not be enough to stop it on a real desktop build.
-  Headless Playwright has no DevTools UI to observe this conflict either way.
-  Same category as the existing "Not yet verified" real-browser items below -
-  worth checking specifically the next time a human tests on real
-  Chrome/Edge.
+  accelerator, not a page-level one - the user confirmed on a real desktop
+  build that this app's `preventDefault()` does not stop it; DevTools wins.
+  Headless Playwright has no DevTools UI, which is why this could only be
+  caught by real-machine testing. Accepted as a known limitation, not
+  something to keep chasing - there's no page-level way to override a
+  browser-chrome-owned shortcut. Worth a caveat in the shortcut cheatsheet
+  (Phase 5 item 8) so a user doesn't file it as a bug later.
 - Tooltips for Copy/Duplicate/Bring-to-front now show the key in parentheses
   (`toolbar.copyTitle`, `selection.duplicateTitle`, `selection.bringToFrontTitle`
   in `src/i18n/en.ts`) - `aria-label`/button text deliberately untouched so
@@ -1276,17 +1354,16 @@ planned order below stands.
   both; not planned to revisit unless something else prompts it.
 - **Manual-testing gap is now closed** to the scope the user wants covered.
   E2/E4 remain formally unverified (no test file was available, not that they
-  failed) and real Safari/Firefox/non-Chromium mobile are still unconfirmed
-  one by one (see "Not yet verified" below) — neither blocks starting Phase 4.
+  failed) - **skipped by explicit user decision (2026-09-13), not to be
+  raised again.**
 - **New finding, desktop-only testing so far:** on mobile, the top bar/toolbar
   requires horizontal scrolling to reach — awkward to use. Not filed as a
   Phase 2 item (user wants it noted, not built now); revisit when doing
   mobile-specific work, likely alongside or after Phase 5 polish. Keep this in
   mind if any Phase 2 UI (zoom controls, selection handles) adds more to that
   bar — it makes the overflow worse, not better.
-- Real Safari/Firefox and non-Chromium mobile browsers still haven't been
-  explicitly confirmed one by one — if that level of detail matters before
-  Phase 4, ask the user which browsers they actually used.
+- **Real Safari/Firefox confirmation (desktop and mobile) is also skipped by
+  explicit user decision (2026-09-13)** - not to be raised again.
 
 ## ⛔ Gate before writing any Phase 2 code
 
@@ -1327,9 +1404,10 @@ wanted. Build in this order; each item is independently shippable.
    above. `Ctrl/Cmd+Shift+C` copies (the one shortcut the product plan names
    explicitly), `D`/`F` duplicate/bring-to-front (plain keys, not a modifier,
    to sidestep the Ctrl/Cmd+D browser-reservation problem item 6 flagged).
-   Real risk carried forward and not yet resolved: `Ctrl/Cmd+Shift+C` may
-   lose to Chrome/Edge's DevTools inspect-element accelerator on a real
-   desktop build - untestable in headless Playwright.
+   Confirmed, not just a carried-forward risk: on a real desktop build,
+   `Ctrl/Cmd+Shift+C` does lose to Chrome/Edge's DevTools inspect-element
+   accelerator - untestable in headless Playwright, only caught by the user
+   testing on a real machine. Accepted as a known limitation.
 
 **Phase 2 is done when:** dragging 10 images holds 60fps · undo goes back 50
 steps · closing and reopening the tab preserves the board · every action has a
@@ -1404,15 +1482,12 @@ made so later items can build on earlier ones instead of redoing them:
    now split into chrome (themed) and board-content (never themed) groups,
    and it closed three measured contrast failures, two of which were
    pre-existing in light mode.
-2. ⬜ **Dark mode.** Item 1 reduced this to a **verification pass**, not new
-   plumbing: `@media (prefers-color-scheme: dark)` already existed and now
-   overrides every chrome token including the three status colors that had
-   none. What's left is actually looking at each surface in dark mode and
-   deciding whether a theme *toggle* is wanted at all (nothing asks for one;
-   E7 confirmed `prefers-color-scheme` alone works). Remember the
-   board-content rule item 1 encoded: the board's own background
-   (white/black/slate/transparent/gradient) is export content and must never
-   follow the OS theme.
+2. ✅ **Dark mode.** Done - see "Phase 5 item 2" under START HERE above.
+   Confirmed no theme toggle is wanted (E7 already settled that). The
+   verification pass found and fixed one real bug (`.btn--done` losing to
+   `.btn--primary:hover` in the cascade, in both themes) and found one gap
+   deliberately deferred to item 5 (the text-edit overlay's contrast, which
+   fails AA in *both* themes and predates dark mode).
 3. ⬜ **Minimum top-bar overflow fix.** *Inserted here by an approved
    ordering change, ahead of the gradients below.* `.topbar` is a plain
    `display: flex` with no `flex-wrap` and no `overflow-x`, and
@@ -1443,14 +1518,19 @@ made so later items can build on earlier ones instead of redoing them:
    tool has a keyboard shortcut, canvas already gets an `aria-live` status
    region - see item 2's own note under Phase 2 above; `:focus-visible`
    outlines, `prefers-reduced-motion`, and `aria-label`/`aria-pressed` on
-   every component already exist too). **Three concrete gaps were found
-   during item 1's audit and deliberately left here rather than fixed in
-   passing:** `ExportMenu` has `role="dialog"` but no focus trap and does
-   not restore focus on close; the `TopBar` chip groups have no
-   `role="group"` + label, so a screen reader reads five unrelated buttons;
-   the gap slider has no explicitly associated label. Item 1 closed the
-   *contrast* half of this item (see its note) - these three are what's
-   left, plus the Lighthouse a11y > 95 check itself.
+   every component already exist too). **Four concrete gaps were found
+   during item 1's and item 2's audits and deliberately left here rather
+   than fixed in passing:** `ExportMenu` has `role="dialog"` but no focus
+   trap and does not restore focus on close; the `TopBar` chip groups have
+   no `role="group"` + label, so a screen reader reads five unrelated
+   buttons; the gap slider has no explicitly associated label; and the
+   text-edit overlay (`.text-edit`) measures **2.64:1 contrast in dark mode
+   and 3.20:1 in light mode** (both below AA, measured via a real
+   `getImageData` pixel probe against the actual composited background, see
+   "Phase 5 item 2" under START HERE) - a pre-existing gap in both themes,
+   not something dark mode introduced. Item 1 closed the *chrome* contrast
+   half of this item (see its note) - these four are what's left, plus the
+   Lighthouse a11y > 95 check itself.
 6. ⬜ **Friendly error messages everywhere.** Audit every existing
    toast/rejection message (`src/i18n/en.ts`'s `toast.rejected.*` etc.) for
    tone, not just correctness - most already exist from Phase 1, so this is
@@ -1670,14 +1750,16 @@ and is a commitment, not a backlog.
 
 ## Not yet verified
 
-Automation here runs headless on Linux, so three things remain unproven and
+Automation here runs headless on Linux, so two things remain unproven and
 need a real machine:
 
 1. Copy → paste into Slack, LINE, Jira, Gmail, Word, and (Phase 3 DoD, still
    open) inserting the downloaded PNG/JPG file into Figma and Google Docs too
    — as a results table, per [docs/phases/phase-3.md](docs/phases/phase-3.md).
 2. Paste *from* Windows Snipping Tool and macOS Cmd+Shift+4.
-3. Copy on real Safari and real Firefox (only Chromium is confirmed).
+
+Copy on real Safari and real Firefox was explicitly skipped by the user
+(2026-09-13) and is no longer tracked as an open item.
 
 Checklist to work through:
 [docs/manual-test-checklist.md](docs/manual-test-checklist.md).
