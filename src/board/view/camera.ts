@@ -73,3 +73,36 @@ export function zoomAt(camera: Camera, viewport: Size, screenAnchor: Point, fact
 export function panBy(camera: Camera, dx: number, dy: number): Camera {
   return { zoom: camera.zoom, center: { x: camera.center.x - dx / camera.zoom, y: camera.center.y - dy / camera.zoom } }
 }
+
+/**
+ * How much of the board (in CSS px, at the current zoom) must stay visible in
+ * the viewport at minimum. Prevents an unbounded wheel-pan or drag-pan from
+ * carrying the board arbitrarily far off-screen with no way back short of the
+ * fit-to-view button - the same class of guard Figma/Photoshop apply to their
+ * own canvas panning.
+ */
+export const MIN_PAN_OVERLAP_PX = 80
+
+/**
+ * Clamps `camera.center` so the viewport and the board always keep at least
+ * `minOverlapPx` of overlap on each axis, at the camera's current zoom. Keeps
+ * panning bounded without preventing the user from panning the board mostly
+ * (but never entirely) off-screen, e.g. to check what's near an edge.
+ */
+export function clampCenter(camera: Camera, board: Size, viewport: Size, minOverlapPx = MIN_PAN_OVERLAP_PX): Camera {
+  const halfW = viewport.w / (2 * camera.zoom)
+  const halfH = viewport.h / (2 * camera.zoom)
+  const overlapX = Math.min(minOverlapPx / camera.zoom, board.w / 2 + halfW)
+  const overlapY = Math.min(minOverlapPx / camera.zoom, board.h / 2 + halfH)
+  const minX = overlapX - halfW
+  const maxX = board.w - overlapX + halfW
+  const minY = overlapY - halfH
+  const maxY = board.h - overlapY + halfH
+  return {
+    zoom: camera.zoom,
+    center: {
+      x: clamp(camera.center.x, Math.min(minX, maxX), Math.max(minX, maxX)),
+      y: clamp(camera.center.y, Math.min(minY, maxY), Math.max(minY, maxY)),
+    },
+  }
+}

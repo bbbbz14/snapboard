@@ -12,7 +12,7 @@ import { strokeBox } from '@/board/render/box'
 import { fillRedact } from '@/board/render/redact'
 import { TEXT_MIN_WIDTH, TEXT_PADDING, ensureAnnotationFont, textAutoWidth, textFont, textHeight, textLineHeight, wrapText } from '@/board/render/text'
 import type { Board, NodeId } from '@/board/model/types'
-import { boardToScreen, fitCamera, panBy, screenToBoard, zoomAt, type Camera } from '@/board/view/camera'
+import { boardToScreen, clampCenter, fitCamera, panBy, screenToBoard, zoomAt, type Camera } from '@/board/view/camera'
 import type { Point, Rect } from '@/lib/geometry'
 import { boundsOf, rectFromPoints, translate } from '@/lib/geometry'
 import { ZoomControls } from '@/ui/ZoomControls'
@@ -600,23 +600,28 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
   const applyZoom = useCallback(
     (next: Camera) => {
       autoFitRef.current = false
-      cameraRef.current = next
+      cameraRef.current = clampCenter(next, board.size, viewport)
       setPercent(Math.round(next.zoom * 100))
       draw()
       drawInteraction()
     },
-    [draw, drawInteraction],
+    [board.size, viewport, draw, drawInteraction],
   )
 
-  /** Commits a pan: updates the ref and redraws only - the zoom % is unchanged. */
+  /**
+   * Commits a pan: updates the ref and redraws only - the zoom % is unchanged.
+   * `clampCenter` keeps the board from being panned an unbounded distance
+   * off-screen (a plain wheel scroll used to have no limit at all - see the
+   * CLAUDE.md gotcha this fixed).
+   */
   const applyPan = useCallback(
     (next: Camera) => {
       autoFitRef.current = false
-      cameraRef.current = next
+      cameraRef.current = clampCenter(next, board.size, viewport)
       draw()
       drawInteraction()
     },
-    [draw, drawInteraction],
+    [board.size, viewport, draw, drawInteraction],
   )
 
   const zoomByFactor = useCallback(

@@ -75,3 +75,37 @@ test('zooming and panning the preview never changes the exported file', async ({
   const after = await downloadOnce()
   expect(after.equals(before)).toBe(true)
 })
+
+test('scrolling the wheel for a long time does not pan the board an unbounded distance away', async ({
+  page,
+  images,
+  addViaPicker,
+}) => {
+  // The exact bug this guards against: a plain wheel scroll used to have no
+  // pan limit at all (camera.ts's panBy has no board-size awareness), so
+  // scrolling down for a while could carry the board arbitrarily far
+  // off-screen with fit-to-view as the only way back.
+  await addViaPicker(page, images([[400, 300]]))
+
+  const boardPage = page.locator('.board-page')
+  await page.mouse.move(600, 400)
+  for (let i = 0; i < 40; i++) {
+    await page.mouse.wheel(0, 2000)
+  }
+
+  // However far the scroll went, some part of the board must still intersect
+  // the viewport - i.e. the board is still reachable without hunting for it.
+  const viewport = page.viewportSize()!
+  const rect = await boardPage.evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    return { x: r.x, y: r.y, w: r.width, h: r.height }
+  })
+  expect(rect.y).toBeLessThan(viewport.height)
+  expect(rect.y + rect.h).toBeGreaterThan(0)
+
+  // Scrolling further in the same direction changes nothing once clamped.
+  const before = await boardPage.evaluate((el) => el.getBoundingClientRect().y)
+  await page.mouse.wheel(0, 2000)
+  const after = await boardPage.evaluate((el) => el.getBoundingClientRect().y)
+  expect(after).toBe(before)
+})

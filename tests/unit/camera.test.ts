@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   boardToScreen,
+  clampCenter,
   clampZoom,
   fitCamera,
   fitZoom,
@@ -96,5 +97,46 @@ describe('clampZoom', () => {
     expect(clampZoom(0)).toBe(MIN_ZOOM)
     expect(clampZoom(1000)).toBe(MAX_ZOOM)
     expect(clampZoom(1)).toBe(1)
+  })
+})
+
+describe('clampCenter', () => {
+  const board = { w: 800, h: 600 }
+  const viewport = { w: 1000, h: 700 }
+
+  it('leaves an already-centred camera unchanged', () => {
+    const camera = fitCamera(board, viewport)
+    expect(clampCenter(camera, board, viewport)).toEqual(camera)
+  })
+
+  it('bounds an unbounded plain-wheel pan, however far it scrolls', () => {
+    // The exact bug this fixed: scrolling for a long time used to carry the
+    // board arbitrarily far off-screen with no way back short of fit-to-view.
+    let camera: Camera = { zoom: 1, center: { x: 400, y: 300 } }
+    for (let i = 0; i < 500; i++) {
+      camera = clampCenter(panBy(camera, 0, 500), board, viewport)
+    }
+    expect(camera.center.y).toBeLessThan(board.h + viewport.h)
+    const secondToLast = clampCenter(panBy({ ...camera }, 0, 500), board, viewport)
+    expect(secondToLast.center).toEqual(camera.center)
+  })
+
+  it('keeps at least some overlap between the viewport and the board on each axis', () => {
+    const farAway: Camera = { zoom: 1, center: { x: 1_000_000, y: -1_000_000 } }
+    const clamped = clampCenter(farAway, board, viewport)
+    const halfW = viewport.w / 2
+    const halfH = viewport.h / 2
+    expect(clamped.center.x - halfW).toBeLessThan(board.w)
+    expect(clamped.center.y + halfH).toBeGreaterThan(0)
+  })
+
+  it('scales the allowed range with zoom, not just the raw board size', () => {
+    const zoomedIn: Camera = { zoom: 4, center: { x: 1_000_000, y: 0 } }
+    const clamped = clampCenter(zoomedIn, board, viewport)
+    // At 4x zoom the viewport covers far less board area, so the clamp range
+    // is tighter than it would be at zoom 1 - just confirm it's still finite
+    // and on the correct side of the board rather than left unbounded.
+    expect(clamped.center.x).toBeLessThan(1_000_000)
+    expect(Number.isFinite(clamped.center.x)).toBe(true)
   })
 })
