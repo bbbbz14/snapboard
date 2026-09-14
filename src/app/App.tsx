@@ -9,9 +9,11 @@ import { Toasts } from '@/ui/Toasts'
 import { useBoardStore } from '@/board/store/boardStore'
 import { usePasteImages, useDropImages } from '@/hooks/useImageInput'
 import { useCopyAction } from '@/hooks/useCopyAction'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { t } from '@/i18n/t'
 
 export function App() {
+  const isMobile = useIsMobile()
   const board = useBoardStore((s) => s.board)
   const addFiles = useBoardStore((s) => s.addFiles)
   const hydrate = useBoardStore((s) => s.hydrate)
@@ -71,7 +73,7 @@ export function App() {
         {board.nodes.length === 0 ? (
           <EmptyState onFiles={onFiles} />
         ) : (
-          <BoardCanvas board={board} viewport={viewport} onCopy={onCopy} />
+          <BoardCanvas board={board} viewport={viewport} onCopy={onCopy} interactive={!isMobile} />
         )}
       </div>
       {drag.dragging && <div className="dropzone">{t('drop.overlay', { count: drag.count })}</div>}

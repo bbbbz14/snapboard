@@ -350,6 +350,124 @@ covering by the suite itself. `npm run verify` green (typecheck + 243 unit
 design, same 5 as always - unchanged counts, confirming nothing else moved).
 See "Phase 5 item 5" below for the full writeup.
 
+**Phase 5 item 11 (mobile lite mode) is now done**, built and verified this
+session. Per the product plan's own §4.6 ("บนมือถือ: แสดงโหมด lite = เลือกรูป
+→ เลือกโหมดจัดวาง → บันทึกภาพ (ไม่มีการย้ายอิสระ)") - narrower scope than this
+Guide's own earlier framing of the item suggested, see "Phase 5 item 11"
+below for why - below a ~700px viewport `BoardCanvas` now renders
+non-interactively (no drag/resize/annotate/crop/zoom/pan, no per-node
+toolbars); the existing `TopBar` (layout/style/gap/background/export
+controls), already tested and already scrolling correctly per item 3, is
+unchanged and *is* the entire "pick a layout mode -> save" flow the plan
+asks for. `npm run verify` green (typecheck + 243 unit + 33 renderer parity
+on 3 engines + 312 e2e - 307 passed, 5 skipped by design, same 5 as always -
+this item added a new `tests/e2e/mobileLite.spec.ts` with 3 cases x 3
+engines = 9, all green on the first full run). **Built, committed, and
+verified locally; not yet pushed to `main` or deployed to the live site**,
+pending the user's go-ahead - item 10 (i18n) is cancelled by explicit user
+decision the same session (2026-09-14), not pending; item 11 above is now
+the only item that was open in Phase 5's own list, and it is done, so
+Phase 5 itself is functionally complete pending push/deploy of this item and
+the product-plan-level Definition of Done items that need real people
+(Time-To-Copy, Lighthouse a11y > 95 on a real machine) - see "Phase 5 item
+11" below for the full writeup and the Phase 5 list further down for the
+updated status of every item.
+
+### Phase 5 item 11 — done: mobile lite mode
+
+Built this session. `npm run verify` green (typecheck + 243 unit + 33
+renderer parity on 3 engines + 312 e2e - 307 passed, 5 skipped by design,
+same 5 as always).
+
+- **Scope came from re-reading the product plan, not from this Guide's own
+  earlier framing.** This Guide's Phase 5 list described item 11 as "the
+  rest of" item 3's overflow fix - a bigger, general mobile-responsive
+  rework. `docs/00-product-plan.md` §4.6 actually defines it much more
+  narrowly: "MVP: desktop-first ชัดเจน. บนมือถือ: แสดงโหมด lite = เลือกรูป →
+  เลือกโหมดจัดวาง → บันทึกภาพ (ไม่มีการย้ายอิสระ)" - pick images, pick a
+  layout mode, save; explicitly **no free move/resize** on a small screen,
+  because (the plan's own words) "การลาก-ย่อ-ขยายบนจอเล็กคือ UX ที่แย่เสมอ"
+  (drag/resize/zoom on a small screen is always bad UX). That's a much
+  smaller, better-scoped task than rebuilding the canvas's mouse-only
+  gesture set (space+drag/middle-drag pan, wheel zoom, pointer-based
+  select/move/resize) for touch - and the plan explicitly says not to.
+- **`BoardCanvas` gained one new prop, `interactive` (default `true`)**,
+  gating every pointer/keyboard effect that exists only to support
+  free-form editing: the wheel effect (pan/zoom/tool-size), the
+  space/middle-drag pan effect, the big select/marquee/move/resize/reorder/
+  annotation-placement pointer effect, and the keyboard-shortcut effect.
+  `onDoubleClick`/`onContextMenu` (re-edit text, right-click menu) are also
+  skipped. When `false`, `SelectionToolbar`/`CropToolbar`/`ContextMenu`/
+  `ZoomControls`/`AnnotationToolbar` never mount either - there is never a
+  selection, an armed tool, or a crop session to show a toolbar for, since
+  nothing can create one. `draw()`/`drawInteraction()` themselves needed
+  **no changes** - they already just render whatever the store/refs
+  currently hold, and `autoFitRef` (true by default, only ever flipped by
+  the now-disabled zoom/pan handlers) keeps the camera re-fitting to the
+  viewport on every board/viewport change for free, so the preview always
+  shows the whole board with no camera for the user to control at all.
+- **Nothing else needed a rewrite.** `TopBar.tsx` - the layout/style/gap/
+  background chips, the Download split button + `ExportMenu`, Copy - is the
+  entire "pick a layout mode -> save" flow the plan asks for, and it
+  already scrolls horizontally instead of squishing (item 3) and already
+  positions its two popovers with `position: fixed` measured from a real
+  `getBoundingClientRect()` (also item 3), which is exactly what a narrow
+  viewport needs and already had it for unrelated reasons. `EmptyState.tsx`'s
+  "choose files" button is the "pick images" step, unchanged. This is why
+  the whole item stayed a small, contained diff instead of a parallel
+  mobile UI tree: once the canvas stops needing gesture support, the
+  existing chrome was already close to correct.
+- **New hook, `src/hooks/useIsMobile.ts`** - a
+  `window.matchMedia('(max-width: 700px)')` query, live-updating on
+  resize/orientation change (not a one-time check at mount, and not a
+  user-agent sniff - a real device rotating, or a desktop window resized
+  past the breakpoint, both need to flip modes without a reload).
+  `App.tsx` passes `interactive={!isMobile}` to `BoardCanvas`; every effect
+  `BoardCanvas` gates on `interactive` includes it in its own dependency
+  array, so toggling mid-session correctly attaches/detaches listeners
+  rather than leaving stale ones from before the flip.
+- **A small, deliberately narrow touch-target CSS bump**
+  (`@media (max-width: 700px)` in `styles.css`) - `.chip`/`.btn`/
+  `.split-btn__caret` gain a few px more padding below this width, closer
+  to the ~44px touch-target guideline. Scoped to just those three, not
+  every control (e.g. the 24px popover swatches) - the ones a mobile user
+  actually has to hit to complete the lite flow (layout mode, style,
+  Download/Copy), not a general sizing pass over controls that only exist
+  inside a popover the user is already looking directly at.
+- **Verified live, not just via the automated suite:** ran a real
+  Playwright session at a 390x844 (iPhone-sized) viewport against the dev
+  server and screenshotted the board with two images loaded, the
+  Background popover open, and the Export popover open - all three render
+  cleanly with no overflow/clipping, confirming `ExportMenu`/
+  `BackgroundMenu`'s existing `position: fixed`-from-real-anchor
+  positioning (item 3/item 4) already handles a narrow viewport correctly
+  with no changes needed.
+- **New `tests/e2e/mobileLite.spec.ts`** (3 cases x 3 engines = 9) at the
+  same 390px viewport: `.zoom-controls`/`.annotation-toolbar`/
+  `.selection-toolbar` never mount, and the layout/style/background/export
+  controls are all present and clickable; a click *and* a full drag
+  gesture on the board - the exact gesture `selection.spec.ts`/
+  `moveResize.spec.ts` prove selects/moves a node at desktop width - both
+  leave `.selection-status` empty and the sampled pixel unchanged (same
+  gradient-fixture pixel-sampling technique as `moveResize.spec.ts`'s own
+  `pixelAt`, reused verbatim rather than reinvented, per the item 6 e2e
+  gotcha about the fixtures being gradients, not flat colors); and the full
+  flow (pick 3 images, pick Grid, Download) produces a real downloaded
+  file.
+- **Deliberately not done, scoped to exactly what the product plan's §4.6
+  line asks for:** no touch gestures at all (pinch-zoom, two-finger pan,
+  long-press) - lite mode has no camera for the user to control and no
+  per-node editing to gesture at, so there is nothing for a gesture to do;
+  no separate/simplified mobile-only version of `TopBar`/`EmptyState`/
+  `ExportMenu`/`BackgroundMenu` - the existing desktop components already
+  satisfy the lite flow once the canvas stops demanding gesture support,
+  and duplicating them would be exactly the kind of speculative surface
+  CLAUDE.md says not to add; no UA-based redirect or separate mobile route
+  - the same `App.tsx` renders both modes, switching only on live viewport
+  width; no change to the annotation/crop/undo/redo machinery itself - it
+  still exists and works exactly as before at desktop width, `interactive`
+  only ever turns it off, never changes its behavior when on.
+
 ### Phase 5 item 5 — done: accessibility pass (4 concrete gaps)
 
 Built this session, shipped as commit `2d3f789`, pushed to `main`, and
@@ -2943,16 +3061,21 @@ made so later items can build on earlier ones instead of redoing them:
    toast enter+exit, and hover/press feedback on every control that was
    missing it - found and fixed a real pre-existing accessibility race in
    `useFocusTrap` along the way.
-10. ⬜ **i18n: Thai/English.** `src/i18n/en.ts` is already the single source
-    of every user-facing string specifically so this item is "add `th.ts` +
-    a switch," not a hunt through components - **re-confirmed by grep during
-    item 1's audit: zero hardcoded user-facing strings in `src/ui/*.tsx` or
-    `App.tsx`**, and `t.ts` already does `{{}}` interpolation.
-11. ⬜ **Mobile lite mode.** Last, and the biggest single item. Item 3 above
-    takes only the minimum overflow fix out of it; this is the rest -
-    a genuinely mobile-shaped layout, not just a bar that no longer
-    overflows. Wants the rest of Phase 5 (dark mode, gradients, a11y)
-    already in place rather than done in parallel.
+10. ❌ **Cancelled - i18n: Thai/English.** Explicit user decision
+    (2026-09-14): English-only is sufficient, no Thai UI translation
+    needed. Not to be raised again. (`src/i18n/en.ts` remains the single
+    source of every user-facing string regardless - that structure was
+    never specific to this cancelled item, it's just how copy is
+    organized in this codebase.)
+11. ✅ **Mobile lite mode.** Done - see "Phase 5 item 11" under START HERE
+    above. Turned out narrower than this list's own line above once the
+    product plan's §4.6 was actually re-read: no general mobile-shaped
+    layout rework, just `BoardCanvas` rendering non-interactively (no
+    drag/resize/annotate/crop/zoom/pan) below a ~700px viewport, with the
+    existing (already item-3-fixed) `TopBar` as the entire "pick images ->
+    pick a layout mode -> save" flow. Built, committed, and verified
+    locally; not yet pushed to `main` or deployed, pending the user's
+    go-ahead.
 
 **Phase 5 is done when:** 5 new users understand the app within 10 seconds
 with no explanation (needs real people, same category as Phase 1's

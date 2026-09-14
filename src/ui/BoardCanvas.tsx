@@ -72,6 +72,15 @@ interface Props {
   /** Shared with TopBar's Copy button (see `useCopyAction`) so Ctrl/Cmd+Shift+C
    * triggers the exact same clipboard call and "copied" feedback. */
   onCopy: () => void
+  /** Phase 5 item 11 (mobile lite mode): when false, this renders a plain,
+   * always-fit-to-viewport preview with none of the pointer/keyboard
+   * interaction below wired up, and none of the per-node toolbars mounted -
+   * the product plan's own §4.6 deliberately excludes free move/resize/
+   * annotate on a small screen ("การลาก-ย่อ-ขยายบนจอเล็กคือ UX ที่แย่เสมอ").
+   * Board content on mobile is chosen entirely through TopBar's existing
+   * layout/style/gap/background controls, never by touching the canvas.
+   * Defaults to `true` so every desktop call site is unaffected. */
+  interactive?: boolean
 }
 
 /** What `SelectionToolbar`'s settings button/popover edits for a single
@@ -94,7 +103,7 @@ function styleTargetFor(node: Board['nodes'][number] | undefined): StyleTarget |
  * what places the board correctly inside that fixed-size canvas; export never
  * sets it, so this is purely a preview concern - see invariant 1.
  */
-export function BoardCanvas({ board, viewport, onCopy }: Props) {
+export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const interactionCanvasRef = useRef<HTMLCanvasElement>(null)
   const pageRef = useRef<HTMLDivElement>(null)
@@ -619,6 +628,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // still zooms even then, so the user can zoom in for precision without
   // first backing out of the armed tool.
   useEffect(() => {
+    if (!interactive) return
     const canvas = canvasRef.current
     if (!canvas) return
     const onWheel = (e: WheelEvent) => {
@@ -638,13 +648,14 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     }
     canvas.addEventListener('wheel', onWheel, { passive: false })
     return () => canvas.removeEventListener('wheel', onWheel)
-  }, [applyPan, zoomByFactor, tool, adjustToolSize, flashSizeHint])
+  }, [applyPan, zoomByFactor, tool, adjustToolSize, flashSizeHint, interactive])
 
   // Space+drag or middle-mouse-drag pans. The gesture updates the camera ref
   // and redraws directly on every pointermove, bypassing React state - the
   // same "ref during the gesture, commit on release" pattern Phase 2 uses for
   // moving and resizing nodes.
   useEffect(() => {
+    if (!interactive) return
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -690,7 +701,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       canvas.removeEventListener('pointerup', endPan)
       canvas.removeEventListener('pointercancel', endPan)
     }
-  }, [applyPan])
+  }, [applyPan, interactive])
 
   // Left-click: a resize handle drags that node's size; a node drags the
   // whole selection (selecting it first if it wasn't already); empty space
@@ -700,6 +711,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // calling `draw`/`drawInteraction` directly on every pointermove - the
   // store only hears about it once, on pointer-up.
   useEffect(() => {
+    if (!interactive) return
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -1030,6 +1042,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     setEditingText,
     cropSession,
     toolSettings,
+    interactive,
   ])
 
   // Keyboard shortcuts (Phase 2 item 9 completes this set). Undo/redo and
@@ -1047,6 +1060,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
   // and every other single-purpose shortcut in this file (zoom, delete,
   // escape) already avoids modifiers for the same reason.
   useEffect(() => {
+    if (!interactive) return
     const onKeyDown = (e: KeyboardEvent) => {
       // A crop session is modal (see the pointer-effect's own note) - only
       // its own confirm/cancel keys do anything while one is open, so a
@@ -1159,6 +1173,7 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
     cropSession,
     cancelCrop,
     confirmCrop,
+    interactive,
   ])
 
   // Double-click re-opens an existing text node for editing - the only way
@@ -1298,8 +1313,8 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
         className={`board-canvas${tool !== 'select' ? ' board-canvas--annotate' : ''}`}
         role="img"
         aria-label={`Board with ${imageCount} image${imageCount === 1 ? '' : 's'}`}
-        onDoubleClick={onCanvasDoubleClick}
-        onContextMenu={onCanvasContextMenu}
+        onDoubleClick={interactive ? onCanvasDoubleClick : undefined}
+        onContextMenu={interactive ? onCanvasContextMenu : undefined}
       />
       <canvas ref={interactionCanvasRef} className="board-interaction" aria-hidden="true" />
       <canvas ref={cropOverlayCanvasRef} className="board-crop-overlay" aria-hidden="true" />
@@ -1317,48 +1332,52 @@ export function BoardCanvas({ board, viewport, onCopy }: Props) {
       <div className="selection-status visually-hidden" role="status" aria-live="polite">
         {selectedIds.length > 0 ? t('selection.count', { count: selectedIds.length }) : ''}
       </div>
-      <SelectionToolbar
-        ref={toolbarRef}
-        onCrop={canCrop ? beginCrop : undefined}
-        onDuplicate={duplicateSelected}
-        onBringToFront={bringToFront}
-        onDelete={deleteSelected}
-        style={styleTarget}
-        onStyleColorChange={onStyleColorChange}
-        onStyleSizeChange={onStyleSizeChange}
-        onStyleAdjustStart={beginAdjustment}
-        onStyleAdjustEnd={endAdjustment}
-      />
-      <CropToolbar ref={cropToolbarRef} onConfirm={confirmCrop} onCancel={cancelCrop} />
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          onCrop={canCrop ? beginCrop : undefined}
-          onDuplicate={duplicateSelected}
-          onBringToFront={bringToFront}
-          onDelete={deleteSelected}
-          onClose={() => setContextMenu(null)}
-        />
+      {interactive && (
+        <>
+          <SelectionToolbar
+            ref={toolbarRef}
+            onCrop={canCrop ? beginCrop : undefined}
+            onDuplicate={duplicateSelected}
+            onBringToFront={bringToFront}
+            onDelete={deleteSelected}
+            style={styleTarget}
+            onStyleColorChange={onStyleColorChange}
+            onStyleSizeChange={onStyleSizeChange}
+            onStyleAdjustStart={beginAdjustment}
+            onStyleAdjustEnd={endAdjustment}
+          />
+          <CropToolbar ref={cropToolbarRef} onConfirm={confirmCrop} onCancel={cancelCrop} />
+          {contextMenu && (
+            <ContextMenu
+              x={contextMenu.x}
+              y={contextMenu.y}
+              onCrop={canCrop ? beginCrop : undefined}
+              onDuplicate={duplicateSelected}
+              onBringToFront={bringToFront}
+              onDelete={deleteSelected}
+              onClose={() => setContextMenu(null)}
+            />
+          )}
+          <ZoomControls
+            percent={percent}
+            onZoomOut={() => zoomByFactor(1 / ZOOM_STEP)}
+            onZoomIn={() => zoomByFactor(ZOOM_STEP)}
+            onReset={resetTo100}
+            onFit={fitToView}
+          />
+          <AnnotationToolbar
+            tool={tool}
+            onToggleArrow={() => setTool(tool === 'arrow' ? 'select' : 'arrow')}
+            onToggleBox={() => setTool(tool === 'box' ? 'select' : 'box')}
+            onToggleText={() => setTool(tool === 'text' ? 'select' : 'text')}
+            onToggleMarker={() => setTool(tool === 'marker' ? 'select' : 'marker')}
+            onToggleRedact={() => setTool(tool === 'redact' ? 'select' : 'redact')}
+            toolSettings={toolSettings}
+            onColorChange={setToolColor}
+            onSizeChange={setToolSize}
+          />
+        </>
       )}
-      <ZoomControls
-        percent={percent}
-        onZoomOut={() => zoomByFactor(1 / ZOOM_STEP)}
-        onZoomIn={() => zoomByFactor(ZOOM_STEP)}
-        onReset={resetTo100}
-        onFit={fitToView}
-      />
-      <AnnotationToolbar
-        tool={tool}
-        onToggleArrow={() => setTool(tool === 'arrow' ? 'select' : 'arrow')}
-        onToggleBox={() => setTool(tool === 'box' ? 'select' : 'box')}
-        onToggleText={() => setTool(tool === 'text' ? 'select' : 'text')}
-        onToggleMarker={() => setTool(tool === 'marker' ? 'select' : 'marker')}
-        onToggleRedact={() => setTool(tool === 'redact' ? 'select' : 'redact')}
-        toolSettings={toolSettings}
-        onColorChange={setToolColor}
-        onSizeChange={setToolSize}
-      />
       {sizeHint && (
         <div className="annotation-size-hint" aria-hidden="true">
           {sizeHint.size}px

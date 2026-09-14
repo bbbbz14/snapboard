@@ -1140,3 +1140,28 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------- mobile lite mode (Phase 5 item 11) ----------
+
+   Below this width, BoardCanvas renders with `interactive={false}` (see its
+   own prop comment) - there is no per-node toolbar, no drag/resize, no
+   pinch/wheel zoom to size a target for. The only controls left to touch
+   are `.topbar`'s own chips/buttons (choosing a layout mode, gap, style,
+   background) and Download/Copy, so this is a small, low-risk bump to just
+   those - not a rewrite of every control's sizing - to clear the ~44px
+   touch-target guideline they fall short of at their desktop size. Same
+   breakpoint as `useIsMobile`'s `MOBILE_MAX_WIDTH`, so the layout and the
+   interaction mode change together. */
+@media (max-width: 700px) {
+  .chip {
+    padding: 9px 12px;
+  }
+
+  .btn {
+    padding: 11px 16px;
+  }
+
+  .split-btn__caret {
+    padding: 11px 12px;
+  }
+}
