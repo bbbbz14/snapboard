@@ -350,28 +350,33 @@ covering by the suite itself. `npm run verify` green (typecheck + 243 unit
 design, same 5 as always - unchanged counts, confirming nothing else moved).
 See "Phase 5 item 5" below for the full writeup.
 
-**Phase 5 item 11 (mobile lite mode) is now done**, built and verified this
-session. Per the product plan's own §4.6 ("บนมือถือ: แสดงโหมด lite = เลือกรูป
-→ เลือกโหมดจัดวาง → บันทึกภาพ (ไม่มีการย้ายอิสระ)") - narrower scope than this
-Guide's own earlier framing of the item suggested, see "Phase 5 item 11"
-below for why - below a ~700px viewport `BoardCanvas` now renders
-non-interactively (no drag/resize/annotate/crop/zoom/pan, no per-node
-toolbars); the existing `TopBar` (layout/style/gap/background/export
-controls), already tested and already scrolling correctly per item 3, is
-unchanged and *is* the entire "pick a layout mode -> save" flow the plan
-asks for. `npm run verify` green (typecheck + 243 unit + 33 renderer parity
-on 3 engines + 312 e2e - 307 passed, 5 skipped by design, same 5 as always -
-this item added a new `tests/e2e/mobileLite.spec.ts` with 3 cases x 3
-engines = 9, all green on the first full run). **Built, committed, and
-verified locally; not yet pushed to `main` or deployed to the live site**,
-pending the user's go-ahead - item 10 (i18n) is cancelled by explicit user
-decision the same session (2026-09-14), not pending; item 11 above is now
-the only item that was open in Phase 5's own list, and it is done, so
-Phase 5 itself is functionally complete pending push/deploy of this item and
-the product-plan-level Definition of Done items that need real people
-(Time-To-Copy, Lighthouse a11y > 95 on a real machine) - see "Phase 5 item
-11" below for the full writeup and the Phase 5 list further down for the
-updated status of every item.
+**Phase 5 item 11 (mobile lite mode) is now done, pushed to `main`, and
+deployed to the live site** (commit `84d0383`), on the user's approval, in
+the same session it was built. Per the product plan's own §4.6 ("บนมือถือ:
+แสดงโหมด lite = เลือกรูป → เลือกโหมดจัดวาง → บันทึกภาพ (ไม่มีการย้ายอิสระ)") -
+narrower scope than this Guide's own earlier framing of the item suggested,
+see "Phase 5 item 11" below for why - below a ~700px viewport `BoardCanvas`
+now renders non-interactively (no drag/resize/annotate/crop/zoom/pan, no
+per-node toolbars); the existing `TopBar` (layout/style/gap/background/
+export controls), already tested and already scrolling correctly per item
+3, is unchanged and *is* the entire "pick a layout mode -> save" flow the
+plan asks for. `npm run verify` green (typecheck + 243 unit + 33 renderer
+parity on 3 engines + 312 e2e - 307 passed, 5 skipped by design, same 5 as
+always - this item added a new `tests/e2e/mobileLite.spec.ts` with 3 cases
+x 3 engines = 9, all green on the first full run). Push and deploy both
+worked cleanly on the first try; the `gh-pages` branch's own last commit
+reads `Deploy 84d0383` (confirmed via `git fetch origin gh-pages` +
+`git log`) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
+returned a fresh `200`. Item 10 (i18n) is cancelled by explicit user
+decision the same session (2026-09-14), not pending. **This closes every
+item in Phase 5's own list (1-9 done earlier, 10 cancelled, 11 now done) -
+Phase 5 is functionally complete**, pending only the product-plan-level
+Definition of Done items that need real people (Time-To-Copy, Lighthouse
+a11y > 95 on a real machine) and the still-open Slack/LINE/Jira/Gmail/Word/
+Figma/Google Docs paste results table noted earlier. See "Phase 5 item 11"
+below for the full writeup, [docs/phases/phase-5.md](docs/phases/phase-5.md)
+for the full Phase 5 Definition of Done table, and "Live site status"
+further down, updated to include this item.
 
 ### Phase 5 item 11 — done: mobile lite mode
 
@@ -2809,19 +2814,20 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop), Phase 5 items 1–9 (design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions), all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), and the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap)
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and all of Phase 5 (items 1–9, item 10 cancelled, item 11 mobile lite mode): design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions, and mobile lite mode - plus all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), and the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap). **Phase 5 is functionally complete.**
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after Phase 5 item 9's own commit (`efbf37e`, see the START HERE
+right after Phase 5 item 11's own commit (`84d0383`, see the START HERE
 note above), on the user's approval, and both worked cleanly on the first
 try (no re-auth, no DNS re-check needed). Live site now serves all of
 Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete Phase 4
-(items 1–6), Phase 5 items 1–9, all 3 parts of the annotation revision,
-real-usage feedback round 2, and the third round of real-usage feedback.
+(items 1–6), all of Phase 5 (items 1–9, item 10 cancelled, item 11), all 3
+parts of the annotation revision, real-usage feedback round 2, and the
+third round of real-usage feedback.
 Deploy script itself reported success (`Published.` + the live URL); the
-`gh-pages` branch's own last commit reads `Deploy efbf37e` (confirmed via
+`gh-pages` branch's own last commit reads `Deploy 84d0383` (confirmed via
 `git fetch origin gh-pages` + `git log`, not just the deploy script's own
 message) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
 returned a fresh `200`. (The
@@ -3073,9 +3079,8 @@ made so later items can build on earlier ones instead of redoing them:
     layout rework, just `BoardCanvas` rendering non-interactively (no
     drag/resize/annotate/crop/zoom/pan) below a ~700px viewport, with the
     existing (already item-3-fixed) `TopBar` as the entire "pick images ->
-    pick a layout mode -> save" flow. Built, committed, and verified
-    locally; not yet pushed to `main` or deployed, pending the user's
-    go-ahead.
+    pick a layout mode -> save" flow. Pushed to `main` and deployed to the
+    live site (`84d0383`), on the user's approval.
 
 **Phase 5 is done when:** 5 new users understand the app within 10 seconds
 with no explanation (needs real people, same category as Phase 1's
