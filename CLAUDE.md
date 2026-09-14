@@ -379,8 +379,8 @@ for the full Phase 5 Definition of Done table, and "Live site status"
 further down, updated to include this item.
 
 **A mobile UX revision, driven by real-usage feedback on the live site, is
-now built and verified this session - not yet committed, pushed, or
-deployed, pending the user's go-ahead.** The user found item 11's own
+now built, verified, pushed to `main`, and deployed to the live site**
+(commit `c02fa3b`), on the user's approval. The user found item 11's own
 top-bar horizontal-scroll fallback (item 3) unpleasant on a phone ("ต้อง
 คอยเลื่อน ดูไม่มืออาชีพ เลย ใช้ยาก") and separately asked to be able to use
 the annotation tools (Arrow/Box/Text/Number/Redact) on mobile too, not just
@@ -392,7 +392,11 @@ or restyle an already-placed annotation) - free move/resize/pan/zoom/crop
 of *images* stays off, exactly as item 11 decided, since nothing about this
 request changed the reasoning behind that cut ("การลาก-ย่อ-ขยายบนจอเล็กคือ
 UX ที่แย่เสมอ" still applies to images specifically, not to annotations).
-See "Mobile UX revision" below (right after item 11's own writeup) for the
+Push and deploy both worked cleanly on the first try; the `gh-pages`
+branch's own last commit reads `Deploy c02fa3b` (confirmed via
+`git fetch origin gh-pages` + `git log`) and a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`. See
+"Mobile UX revision" below (right after item 11's own writeup) for the
 full detail. `npm run verify` green (typecheck + 243 unit + 33 renderer
 parity on 3 engines + 313/318 e2e passed, 5 skipped by design, same 5 as
 always - `tests/e2e/mobileLite.spec.ts` grew from 3 cases to 5, net +2 x 3
@@ -496,10 +500,11 @@ same 5 as always).
 
 ### Mobile UX revision — done: settings popover + annotate-only tool support
 
-Built and verified this session. Not yet committed, pushed, or deployed -
-see the note under START HERE above. `npm run verify` green (typecheck +
-243 unit + 33 renderer parity on 3 engines + 313/318 e2e passed, 5 skipped
-by design, same 5 as always).
+Built this session, shipped as commit `c02fa3b`, pushed to `main`, and
+deployed to the live site - see the note under START HERE above for the
+push/deploy confirmation. `npm run verify` green (typecheck + 243 unit +
+33 renderer parity on 3 engines + 313/318 e2e passed, 5 skipped by design,
+same 5 as always).
 
 - **Scope was pinned down with two explicit questions before any code, not
   discovered mid-implementation:** (1) annotate-only (tap/drag to place;
@@ -2959,20 +2964,20 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and all of Phase 5 (items 1–9, item 10 cancelled, item 11 mobile lite mode): design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions, and mobile lite mode - plus all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), and the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap). **Phase 5 is functionally complete.**
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and all of Phase 5 (items 1–9, item 10 cancelled, item 11 mobile lite mode): design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions, and mobile lite mode - plus all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap), and the mobile UX revision (settings popover so the top bar never scrolls, plus annotate-only tool support on mobile). **Phase 5 is functionally complete.**
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after Phase 5 item 11's own commit (`84d0383`, see the START HERE
-note above), on the user's approval, and both worked cleanly on the first
-try (no re-auth, no DNS re-check needed). Live site now serves all of
+right after the mobile UX revision's own commit (`c02fa3b`, see the START
+HERE note above), on the user's approval, and both worked cleanly on the
+first try (no re-auth, no DNS re-check needed). Live site now serves all of
 Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete Phase 4
 (items 1–6), all of Phase 5 (items 1–9, item 10 cancelled, item 11), all 3
-parts of the annotation revision, real-usage feedback round 2, and the
-third round of real-usage feedback.
+parts of the annotation revision, real-usage feedback round 2, the third
+round of real-usage feedback, and the mobile UX revision.
 Deploy script itself reported success (`Published.` + the live URL); the
-`gh-pages` branch's own last commit reads `Deploy 84d0383` (confirmed via
+`gh-pages` branch's own last commit reads `Deploy c02fa3b` (confirmed via
 `git fetch origin gh-pages` + `git log`, not just the deploy script's own
 message) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
 returned a fresh `200`. (The
