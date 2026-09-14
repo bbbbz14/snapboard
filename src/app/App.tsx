@@ -73,7 +73,7 @@ export function App() {
         {board.nodes.length === 0 ? (
           <EmptyState onFiles={onFiles} />
         ) : (
-          <BoardCanvas board={board} viewport={viewport} onCopy={onCopy} interactive={!isMobile} />
+          <BoardCanvas board={board} viewport={viewport} onCopy={onCopy} interactive={!isMobile} annotate={isMobile} />
         )}
       </div>
       {drag.dragging && <div className="dropzone">{t('drop.overlay', { count: drag.count })}</div>}

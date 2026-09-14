@@ -73,14 +73,26 @@ interface Props {
    * triggers the exact same clipboard call and "copied" feedback. */
   onCopy: () => void
   /** Phase 5 item 11 (mobile lite mode): when false, this renders a plain,
-   * always-fit-to-viewport preview with none of the pointer/keyboard
-   * interaction below wired up, and none of the per-node toolbars mounted -
-   * the product plan's own §4.6 deliberately excludes free move/resize/
-   * annotate on a small screen ("การลาก-ย่อ-ขยายบนจอเล็กคือ UX ที่แย่เสมอ").
-   * Board content on mobile is chosen entirely through TopBar's existing
-   * layout/style/gap/background controls, never by touching the canvas.
-   * Defaults to `true` so every desktop call site is unaffected. */
+   * always-fit-to-viewport preview with none of the pan/zoom/select/move/
+   * resize pointer-and-keyboard interaction below wired up, and neither
+   * `ZoomControls` nor `CropToolbar` mount - the product plan's own §4.6
+   * deliberately excludes free move/resize of *images* on a small screen
+   * ("การลาก-ย่อ-ขยายบนจอเล็กคือ UX ที่แย่เสมอ"). Defaults to `true` so every
+   * desktop call site is unaffected. See `annotate` below for the one
+   * capability this leaves on when it's `false`. */
   interactive?: boolean
+  /** Real-usage feedback on the live site reopened §4.6 partway: mobile
+   * users still want Arrow/Box/Text/Number/Redact, just not full free-form
+   * editing of images. When `true` (mobile, `interactive` false), the
+   * annotation toolbar mounts and tool placement works exactly as on
+   * desktop, and an already-placed *annotation* node (never an image - see
+   * `canSelectImages` below) can be selected/moved/duplicated/deleted/
+   * restyled via `SelectionToolbar`, the same as desktop. Pan/zoom, image
+   * selection/move/resize/reorder, marquee-selecting an image, and crop all
+   * stay off regardless of this flag - only `interactive` turns those on.
+   * Ignored (and effectively always-on) when `interactive` is already
+   * `true`. Defaults to `false` so every desktop call site is unaffected. */
+  annotate?: boolean
 }
 
 /** What `SelectionToolbar`'s settings button/popover edits for a single
@@ -103,7 +115,12 @@ function styleTargetFor(node: Board['nodes'][number] | undefined): StyleTarget |
  * what places the board correctly inside that fixed-size canvas; export never
  * sets it, so this is purely a preview concern - see invariant 1.
  */
-export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Props) {
+export function BoardCanvas({ board, viewport, onCopy, interactive = true, annotate = false }: Props) {
+  // Whichever of the two props got the canvas here, annotation placement and
+  // selecting/editing an existing *annotation* node (never an image) are
+  // allowed - see the `annotate` prop's own comment for exactly what that
+  // does and does not cover.
+  const canAnnotate = interactive || annotate
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const interactionCanvasRef = useRef<HTMLCanvasElement>(null)
   const pageRef = useRef<HTMLDivElement>(null)
@@ -711,7 +728,7 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
   // calling `draw`/`drawInteraction` directly on every pointermove - the
   // store only hears about it once, on pointer-up.
   useEffect(() => {
-    if (!interactive) return
+    if (!canAnnotate) return
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -792,16 +809,31 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
         return
       }
 
-      const handle = hitTestHandle(board.nodes, selectedIds, cameraRef.current, viewport, toScreenPoint(e))
-      if (handle) {
-        resizeRef.current = { id: handle.id, corner: handle.corner, startFrame: handle.frame }
-        canvas.setPointerCapture(e.pointerId)
-        return
+      // Resize handles only ever exist for image nodes (handles.ts's own
+      // guard), and mobile annotate-only mode never lets an image be
+      // selected in the first place (see the image-kind check just below) -
+      // skipping the hit-test outright when `!interactive` is a defensive
+      // belt-and-suspenders against a stale image selection carried over
+      // from a desktop session before a resize (window resize below the
+      // mobile breakpoint), not just relying on that.
+      if (interactive) {
+        const handle = hitTestHandle(board.nodes, selectedIds, cameraRef.current, viewport, toScreenPoint(e))
+        if (handle) {
+          resizeRef.current = { id: handle.id, corner: handle.corner, startFrame: handle.frame }
+          canvas.setPointerCapture(e.pointerId)
+          return
+        }
       }
 
       const point = toBoardPoint(e)
       const hitId = hitTest(board.nodes, point)
       if (hitId) {
+        // Mobile annotate-only mode (`annotate`, not `interactive`): images
+        // can be annotated over but never selected, moved, resized, or
+        // reordered - that stays desktop-only (product plan §4.6). An
+        // annotation-kind node falls through to the normal selection/move
+        // logic below exactly as it does on desktop.
+        if (!interactive && board.nodes.find((n) => n.id === hitId)?.kind === 'image') return
         if (e.shiftKey) {
           toggleSelection(hitId)
           return
@@ -1006,7 +1038,10 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
       if (!moved) {
         if (!e.shiftKey) setSelection([])
       } else {
-        const hitIds = marqueeSelect(board.nodes, rectFromPoints(marquee.start, marquee.current))
+        const rawHitIds = marqueeSelect(board.nodes, rectFromPoints(marquee.start, marquee.current))
+        // Same image-exclusion rule as the single-click path above, applied
+        // to a marquee's own multi-node result.
+        const hitIds = interactive ? rawHitIds : rawHitIds.filter((id) => board.nodes.find((n) => n.id === id)?.kind !== 'image')
         if (e.shiftKey) setSelection([...new Set([...useBoardStore.getState().selectedIds, ...hitIds])])
         else setSelection(hitIds)
       }
@@ -1043,6 +1078,7 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
     cropSession,
     toolSettings,
     interactive,
+    canAnnotate,
   ])
 
   // Keyboard shortcuts (Phase 2 item 9 completes this set). Undo/redo and
@@ -1060,7 +1096,7 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
   // and every other single-purpose shortcut in this file (zoom, delete,
   // escape) already avoids modifiers for the same reason.
   useEffect(() => {
-    if (!interactive) return
+    if (!canAnnotate) return
     const onKeyDown = (e: KeyboardEvent) => {
       // A crop session is modal (see the pointer-effect's own note) - only
       // its own confirm/cancel keys do anything while one is open, so a
@@ -1174,6 +1210,7 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
     cancelCrop,
     confirmCrop,
     interactive,
+    canAnnotate,
   ])
 
   // Double-click re-opens an existing text node for editing - the only way
@@ -1224,11 +1261,18 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
         setContextMenu(null)
         return
       }
+      // Mobile annotate-only mode: same image-exclusion rule as the
+      // pointerdown handler above - a long-press-triggered contextmenu event
+      // on an image must not select or offer actions on it either.
+      if (!interactive && board.nodes.find((n) => n.id === hitId)?.kind === 'image') {
+        setContextMenu(null)
+        return
+      }
       const current = useBoardStore.getState().selectedIds
       if (!current.includes(hitId)) setSelection([hitId])
       setContextMenu({ x: e.clientX, y: e.clientY })
     },
-    [cropSession, tool, board.nodes, viewport, setSelection],
+    [cropSession, tool, board.nodes, viewport, setSelection, interactive],
   )
 
   const onTextEditKeyDown = useCallback(
@@ -1313,8 +1357,8 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
         className={`board-canvas${tool !== 'select' ? ' board-canvas--annotate' : ''}`}
         role="img"
         aria-label={`Board with ${imageCount} image${imageCount === 1 ? '' : 's'}`}
-        onDoubleClick={interactive ? onCanvasDoubleClick : undefined}
-        onContextMenu={interactive ? onCanvasContextMenu : undefined}
+        onDoubleClick={canAnnotate ? onCanvasDoubleClick : undefined}
+        onContextMenu={canAnnotate ? onCanvasContextMenu : undefined}
       />
       <canvas ref={interactionCanvasRef} className="board-interaction" aria-hidden="true" />
       <canvas ref={cropOverlayCanvasRef} className="board-crop-overlay" aria-hidden="true" />
@@ -1332,7 +1376,15 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
       <div className="selection-status visually-hidden" role="status" aria-live="polite">
         {selectedIds.length > 0 ? t('selection.count', { count: selectedIds.length }) : ''}
       </div>
-      {interactive && (
+      {/* SelectionToolbar/ContextMenu/AnnotationToolbar cover the annotate-
+          only mobile mode too (`canAnnotate`) - SelectionToolbar's onCrop
+          stays undefined there since `canCrop` can only be true for an
+          image selection, which mobile never produces (see the pointer
+          effect's own image-exclusion guard), so nothing here has to special-
+          case mobile explicitly. ZoomControls/CropToolbar are desktop-only
+          (`interactive`) - there is no pan/zoom or per-image crop to control
+          without it. */}
+      {canAnnotate && (
         <>
           <SelectionToolbar
             ref={toolbarRef}
@@ -1346,7 +1398,6 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
             onStyleAdjustStart={beginAdjustment}
             onStyleAdjustEnd={endAdjustment}
           />
-          <CropToolbar ref={cropToolbarRef} onConfirm={confirmCrop} onCancel={cancelCrop} />
           {contextMenu && (
             <ContextMenu
               x={contextMenu.x}
@@ -1358,13 +1409,6 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
               onClose={() => setContextMenu(null)}
             />
           )}
-          <ZoomControls
-            percent={percent}
-            onZoomOut={() => zoomByFactor(1 / ZOOM_STEP)}
-            onZoomIn={() => zoomByFactor(ZOOM_STEP)}
-            onReset={resetTo100}
-            onFit={fitToView}
-          />
           <AnnotationToolbar
             tool={tool}
             onToggleArrow={() => setTool(tool === 'arrow' ? 'select' : 'arrow')}
@@ -1375,6 +1419,18 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true }: Pro
             toolSettings={toolSettings}
             onColorChange={setToolColor}
             onSizeChange={setToolSize}
+          />
+        </>
+      )}
+      {interactive && (
+        <>
+          <CropToolbar ref={cropToolbarRef} onConfirm={confirmCrop} onCancel={cancelCrop} />
+          <ZoomControls
+            percent={percent}
+            onZoomOut={() => zoomByFactor(1 / ZOOM_STEP)}
+            onZoomIn={() => zoomByFactor(ZOOM_STEP)}
+            onReset={resetTo100}
+            onFit={fitToView}
           />
         </>
       )}

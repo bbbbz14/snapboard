@@ -18,6 +18,7 @@ export const en = {
   'toolbar.layout': 'Layout',
   'toolbar.style': 'Style',
   'toolbar.spacing': 'Spacing',
+  'toolbar.settings': 'Layout, style & background',
   'toolbar.copy': 'Copy',
   'toolbar.copyTitle': 'Copy ({{mod}}+Shift+C)',
   'toolbar.copied': 'Copied',

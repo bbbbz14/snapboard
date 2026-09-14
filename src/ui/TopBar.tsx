@@ -1,29 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useBoardStore, toRenderInput } from '@/board/store/boardStore'
-import type { LayoutMode, StylePreset } from '@/board/model/types'
 import { exportBoard, exportFilename, estimatePixels, resolveScale, type ExportOptions } from '@/board/export/exportBoard'
 import { downloadBlob } from '@/board/export/clipboard'
 import { ExportMenu } from '@/ui/ExportMenu'
 import { BackgroundMenu, backgroundSwatchStyle } from '@/ui/BackgroundMenu'
+import { MobileSettingsMenu } from '@/ui/MobileSettingsMenu'
+import { LAYOUTS, STYLES, GAP_MAX } from '@/ui/topbarOptions'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { modKey, t } from '@/i18n/t'
-
-const LAYOUTS: { mode: LayoutMode; label: string }[] = [
-  { mode: 'auto', label: t('layout.auto') },
-  { mode: 'rows', label: t('layout.rows') },
-  { mode: 'columns', label: t('layout.columns') },
-  { mode: 'grid', label: t('layout.grid') },
-  { mode: 'steps', label: t('layout.steps') },
-]
-
-const STYLES: { key: StylePreset; label: string }[] = [
-  { key: 'plain', label: t('style.plain') },
-  { key: 'card', label: t('style.card') },
-  { key: 'soft', label: t('style.soft') },
-]
-
-// The gap slider's own range (px) - also the denominator for the %
-// shown next to it, so the two never drift apart.
-const GAP_MAX = 80
 
 interface Props {
   copied: boolean
@@ -35,32 +19,39 @@ interface Props {
 }
 
 export function TopBar({ copied, onCopy, onHelp }: Props) {
+  const isMobile = useIsMobile()
   const board = useBoardStore((s) => s.board)
   const store = useBoardStore()
   const gapId = useId()
   const [exportOpts, setExportOpts] = useState<ExportOptions>({ scale: 2, format: 'image/png', quality: 0.92 })
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [backgroundMenuOpen, setBackgroundMenuOpen] = useState(false)
+  // Mobile only (see the `isMobile` branch below) - Background/Layout/Style/
+  // Gap folded into one popover instead of shown inline, so the bar itself
+  // never has to scroll to reach them.
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
   const headerRef = useRef<HTMLElement>(null)
   const caretRef = useRef<HTMLButtonElement>(null)
   const backgroundBtnRef = useRef<HTMLButtonElement>(null)
+  const settingsBtnRef = useRef<HTMLButtonElement>(null)
 
   // The bar itself scrolls now (item 3) - if it scrolls while a popover
   // anchored to one of its buttons is open, the popover (position: fixed,
-  // see ExportMenu.tsx/BackgroundMenu.tsx) would visually detach from the
-  // button that anchored it. Simplest correct behavior: close it, same as
-  // an outside click already does.
+  // see ExportMenu.tsx/BackgroundMenu.tsx/MobileSettingsMenu.tsx) would
+  // visually detach from the button that anchored it. Simplest correct
+  // behavior: close it, same as an outside click already does.
   useEffect(() => {
-    if (!exportMenuOpen && !backgroundMenuOpen) return
+    if (!exportMenuOpen && !backgroundMenuOpen && !settingsMenuOpen) return
     const header = headerRef.current
     if (!header) return
     const onScroll = () => {
       setExportMenuOpen(false)
       setBackgroundMenuOpen(false)
+      setSettingsMenuOpen(false)
     }
     header.addEventListener('scroll', onScroll)
     return () => header.removeEventListener('scroll', onScroll)
-  }, [exportMenuOpen, backgroundMenuOpen])
+  }, [exportMenuOpen, backgroundMenuOpen, settingsMenuOpen])
 
   const hasImages = board.nodes.length > 0
 
@@ -89,96 +80,139 @@ export function TopBar({ copied, onCopy, onHelp }: Props) {
       <span className="brand">{t('app.name')}</span>
 
       {hasImages && (
-        <>
-          <div className="background-picker">
+        isMobile ? (
+          // Background/Layout/Style/Gap are the four controls wide enough,
+          // combined, to force the bar into horizontal scrolling on a narrow
+          // viewport (item 3 only ever floored that, never fixed it) - real-
+          // usage feedback on the live site asked for something that never
+          // needs scrolling. Folded into one popover behind a single icon
+          // instead of shown inline; see MobileSettingsMenu's own note.
+          <div className="topbar-settings">
             <button
-              ref={backgroundBtnRef}
+              ref={settingsBtnRef}
               className="btn"
-              aria-label={t('toolbar.background')}
-              aria-expanded={backgroundMenuOpen}
-              onClick={() => setBackgroundMenuOpen((v) => !v)}
+              aria-label={t('toolbar.settings')}
+              title={t('toolbar.settings')}
+              aria-expanded={settingsMenuOpen}
+              onClick={() => setSettingsMenuOpen((v) => !v)}
             >
-              <span
-                className={`swatch swatch--preview${board.background.type === 'transparent' ? ' swatch--transparent' : ''}`}
-                style={backgroundSwatchStyle(board.background)}
-              />
-              {t('toolbar.background')}
+              ⚙
             </button>
-            {backgroundMenuOpen && (
-              <BackgroundMenu
-                current={board.background}
-                onChange={(name) => store.setBackground(name)}
-                onClose={() => setBackgroundMenuOpen(false)}
-                anchorRef={backgroundBtnRef}
+            {settingsMenuOpen && (
+              <MobileSettingsMenu
+                board={board}
+                onSetLayout={store.setLayout}
+                onTurnAutoOn={() => store.setLayout('auto')}
+                onSetStyle={store.setStyle}
+                onSetGap={store.setGap}
+                onGapAdjustStart={store.beginAdjustment}
+                onGapAdjustEnd={store.endAdjustment}
+                onSetBackground={store.setBackground}
+                onClear={onClear}
+                onClose={() => setSettingsMenuOpen(false)}
+                anchorRef={settingsBtnRef}
               />
             )}
           </div>
-
-          <div className="group" role="group" aria-label={t('toolbar.layout')}>
-            {board.layout === 'free' ? (
-              // The first manual move/resize flips layout to 'free' (see
-              // boardStore.setFrames) - relayout() then refuses to touch the
-              // board (invariant 4), so this is the only way back to auto.
-              <span className="free-banner" role="status">
-                {t('layout.freeNotice')}
-                <button className="link" onClick={() => store.setLayout('auto')}>
-                  {t('layout.turnOn')}
-                </button>
-              </span>
-            ) : (
-              LAYOUTS.map((l) => (
-                <button
-                  key={l.mode}
-                  className="chip"
-                  aria-pressed={board.layout === l.mode}
-                  onClick={() => store.setLayout(l.mode)}
-                  title={l.mode === 'auto' ? `${l.label} (${board.resolvedLayout})` : l.label}
-                >
-                  {l.label}
-                </button>
-              ))
-            )}
-          </div>
-
-          <div className="group" role="group" aria-label={t('toolbar.style')}>
-            {STYLES.map((s) => (
+        ) : (
+          <>
+            <div className="background-picker">
               <button
-                key={s.key}
-                className="chip"
-                aria-pressed={board.style === s.key}
-                onClick={() => store.setStyle(s.key)}
+                ref={backgroundBtnRef}
+                className="btn"
+                aria-label={t('toolbar.background')}
+                aria-expanded={backgroundMenuOpen}
+                onClick={() => setBackgroundMenuOpen((v) => !v)}
               >
-                {s.label}
+                <span
+                  className={`swatch swatch--preview${board.background.type === 'transparent' ? ' swatch--transparent' : ''}`}
+                  style={backgroundSwatchStyle(board.background)}
+                />
+                {t('toolbar.background')}
               </button>
-            ))}
-          </div>
+              {backgroundMenuOpen && (
+                <BackgroundMenu
+                  current={board.background}
+                  onChange={(name) => store.setBackground(name)}
+                  onClose={() => setBackgroundMenuOpen(false)}
+                  anchorRef={backgroundBtnRef}
+                />
+              )}
+            </div>
 
-          <label className="slider" htmlFor={gapId}>
-            {t('spacing.gapWithPercent', { percent: Math.round((board.gap / GAP_MAX) * 100) })}
-            <input
-              id={gapId}
-              type="range"
-              min={0}
-              max={GAP_MAX}
-              value={board.gap}
-              onChange={(e) => store.setGap(Number(e.target.value))}
-              onPointerDown={store.beginAdjustment}
-              onPointerUp={store.endAdjustment}
-              onKeyDown={store.beginAdjustment}
-              onKeyUp={store.endAdjustment}
-              aria-label={t('spacing.gap')}
-            />
-          </label>
-        </>
+            <div className="group" role="group" aria-label={t('toolbar.layout')}>
+              {board.layout === 'free' ? (
+                // The first manual move/resize flips layout to 'free' (see
+                // boardStore.setFrames) - relayout() then refuses to touch the
+                // board (invariant 4), so this is the only way back to auto.
+                <span className="free-banner" role="status">
+                  {t('layout.freeNotice')}
+                  <button className="link" onClick={() => store.setLayout('auto')}>
+                    {t('layout.turnOn')}
+                  </button>
+                </span>
+              ) : (
+                LAYOUTS.map((l) => (
+                  <button
+                    key={l.mode}
+                    className="chip"
+                    aria-pressed={board.layout === l.mode}
+                    onClick={() => store.setLayout(l.mode)}
+                    title={l.mode === 'auto' ? `${l.label} (${board.resolvedLayout})` : l.label}
+                  >
+                    {l.label}
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="group" role="group" aria-label={t('toolbar.style')}>
+              {STYLES.map((s) => (
+                <button
+                  key={s.key}
+                  className="chip"
+                  aria-pressed={board.style === s.key}
+                  onClick={() => store.setStyle(s.key)}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+
+            <label className="slider" htmlFor={gapId}>
+              {t('spacing.gapWithPercent', { percent: Math.round((board.gap / GAP_MAX) * 100) })}
+              <input
+                id={gapId}
+                type="range"
+                min={0}
+                max={GAP_MAX}
+                value={board.gap}
+                onChange={(e) => store.setGap(Number(e.target.value))}
+                onPointerDown={store.beginAdjustment}
+                onPointerUp={store.endAdjustment}
+                onKeyDown={store.beginAdjustment}
+                onKeyUp={store.endAdjustment}
+                aria-label={t('spacing.gap')}
+              />
+            </label>
+          </>
+        )
       )}
 
       <span className="spacer" />
 
       {hasImages && (
         <>
-          <button className="btn" onClick={onClear}>
-            {t('toolbar.clear')}
-          </button>
+          {/* Folded into the settings popover on mobile instead (see the
+              `isMobile` branch above and MobileSettingsMenu.tsx) - it was
+              one of the two things (along with the brand text, see
+              styles.css) that had to leave the main row for the bar to fit
+              without scrolling. */}
+          {!isMobile && (
+            <button className="btn" onClick={onClear}>
+              {t('toolbar.clear')}
+            </button>
+          )}
           {/* Download stays visible next to Copy: a silent clipboard failure is
               undetectable, so the user always needs a way out. See ADR-003. */}
           <div className="split-btn">

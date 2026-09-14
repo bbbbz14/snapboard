@@ -307,6 +307,15 @@ body {
   display: flex;
 }
 
+/* ---------- mobile settings menu (top-bar redesign, real-usage feedback) ----------
+   Same anchor button + popover shape as .background-picker above - see
+   TopBar.tsx's `isMobile` branch and MobileSettingsMenu.tsx. */
+
+.topbar-settings {
+  position: relative;
+  display: flex;
+}
+
 .background-picker .btn {
   display: inline-flex;
   align-items: center;
@@ -464,6 +473,65 @@ body {
 .slider input {
   width: 78px;
   accent-color: var(--accent);
+}
+
+/* Background/Layout/Style/Gap, folded into one popover on mobile instead of
+   shown inline (see the note above and MobileSettingsMenu.tsx) - same fixed-
+   position/anchored-from-getBoundingClientRect pattern as .export-menu/
+   .background-menu, just wide enough to stack four sections instead of one
+   control. */
+.mobile-settings-menu {
+  position: fixed;
+  z-index: 20;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  width: 260px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  animation: popover-in 130ms ease-out;
+}
+
+.mobile-settings-menu__section {
+  display: grid;
+  gap: 6px;
+}
+
+.mobile-settings-menu__label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.mobile-settings-menu__swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+/* The Layout/Style chip groups (`.group`) are normally a single non-wrapping
+   row (see `.group` above) - correct in the top bar's own horizontal scroll,
+   wrong inside a fixed-width popover, where they should wrap onto more than
+   one line instead of overflowing it. Scoped to this popover only. */
+.mobile-settings-menu .group {
+  flex-wrap: wrap;
+}
+
+.mobile-settings-menu .slider {
+  padding: 0;
+}
+
+.mobile-settings-menu .slider input {
+  flex: 1;
+  width: auto;
+}
+
+.mobile-settings-menu__clear {
+  width: 100%;
 }
 
 /* ---------- recovery bar ---------- */
@@ -1156,15 +1224,16 @@ body {
   }
 }
 
-/* ---------- mobile lite mode (Phase 5 item 11) ----------
+/* ---------- mobile lite mode (Phase 5 item 11, revised) ----------
 
    Below this width, BoardCanvas renders with `interactive={false}` (see its
-   own prop comment) - there is no per-node toolbar, no drag/resize, no
-   pinch/wheel zoom to size a target for. The only controls left to touch
-   are `.topbar`'s own chips/buttons (choosing a layout mode, gap, style,
-   background) and Download/Copy, so this is a small, low-risk bump to just
-   those - not a rewrite of every control's sizing - to clear the ~44px
-   touch-target guideline they fall short of at their desktop size. Same
+   own prop comment) - no pan/zoom, no free move/resize of an image, no crop.
+   Real-usage feedback later reopened part of this: `annotate={true}` (also
+   set below this breakpoint) keeps annotation placement and editing on, so
+   AnnotationToolbar/SelectionToolbar/ContextMenu mount here too now, not
+   just `.topbar`'s own chips/buttons and Download/Copy. Same ~44px
+   touch-target guideline as the original bump, extended to the two toolbars
+   that weren't reachable on mobile when this block was first written. Same
    breakpoint as `useIsMobile`'s `MOBILE_MAX_WIDTH`, so the layout and the
    interaction mode change together. */
 @media (max-width: 700px) {
@@ -1178,5 +1247,21 @@ body {
 
   .split-btn__caret {
     padding: 11px 12px;
+  }
+
+  .annotation-toolbar__btn,
+  .selection-toolbar__btn {
+    width: 40px;
+    height: 40px;
+    font-size: 17px;
+  }
+
+  /* The app name costs ~90px for no functional value once the bar is
+     actually in use - dropping it (plus moving Clear into the settings
+     popover, see MobileSettingsMenu.tsx) is what gets the bar under this
+     viewport's width without `.topbar`'s own overflow-scroll fallback ever
+     having to kick in. */
+  .brand {
+    display: none;
   }
 }

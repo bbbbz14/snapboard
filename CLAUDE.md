@@ -378,6 +378,27 @@ below for the full writeup, [docs/phases/phase-5.md](docs/phases/phase-5.md)
 for the full Phase 5 Definition of Done table, and "Live site status"
 further down, updated to include this item.
 
+**A mobile UX revision, driven by real-usage feedback on the live site, is
+now built and verified this session - not yet committed, pushed, or
+deployed, pending the user's go-ahead.** The user found item 11's own
+top-bar horizontal-scroll fallback (item 3) unpleasant on a phone ("ต้อง
+คอยเลื่อน ดูไม่มืออาชีพ เลย ใช้ยาก") and separately asked to be able to use
+the annotation tools (Arrow/Box/Text/Number/Redact) on mobile too, not just
+pick a layout and save - both explicitly reopen scope item 11 had just
+closed, not a bug in it. Scoped narrowly with the user's explicit approval
+(via two up-front questions) before any code was written: annotation
+*placement and editing* only (tap/drag to draw; select, duplicate, delete,
+or restyle an already-placed annotation) - free move/resize/pan/zoom/crop
+of *images* stays off, exactly as item 11 decided, since nothing about this
+request changed the reasoning behind that cut ("การลาก-ย่อ-ขยายบนจอเล็กคือ
+UX ที่แย่เสมอ" still applies to images specifically, not to annotations).
+See "Mobile UX revision" below (right after item 11's own writeup) for the
+full detail. `npm run verify` green (typecheck + 243 unit + 33 renderer
+parity on 3 engines + 313/318 e2e passed, 5 skipped by design, same 5 as
+always - `tests/e2e/mobileLite.spec.ts` grew from 3 cases to 5, net +2 x 3
+engines = +6, all green on the first full run after the fixes described
+below).
+
 ### Phase 5 item 11 — done: mobile lite mode
 
 Built this session. `npm run verify` green (typecheck + 243 unit + 33
@@ -472,6 +493,130 @@ same 5 as always).
   width; no change to the annotation/crop/undo/redo machinery itself - it
   still exists and works exactly as before at desktop width, `interactive`
   only ever turns it off, never changes its behavior when on.
+
+### Mobile UX revision — done: settings popover + annotate-only tool support
+
+Built and verified this session. Not yet committed, pushed, or deployed -
+see the note under START HERE above. `npm run verify` green (typecheck +
+243 unit + 33 renderer parity on 3 engines + 313/318 e2e passed, 5 skipped
+by design, same 5 as always).
+
+- **Scope was pinned down with two explicit questions before any code, not
+  discovered mid-implementation:** (1) annotate-only (tap/drag to place;
+  select/duplicate/delete/restyle what's already placed - no free image
+  move/resize/pan/zoom) rather than full touch parity with desktop, and (2)
+  redesign the top bar as icon-only primary controls plus one popover for
+  everything else, rather than a bottom-sheet/hamburger rebuild. Both were
+  the user's own choice between two framed options, not this session's
+  default.
+- **`BoardCanvas` gained a second prop, `annotate` (default `false`),
+  independent of `interactive`.** A derived `canAnnotate = interactive ||
+  annotate` now gates: the annotation-tool pointer/keyboard branches
+  (arrow/box/text/marker/redact placement - these needed no change at all,
+  they already worked identically regardless of `interactive`, only the
+  effect's outer `if (!interactive) return` guard was stopping them from
+  ever running on mobile), `AnnotationToolbar`/`SelectionToolbar`/
+  `ContextMenu` mounting, and the double-click-to-re-edit-text/context-menu
+  canvas handlers. `ZoomControls`/`CropToolbar` mounting and the pan/zoom
+  wheel and space-drag effects stay gated on `interactive` alone - there is
+  still no pan/zoom or per-image crop on mobile, unchanged from item 11.
+  `App.tsx` now passes `annotate={isMobile}` alongside the existing
+  `interactive={!isMobile}`.
+- **Three separate guards, not one, keep an *image* node unselectable/
+  unmovable in annotate-only mode** - `selectedIds` is store-level state that
+  can in principle carry a stale image id across a window resize that
+  crosses the mobile breakpoint, so this isn't provable from a single check:
+  the resize-handle hit-test is skipped outright when `!interactive`; the
+  main pointerdown handler's hit-test bails immediately if the hit node is
+  `kind === 'image'` and `!interactive`; the marquee-select result is
+  filtered to exclude image ids the same way; and the right-click/long-press
+  context-menu handler applies the identical filter before opening. An
+  annotation-kind hit falls through to the ordinary desktop selection/move
+  logic unchanged in every one of these paths - `SelectionToolbar`'s
+  `onCrop` also stays `undefined` automatically in this mode (its own
+  `canCrop` can only be true for an image selection, which these guards make
+  impossible), so nothing had to special-case "no crop on mobile" a second
+  time.
+- **`TopBar.tsx`'s Background/Layout/Style/Gap - the four controls that,
+  combined, were forcing `.topbar` into item 3's horizontal-scroll fallback
+  - now live behind one settings icon (`⚙`) on mobile, via a new popover,
+  `src/ui/MobileSettingsMenu.tsx`.** Same fixed-position/anchored-from-
+  `getBoundingClientRect()`/`useFocusTrap` pattern `BackgroundMenu`/
+  `ExportMenu` already established, just stacking four sections instead of
+  one control, and deliberately *not* auto-closing after a single pick the
+  way the standalone `BackgroundMenu` does - a panel this size is more
+  likely to get several taps in a row (layout, then style, then a gap
+  nudge) than one. `LAYOUTS`/`STYLES`/`GAP_MAX` were pulled out of
+  `TopBar.tsx` into a new shared `src/ui/topbarOptions.ts` so the desktop
+  inline version and this popover read from one source instead of two
+  copies that could drift.
+- **Getting the bar to actually fit 390px took two more removals, found by
+  measurement, not by guessing:** a throwaway debug test (not committed)
+  that read every `.topbar` child's `getBoundingClientRect().width` showed
+  the bar was ~220px too wide even after Background/Layout/Style/Gap moved
+  out - the brand text ("Snapboard", ~90px) and the "Clear board" button
+  (~120px) were the remaining slack. The brand is now `display: none` below
+  700px (no functional value once the app is actually in use); "Clear
+  board" moved into the bottom of the same settings popover instead of
+  staying in the main row - it's rare and already gated behind a native
+  `confirm()`, so one extra tap to reach it costs little. With both gone,
+  `.topbar`'s own `scrollWidth` sits comfortably under its `clientWidth` at
+  390px - confirmed by a direct measurement in the new e2e test, not just
+  "looks fine in a screenshot."
+- **Touch-target bump for the two toolbars that mount on mobile for the
+  first time:** `.annotation-toolbar__btn`/`.selection-toolbar__btn` were
+  still at desktop's `--control-h` (28px) - both good enough with a mouse
+  pointer, short of the ~44px guideline item 11's own CSS bump already
+  applied to `.chip`/`.btn`/`.split-btn__caret`. Added to the same existing
+  `@media (max-width: 700px)` block rather than a new one.
+- **Real test-writing bug caught while updating `tests/e2e/mobileLite.spec.ts`,
+  the same class CLAUDE.md's own gotcha list already documents once:**
+  Playwright's `getByRole` name matching is a case-insensitive *substring*
+  match by default, not exact - a bare `name: 'Background'` query matched
+  the settings button's own accessible name, "Layout, style & background",
+  not just the (now-removed) standalone Background button. Fixed with
+  `{ exact: true }`, same fix `annotationSettings.spec.ts` needed once
+  before for an unrelated pair of buttons.
+- **`tests/e2e/mobileLite.spec.ts` rewritten, not just patched** - it went
+  from proving "none of this mounts" to proving the opposite for two of the
+  three toolbars: `.annotation-toolbar`/`.selection-toolbar` now assert
+  `toHaveCount(1)`, `.zoom-controls` still asserts `toHaveCount(0)`. The
+  "clicking or dragging never selects or moves a node" test was renamed and
+  narrowed to say *image* explicitly (its own premise no longer covers
+  annotations) and now opens the settings popover first to reach the
+  "Stacked" layout chip. A new direct measurement test checks
+  `.topbar`'s `scrollWidth` against its `clientWidth`. A new test reuses
+  `arrow.spec.ts`'s own reddish-pixel-region-scan technique end to end at
+  the mobile viewport: arm the Arrow tool, drag to draw, confirm the pixel
+  scan and the one-shot revert-to-select, then delete it via the Delete key
+  and confirm the pixel is gone - the "place *and* fix a mistake" round trip
+  this revision's whole point was to enable.
+- **Verified live, not just via the automated suite:** a throwaway
+  Playwright script (not committed) screenshotted a 390×844 session - the
+  bare board with the compact top bar (no scrollbar visible), the open
+  settings popover (all four sections stacked, Clear board at the bottom),
+  and the armed Arrow tool (the toolbar's swatch dot turns red) - all three
+  matched the intended design with no layout glitches.
+- **Deliberately not done, scoped to exactly what was approved:** no touch
+  gestures for images at all (pinch-zoom, two-finger pan, drag-to-move/
+  resize) - the product plan's own §4.6 reasoning for excluding those from
+  a small screen was never in question here, only annotation tooling was;
+  no crop on mobile (still per-image free editing, the same category item
+  11 already excluded); no general redesign of every top-bar control's
+  sizing - just enough removed/regrouped to clear this one viewport width,
+  following item 11's own "small, low-risk bump" precedent rather than a
+  full responsive rebuild.
+- **One real-device caveat worth carrying forward, not resolved here:**
+  opening the text tool's textarea overlay from a touch tap relies on the
+  same pre-existing `useEffect`-deferred `.focus()` call (unchanged by this
+  revision) to also trigger the mobile virtual keyboard. That has always
+  worked reliably for a desktop mouse click; iOS Safari's own rule for
+  whether a `.focus()` call still counts as "user-gesture-associated" once
+  it runs from inside a `useEffect` rather than synchronously in the
+  pointerdown handler is stricter and unconfirmed here - headless testing
+  has no virtual keyboard to observe at all. Worth a real-phone check
+  before calling the Text tool itself mobile-proven, same category as every
+  other "needs a real device" gap already tracked in this file.
 
 ### Phase 5 item 5 — done: accessibility pass (4 concrete gaps)
 
