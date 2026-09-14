@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { t } from '@/i18n/t'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
+import { TrashIcon } from '@/ui/TrashIcon'
 
 interface Props {
   x: number
@@ -101,7 +102,7 @@ export function ContextMenu({ x, y, onCrop, onDuplicate, onBringToFront, onDelet
       </button>
       <button role="menuitem" className="context-menu__item context-menu__item--danger" onClick={act(onDelete)}>
         <span className="context-menu__icon" aria-hidden="true">
-          🗑
+          <TrashIcon />
         </span>
         {t('selection.delete')}
       </button>

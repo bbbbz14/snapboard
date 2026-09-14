@@ -627,6 +627,16 @@ body {
   transform: scale(0.9);
 }
 
+/* The delete affordance renders an SVG (TrashIcon) rather than a text
+   glyph, so centre it explicitly instead of leaning on the button's
+   inherited text alignment. Scoped to --danger so the text-glyph buttons
+   next to it are unaffected. */
+.selection-toolbar__btn--danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .selection-toolbar__btn--danger:hover {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, transparent);
@@ -682,6 +692,11 @@ body {
   flex-shrink: 0;
   text-align: center;
   color: var(--text-dim);
+}
+
+.context-menu__icon > svg {
+  display: block;
+  margin: 0 auto;
 }
 
 /* Cursor hint while an annotation tool (arrow/box) is armed - the canvas

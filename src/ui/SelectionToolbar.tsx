@@ -1,6 +1,7 @@
 import { useRef, useState, forwardRef } from 'react'
 import { t } from '@/i18n/t'
 import { AnnotationSettingsPopover } from '@/ui/AnnotationSettingsPopover'
+import { TrashIcon } from '@/ui/TrashIcon'
 
 export interface StyleTarget {
   color: string
@@ -86,7 +87,7 @@ export const SelectionToolbar = forwardRef<HTMLDivElement, Props>(function Selec
         </button>
       )}
       <button className="selection-toolbar__btn selection-toolbar__btn--danger" title={t('selection.delete')} aria-label={t('selection.delete')} onClick={onDelete}>
-        🗑
+        <TrashIcon />
       </button>
       {settingsOpen && style && onStyleColorChange && onStyleSizeChange && (
         <AnnotationSettingsPopover
