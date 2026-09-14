@@ -3378,6 +3378,26 @@ tests/render/         renderer parity harness (imports src directly, dev server 
 
 ## Gotchas learned the hard way
 
+- **A test fixture that runs thousands of times has to clean up after itself —
+  this repo is not alone on its disk.** Fixed 2026-09-14. `tests/e2e/fixtures.ts`'s
+  `images` fixture made a `mkdtempSync(join(tmpdir(), 'snapboard-'))` directory
+  per test and never removed it, so every `pnpm e2e` run (321 tests) left
+  hundreds of directories in `/tmp` permanently. By the time anyone looked there
+  were **16,487 of them, 11 GB**, and `/` was at **97% with 1.8 GB free** —
+  growing 2-3 GB a day. Nothing in Snapboard broke, which is exactly why it went
+  unnoticed for four days: the cost landed somewhere else. **`/` on this box is
+  only 48 GB and it is shared with two production services** (the Workforce
+  monitoring server and the Staff HR portal, both under `/home/admin`); their
+  journald, builds and scratch writes would all have failed together if it had
+  filled. Snapboard itself correctly lives on the 10 TB `/data` volume — it was
+  only the *temp* files that went to the small disk.
+  The fix is a `try/finally` with `rmSync(dir, { recursive: true, force: true })`
+  around the `await use(...)`. Verified by running the whole e2e suite and
+  watching the `/tmp/snapboard-*` count not move (316 passed, 5 skipped, 0 new
+  directories). If you add another fixture that writes outside the repo, clean it
+  up in a `finally` in the same commit — and if you ever see `/` short of space,
+  check `ls -d /tmp/snapboard-* | wc -l` first.
+
 - **Timing canvas work requires a flush.** Read one pixel with `getImageData`
   before reading the clock, or WebKit reports 0 ms because rasterisation is
   asynchronous. Every perf measurement in this repo does this.
