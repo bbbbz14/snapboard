@@ -403,6 +403,38 @@ always - `tests/e2e/mobileLite.spec.ts` grew from 3 cases to 5, net +2 x 3
 engines = +6, all green on the first full run after the fixes described
 below).
 
+**Real bug found and fixed this session (2026-09-14), unrelated to any
+Phase 5 item - the user found it by using the live site: a plain mouse-wheel
+scroll panned the board camera with no bound at all.** Reported symptom:
+after dropping images and doing nothing else, scrolling the wheel up/down
+kept moving the board indefinitely, with no floor - a long scroll down could
+carry the board arbitrarily far off-screen, hard to find again. Root cause,
+confirmed by reading the code before touching it: `panBy()`
+(`src/board/view/camera.ts`) is a pure screen-delta-to-board-delta
+translation with no board-size awareness at all, and `applyZoom`/`applyPan`
+(`src/ui/BoardCanvas.tsx`) both permanently set `autoFitRef.current = false`
+the instant the user zooms or pans even once - so nothing ever re-centers
+the camera afterward either. Zoom already had real bounds (`MIN_ZOOM`/
+`MAX_ZOOM`, `clampZoom`) - pan simply never got the equivalent. **Fixed** by
+adding `clampCenter(camera, board, viewport)` to `camera.ts`, which keeps at
+least 80px of overlap between the viewport and the board on each axis at the
+current zoom (the same family of guard Figma/Photoshop apply to their own
+canvas panning) - called from both `applyZoom` and `applyPan`, so wheel-pan,
+space/middle-drag, and zoom-driven re-centering are all covered from one
+place with no change needed at the individual gesture handlers. Shipped as
+commit `2a023c4`, pushed to `main`, and deployed to the live site, on the
+user's approval. Push and deploy both worked cleanly on the first try; the
+`gh-pages` branch's own last commit reads `Deploy 2a023c4` (confirmed via
+`git fetch origin gh-pages` + `git log`) and a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`.
+`npm run verify` green (typecheck + 247 unit - 4 new `clampCenter` cases in
+`tests/unit/camera.test.ts` - + 33 renderer parity on 3 engines + 316/321
+e2e passed, 5 skipped by design, same 5 as always - one new case in
+`tests/e2e/zoom.spec.ts` scrolls the wheel 40x and confirms the board stays
+reachable; confirmed this test genuinely fails against the pre-fix code
+first (the board's on-screen rect landed ~79,000px off-screen), then passes
+with the fix, on all 3 engines - not just written and assumed correct).
+
 ### Phase 5 item 11 — done: mobile lite mode
 
 Built this session. `npm run verify` green (typecheck + 243 unit + 33
@@ -2964,20 +2996,21 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and all of Phase 5 (items 1–9, item 10 cancelled, item 11 mobile lite mode): design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions, and mobile lite mode - plus all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap), and the mobile UX revision (settings popover so the top bar never scrolls, plus annotate-only tool support on mobile). **Phase 5 is functionally complete.**
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and all of Phase 5 (items 1–9, item 10 cancelled, item 11 mobile lite mode): design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions, and mobile lite mode - plus all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap), the mobile UX revision (settings popover so the top bar never scrolls, plus annotate-only tool support on mobile), and the unbounded-wheel-pan fix. **Phase 5 is functionally complete.**
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after the mobile UX revision's own commit (`c02fa3b`, see the START
-HERE note above), on the user's approval, and both worked cleanly on the
-first try (no re-auth, no DNS re-check needed). Live site now serves all of
+right after the unbounded-wheel-pan fix's own commit (`2a023c4`, see the
+START HERE note above), on the user's approval, and both worked cleanly on
+the first try (no re-auth, no DNS re-check needed). Live site now serves all of
 Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete Phase 4
 (items 1–6), all of Phase 5 (items 1–9, item 10 cancelled, item 11), all 3
 parts of the annotation revision, real-usage feedback round 2, the third
-round of real-usage feedback, and the mobile UX revision.
+round of real-usage feedback, the mobile UX revision, and the
+unbounded-wheel-pan fix.
 Deploy script itself reported success (`Published.` + the live URL); the
-`gh-pages` branch's own last commit reads `Deploy c02fa3b` (confirmed via
+`gh-pages` branch's own last commit reads `Deploy 2a023c4` (confirmed via
 `git fetch origin gh-pages` + `git log`, not just the deploy script's own
 message) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
 returned a fresh `200`. (The
