@@ -403,6 +403,58 @@ always - `tests/e2e/mobileLite.spec.ts` grew from 3 cases to 5, net +2 x 3
 engines = +6, all green on the first full run after the fixes described
 below).
 
+**Two more real bugs found and fixed this session (2026-09-15), both from
+the user actually using the live site: at ~300% zoom, dragging the size
+slider on a text/arrow/box/line/marker annotation flickered violently while
+mid-drag, and holding Space to drag-pan made image edges break up into
+transparent-looking artifacts.** Both root-caused by reading the code before
+touching it, no guessing. **Bug 1:** `onStyleSizeChange`
+(`src/ui/BoardCanvas.tsx`) committed to the store on every single `input`
+tick of the slider drag - each commit replaced `board` and re-ran the full
+`draw()` effect (a full-board redraw plus the synchronous `getImageData`
+rasterisation flush that forces WebKit to finish before returning - see the
+existing rasterisation gotcha below) on every tick. At ~300% zoom each
+image's cached tile is up to 9x the pixel area of 100% zoom, so a fast
+slider drag outran these redraws and stale/in-progress frames flashed by.
+**Fixed** with the same ref-first pattern image move/resize already use
+(Phase 2 item 3): preview via two refs, `styleSizeRef` (new) and
+`dragFramesRef` (already existed, reused here for the frame side of a
+text/marker resize - a marker's diameter and a text box's wrap width are
+both encoded in `frame`, not a separate field), with a direct
+`draw()`/`drawInteraction()` call on every tick that bypasses the store
+entirely; the real commit (`commitText`/`setNodeSize`) now happens exactly
+once, on a new `onStyleAdjustEnd` wrapper, when the drag/keyboard-nudge
+gesture ends. A small `liveStyleSize` `useState` mirrors the live value into
+the slider's own "Npx" readout without re-triggering the draw effect (it's
+deliberately absent from `draw`/`drawInteraction`'s own dependency arrays).
+**Bug 2:** `draw()` passed `origin.x * dpr`/`origin.y * dpr` (fractional
+almost all the time, since it tracks the camera continuously) straight into
+`renderScene`'s `offset`, which feeds `ctx.setTransform` before blitting
+each cached tile - a fractional destination offset forces the browser to
+resample the tile's own already-anti-aliased edges (rounded corners, drop
+shadow) onto a new sub-pixel grid, bleeding the tile's transparent margin
+into its edge. During a continuous pan the fractional part changes every
+`pointermove`, so the resampling seam shifted every frame instead of sitting
+still as one unnoticeable blur - which read as the image edges "breaking
+up." **Fixed** by rounding `offset` to the nearest whole device pixel before
+it reaches `renderScene`; export is unaffected either way, since it never
+sets `offset` (invariant 1 untouched). Neither fix touched
+`camera.ts`/`tileCache.ts`/`renderScene.ts` - both are `BoardCanvas.tsx`-only,
+and the existing e2e suite (which already exercises both the size-slider
+drag and pan) kept passing unchanged, so no new test was added for either -
+a visual flicker/resampling-seam defect isn't something the existing
+pixel-scan assertions were built to catch either way, and a real regression
+test for either would need a fair amount of new harness work (frame-by-frame
+capture during a drag) that wasn't attempted here. Shipped as commit
+`e0c08e0`, pushed to `main`, and deployed to the live site, on the user's
+approval. Push and deploy both worked cleanly on the first try; the
+`gh-pages` branch's own last commit reads `Deploy e0c08e0` (confirmed via
+`git fetch origin gh-pages` + `git log`) and a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`.
+`npm run verify` green (typecheck + 262 unit + 33 renderer parity on 3
+engines + 340/345 e2e passed, 5 skipped by design, same 5 as always -
+unchanged counts, since no test was added or removed).
+
 **Real bug found and fixed this session (2026-09-14), unrelated to any
 Phase 5 item - the user found it by using the live site: a plain mouse-wheel
 scroll panned the board camera with no bound at all.** Reported symptom:
@@ -3196,21 +3248,23 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and all of Phase 5 (items 1–9, item 10 cancelled, item 11 mobile lite mode): design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions, and mobile lite mode - plus all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap), the mobile UX revision (settings popover so the top bar never scrolls, plus annotate-only tool support on mobile), the unbounded-wheel-pan fix, and annotation tooling revision 2 (straight-by-default arrow with curved as an opt-in, toolbar Undo/Redo buttons, an always-inline size slider, and the new Line tool). **Phase 5 is functionally complete.**
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and all of Phase 5 (items 1–9, item 10 cancelled, item 11 mobile lite mode): design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions, and mobile lite mode - plus all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap), the mobile UX revision (settings popover so the top bar never scrolls, plus annotate-only tool support on mobile), the unbounded-wheel-pan fix, annotation tooling revision 2, and the annotation-size-drag-flicker + pan-edge-tearing fix. **Phase 5 is functionally complete.**
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after annotation tooling revision 2's own commit (`349e508`, see the
-START HERE note above), on the user's approval, and both worked cleanly on
-the first try (no re-auth, no DNS re-check needed). Live site now serves all of
+right after the annotation-size-drag-flicker + pan-edge-tearing fix's own
+commit (`e0c08e0`, see the START HERE note above), on the user's approval,
+and both worked cleanly on the first try (no re-auth, no DNS re-check
+needed). Live site now serves all of
 Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete Phase 4
 (items 1–6), all of Phase 5 (items 1–9, item 10 cancelled, item 11), all 3
 parts of the annotation revision, real-usage feedback round 2, the third
 round of real-usage feedback, the mobile UX revision, the
-unbounded-wheel-pan fix, and annotation tooling revision 2.
+unbounded-wheel-pan fix, annotation tooling revision 2, and the
+annotation-size-drag-flicker + pan-edge-tearing fix.
 Deploy script itself reported success (`Published.` + the live URL); the
-`gh-pages` branch's own last commit reads `Deploy 349e508` (confirmed via
+`gh-pages` branch's own last commit reads `Deploy e0c08e0` (confirmed via
 `git fetch origin gh-pages` + `git log`, not just the deploy script's own
 message) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
 returned a fresh `200`. (The
