@@ -455,6 +455,66 @@ approval. Push and deploy both worked cleanly on the first try; the
 engines + 340/345 e2e passed, 5 skipped by design, same 5 as always -
 unchanged counts, since no test was added or removed).
 
+**A second real bug in the same size-slider area, found this session
+(2026-09-15) by the user actually dragging the size control on a text node
+on the live site, then fixed: dragging the size slider on an already-placed
+text annotation still flickered/jittered (small shrink-grow "breathing")
+even after bug 1 of the size-drag-flicker fix above, while Arrow/Line/Box/
+Marker stayed smooth.** Root-caused with a live reproduction, not guessed: a
+throwaway Playwright script drove the slider through font sizes 14-40 one
+value at a time and logged the real `fillText` calls - within a stable
+wrap-line-count the box's height grew smoothly (1-2px per step), but at the
+exact font size where `wrapText` adds a whole new line, the measured height
+jumped by ~50px in one step (434px → 484px for a representative sentence).
+Unlike Arrow/Line/Box (pure stroke width, no geometry change) and Marker
+(diameter, continuous, no wrap logic), a text node's box height is the only
+sizable dimension that is a **step function** of `size`, not a continuous
+one - dragging a slider through one of those thresholds meant the pointer's
+own ordinary sub-pixel hand tremor kept crossing back and forth over the
+boundary, so the box kept popping between the two line-count heights for as
+long as the mouse stayed near it. The previous fix (bug 1, above) already
+removed the *store-commit-per-tick* cost, but still recomputed
+`textAutoWidth`/`wrapText`/`textHeight` on every drag tick, so the jump
+itself was untouched. **Fixed by removing the drag gesture entirely for
+text's size control**: a new `AnnotationSizeStepper` (`src/ui/
+AnnotationSizeStepper.tsx`) - a discrete `−`/`Npx`/`+` control, not a
+slider - replaces `AnnotationSizeSlider` for text only (both the armed-tool
+default in `AnnotationToolbar` and the edit-in-place control in
+`SelectionToolbar`, for consistency - `StyleTarget` gained a `stepped`
+flag). Every click is now a single, deliberate, already-complete size
+change, so `onStyleSizeChange`'s text branch (`BoardCanvas.tsx`) commits
+the fully-recomputed frame directly via `commitText` on every click instead
+of previewing through `styleSizeRef`/`dragFramesRef` and deferring to
+`onStyleAdjustEnd` - there is no gesture left to defer past. `onStyleAdjustEnd`
+itself lost its `text` branch entirely as dead code (a text id can no
+longer reach it). Arrow/Line/Box/Marker are completely untouched - their
+size really is a smooth function of the drag, so the slider stays exactly
+as it was. Considered and rejected first: freezing the text node's frame
+during the drag and only re-fitting it on release - technically flicker-free,
+but the user immediately (and correctly) objected that you'd have no live
+feedback on the actual resulting size while dragging, forcing a guess-and-check
+loop; the discrete stepper solves both problems at once (no drag to jitter
+during, and every click already shows the real, settled result). Shipped
+as commit `599267a`, pushed to `main`, and deployed to the live site, on
+the user's approval. Push and deploy both worked cleanly on the first try;
+the `gh-pages` branch's own last commit reads `Deploy 599267a` (confirmed
+via `git fetch origin gh-pages` + `git log`) and a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`.
+`npm run verify` green (typecheck + 262 unit + 33 renderer parity on 3
+engines + 348 e2e - 343 passed, 5 skipped by design, same 5 as always -
+this fix added 2 new cases to `tests/e2e/annotationEdit.spec.ts` (one
+confirming a stepper click grows the node with no polling needed, since a
+click's result is already settled by the time it resolves; one stepping a
+long sentence through the whole 14-40px range confirming the rendered
+height is non-decreasing on every single click, including the one that
+crosses the wrap-line-count boundary) × 3 engines = 6, all green). One
+run of the full suite hit an unrelated, pre-existing flake in webkit
+(`annotationEdit.spec.ts`'s "Edit style" popover-position test, which uses
+the Box tool - a sub-pixel timing issue Phase 5 item 9's own note already
+documents this file for) - confirmed pre-existing, not caused by this fix,
+by re-running that one test in isolation (5/5 clean) and re-running the
+full suite a second time (0 failures).
+
 **Real bug found and fixed this session (2026-09-14), unrelated to any
 Phase 5 item - the user found it by using the live site: a plain mouse-wheel
 scroll panned the board camera with no bound at all.** Reported symptom:
@@ -3248,23 +3308,24 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and all of Phase 5 (items 1–9, item 10 cancelled, item 11 mobile lite mode): design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions, and mobile lite mode - plus all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap), the mobile UX revision (settings popover so the top bar never scrolls, plus annotate-only tool support on mobile), the unbounded-wheel-pan fix, annotation tooling revision 2, and the annotation-size-drag-flicker + pan-edge-tearing fix. **Phase 5 is functionally complete.**
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and all of Phase 5 (items 1–9, item 10 cancelled, item 11 mobile lite mode): design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions, and mobile lite mode - plus all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap), the mobile UX revision (settings popover so the top bar never scrolls, plus annotate-only tool support on mobile), the unbounded-wheel-pan fix, annotation tooling revision 2, the annotation-size-drag-flicker + pan-edge-tearing fix, and the text-size stepper fix. **Phase 5 is functionally complete.**
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after the annotation-size-drag-flicker + pan-edge-tearing fix's own
-commit (`e0c08e0`, see the START HERE note above), on the user's approval,
-and both worked cleanly on the first try (no re-auth, no DNS re-check
+right after the text-size stepper fix's own commit (`599267a`, see the
+START HERE note above), on the user's approval, and both worked cleanly on
+the first try (no re-auth, no DNS re-check
 needed). Live site now serves all of
 Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete Phase 4
 (items 1–6), all of Phase 5 (items 1–9, item 10 cancelled, item 11), all 3
 parts of the annotation revision, real-usage feedback round 2, the third
 round of real-usage feedback, the mobile UX revision, the
-unbounded-wheel-pan fix, annotation tooling revision 2, and the
-annotation-size-drag-flicker + pan-edge-tearing fix.
+unbounded-wheel-pan fix, annotation tooling revision 2, the
+annotation-size-drag-flicker + pan-edge-tearing fix, and the text-size
+stepper fix.
 Deploy script itself reported success (`Published.` + the live URL); the
-`gh-pages` branch's own last commit reads `Deploy e0c08e0` (confirmed via
+`gh-pages` branch's own last commit reads `Deploy 599267a` (confirmed via
 `git fetch origin gh-pages` + `git log`, not just the deploy script's own
 message) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
 returned a fresh `200`. (The
