@@ -436,8 +436,12 @@ first (the board's on-screen rect landed ~79,000px off-screen), then passes
 with the fix, on all 3 engines - not just written and assumed correct).
 
 **A second annotation-tooling revision, driven by a fresh round of real-usage
-feedback (2026-09-15), is now built, verified, and committed - not yet
-pushed to `main` or deployed to the live site, pending the user's go-ahead.**
+feedback (2026-09-15), is now built, verified, committed, pushed to `main`,
+and deployed to the live site**, shipped as commit `349e508`, on the user's
+approval. Push and deploy both worked cleanly on the first try; the
+`gh-pages` branch's own last commit reads `Deploy 349e508` (confirmed via
+`git fetch origin gh-pages` + `git log`) and a same-session
+`curl -o /dev/null -w '%{http_code}'` for `/` returned a fresh `200`.
 Four things, all approved up front before any code: (1) the
 arrow tool now defaults to a plain straight line, with the original curve
 kept as an opt-in ("โค้ง" looked "ไม่จริงจัง" - unprofessional - for
@@ -462,10 +466,14 @@ described below).
 
 ### Annotation tooling revision 2 — done: straight-by-default arrow, toolbar Undo/Redo, inline size slider, new Line tool
 
-Built this session (2026-09-15). `npm run verify` green (typecheck + 262
-unit + 33 renderer parity on 3 engines + 340/345 e2e passed, 5 skipped by
-design, same 5 as always). Not yet pushed to `main` or deployed - committed
-and held for the user's go-ahead, per this session's own instruction.
+Built this session (2026-09-15), shipped as commit `349e508`, pushed to
+`main`, and deployed to the live site, on the user's approval. `npm run
+verify` green (typecheck + 262 unit + 33 renderer parity on 3 engines +
+340/345 e2e passed, 5 skipped by design, same 5 as always). Push and deploy
+both worked cleanly on the first try; the `gh-pages` branch's own last
+commit reads `Deploy 349e508` (confirmed via `git fetch origin gh-pages` +
+`git log`) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
+returned a fresh `200`.
 
 - **Arrow now defaults to a plain straight line; curved is the opt-in.**
   `ArrowNode` gained an optional `straight?: boolean` (`types.ts`) -
@@ -3188,21 +3196,21 @@ Shipped as its own commit (`69cc234`). Pushed and deployed to the live site.
 - See [docs/phases/phase-2.md](docs/phases/phase-2.md) for the full Phase 2
   writeup and Definition of Done status.
 
-## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and all of Phase 5 (items 1–9, item 10 cancelled, item 11 mobile lite mode): design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions, and mobile lite mode - plus all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap), the mobile UX revision (settings popover so the top bar never scrolls, plus annotate-only tool support on mobile), and the unbounded-wheel-pan fix. **Phase 5 is functionally complete.**
+## Live site status — up to date with all of Phase 4 (items 1–6: arrow, box, text, marker, redact, crop) and all of Phase 5 (items 1–9, item 10 cancelled, item 11 mobile lite mode): design system cleanup, dark mode, top-bar overflow fix + real-usage feedback fixes, 6 gradient backgrounds, accessibility pass, friendly error messages, right-click context menu, help modal / shortcut cheatsheet, animation / micro-interactions, and mobile lite mode - plus all 3 parts of the annotation revision (color + size for every tool, the text shadow treatment, and content-driven text sizing), "real-usage feedback round 2" (board auto-fit, order-independent row layout, edit-in-place annotation style, and the text shadow that superseded the halo), the third round of real-usage feedback (edit-style popover position, size-slider undo batching, text-overlay premature wrap), the mobile UX revision (settings popover so the top bar never scrolls, plus annotate-only tool support on mobile), the unbounded-wheel-pan fix, and annotation tooling revision 2 (straight-by-default arrow with curved as an opt-in, toolbar Undo/Redo buttons, an always-inline size slider, and the new Line tool). **Phase 5 is functionally complete.**
 
 **https://snapboard.kaomatumaraiwa.com** — GitHub Pages, `gh-pages` branch,
 HTTPS enforced, certificate approved. Source push (`git push origin
 master:main`) and `bash scripts/deploy-pages.sh` were last run together
-right after the unbounded-wheel-pan fix's own commit (`2a023c4`, see the
+right after annotation tooling revision 2's own commit (`349e508`, see the
 START HERE note above), on the user's approval, and both worked cleanly on
 the first try (no re-auth, no DNS re-check needed). Live site now serves all of
 Phase 2 (items 1–9), the Clear board addition, Phase 3, the complete Phase 4
 (items 1–6), all of Phase 5 (items 1–9, item 10 cancelled, item 11), all 3
 parts of the annotation revision, real-usage feedback round 2, the third
-round of real-usage feedback, the mobile UX revision, and the
-unbounded-wheel-pan fix.
+round of real-usage feedback, the mobile UX revision, the
+unbounded-wheel-pan fix, and annotation tooling revision 2.
 Deploy script itself reported success (`Published.` + the live URL); the
-`gh-pages` branch's own last commit reads `Deploy 2a023c4` (confirmed via
+`gh-pages` branch's own last commit reads `Deploy 349e508` (confirmed via
 `git fetch origin gh-pages` + `git log`, not just the deploy script's own
 message) and a same-session `curl -o /dev/null -w '%{http_code}'` for `/`
 returned a fresh `200`. (The
