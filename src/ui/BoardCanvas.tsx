@@ -22,6 +22,7 @@ import { ContextMenu } from '@/ui/ContextMenu'
 import { CropToolbar } from '@/ui/CropToolbar'
 import { AnnotationToolbar } from '@/ui/AnnotationToolbar'
 import { ANNOTATION_SIZE_RANGE, clampAnnotationSize, type SizableAnnotationTool } from '@/board/model/annotationDefaults'
+import { markerFrame } from '@/board/render/marker'
 import { t } from '@/i18n/t'
 
 /** Screen-px drag distance below which an arrow-tool drag is treated as a
@@ -204,6 +205,14 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
   // `draw`/`drawInteraction` so dragging renders at 60fps without going
   // through React state - only committed to the store on pointer-up.
   const dragFramesRef = useRef<Record<NodeId, Rect> | null>(null)
+  // Live stroke-width/font-size override for the node targeted by
+  // `SelectionToolbar`'s inline size slider - same ref-first reasoning as
+  // `dragFramesRef` (which this reuses for the frame side of a text/marker
+  // resize, since a marker's diameter and a text box's wrap width are both
+  // encoded in `frame`). Read directly by `draw`, only committed to the
+  // store once on `onStyleAdjustEnd` - see that callback's own note on why
+  // committing on every 'input' tick used to make the drag flicker.
+  const styleSizeRef = useRef<{ id: NodeId; size: number } | null>(null)
   const guidesRef = useRef<SnapGuide[]>([])
   const [percent, setPercent] = useState(() => Math.round(cameraRef.current.zoom * 100))
   const selectedIds = useBoardStore((s) => s.selectedIds)
@@ -363,6 +372,28 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
         const frame = overrides[item.id]
         if (frame) item.frame = frame
       }
+      // A text/marker resize preview overrides `frame` the same way an
+      // image move/resize does - a marker's diameter and a text box's
+      // wrap width are both encoded there, not in a separate field.
+      for (const it of input.texts ?? []) {
+        const frame = overrides[it.id]
+        if (frame) it.frame = frame
+      }
+      for (const it of input.markers ?? []) {
+        const frame = overrides[it.id]
+        if (frame) it.frame = frame
+      }
+    }
+    const sizeOverride = styleSizeRef.current
+    if (sizeOverride) {
+      const applySize = (arr: { id: string; size: number }[] | undefined) => {
+        const it = arr?.find((x) => x.id === sizeOverride.id)
+        if (it) it.size = sizeOverride.size
+      }
+      applySize(input.arrows)
+      applySize(input.lines)
+      applySize(input.boxes)
+      applySize(input.texts)
     }
     tiles.retain(input.items.map((i) => i.id))
     // The node currently open in the textarea overlay is drawn there, not
@@ -374,7 +405,21 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
     if (editingId != null && input.texts) {
       input.texts = input.texts.filter((t) => t.id !== editingId)
     }
-    renderScene(ctx, input, { scale: renderScale, tiles, offset: { x: origin.x * dpr, y: origin.y * dpr } })
+    // Rounded to a whole device pixel - `origin` is fractional almost all the
+    // time (it tracks the camera continuously), and `renderScene` feeds this
+    // straight into `ctx.setTransform` before blitting each cached tile.
+    // A fractional destination offset forces the browser to resample the
+    // tile's own already-anti-aliased edges (rounded corners, drop shadow)
+    // onto a new sub-pixel grid - visible as the tile's transparent margin
+    // bleeding into its edge. During a continuous pan (space+drag, or wheel)
+    // the fractional part changes every pointermove, so the resampling seam
+    // shifts every frame instead of sitting still as one unnoticeable blur,
+    // which reads as the image's edges "breaking up". Snapping to an integer
+    // device pixel here means every tile always blits pixel-aligned, at the
+    // cost of at most half a device pixel of camera precision - imperceptible,
+    // and export is unaffected either way (it never sets `offset`).
+    const offset = { x: Math.round(origin.x * dpr), y: Math.round(origin.y * dpr) }
+    renderScene(ctx, input, { scale: renderScale, tiles, offset })
     // Forces rasterization to finish before this function returns. WebKit's
     // canvas rasterization is asynchronous (see the timing gotcha in
     // CLAUDE.md); without this, reordering two same-size tiles could leave
@@ -1372,7 +1417,15 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
   // SelectionToolbar's own note on why the button itself is conditional.
   const selectedNode = selectedIds.length === 1 ? board.nodes.find((n) => n.id === selectedIds[0]) : undefined
   const canCrop = selectedNode?.kind === 'image'
-  const styleTarget = styleTargetFor(selectedNode)
+  // Mirrors `styleSizeRef`'s live value into the slider's own numeric
+  // readout during a drag, without going through the store - a plain
+  // `useState` here is cheap (it's not in `draw`/`drawInteraction`'s own
+  // dependency arrays, so this alone never re-triggers a canvas redraw) and
+  // is what keeps the "Npx" label live while the size itself only commits
+  // once, on `onStyleAdjustEnd`.
+  const [liveStyleSize, setLiveStyleSize] = useState<number | null>(null)
+  const styleTargetBase = styleTargetFor(selectedNode)
+  const styleTarget = styleTargetBase && liveStyleSize != null ? { ...styleTargetBase, size: liveStyleSize } : styleTargetBase
 
   const onStyleColorChange = useCallback(
     (color: string) => {
@@ -1392,6 +1445,20 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
   // a font-size change also changes the wrapped line count, which needs a
   // real `measureText` only this component has (same reasoning `commitText`'s
   // own note gives for why the store stays free of canvas/DOM dependencies).
+  //
+  // This used to call `commitText`/`setNodeSize` directly on every 'input'
+  // tick of the slider drag - each one replaced `board` in the store, which
+  // re-ran this component's full `draw()` effect (a full board redraw plus
+  // the synchronous `getImageData` rasterisation flush) on every single
+  // tick. At normal zoom that's merely wasteful; at ~300% zoom, where each
+  // image's cached tile is up to 9x the pixel area of 100% zoom, each of
+  // those redraws is expensive enough that a fast slider drag outruns them
+  // and the canvas visibly flickers between stale/in-progress frames.
+  // Fixed with the same ref-first pattern image move/resize already use:
+  // preview via `styleSizeRef`/`dragFramesRef` and a direct `draw()`/
+  // `drawInteraction()` call (bypassing the store) on every tick, with the
+  // real commit deferred to `onStyleAdjustEnd`, once, at the end of the
+  // gesture - see that callback for the actual commit.
   const onStyleSizeChange = useCallback(
     (size: number) => {
       if (!selectedNode || selectedNode.kind === 'image' || selectedNode.kind === 'redact') return
@@ -1406,13 +1473,53 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
         const width = textAutoWidth((s) => ctx.measureText(s).width, selectedNode.text)
         const maxWidth = Math.max(1, width - TEXT_PADDING * 2)
         const lines = wrapText((s) => ctx.measureText(s).width, selectedNode.text, maxWidth)
-        commitText(selectedNode.id, { ...selectedNode.frame, w: width, h: textHeight(lines.length, clamped) }, selectedNode.text, clamped)
+        styleSizeRef.current = { id: selectedNode.id, size: clamped }
+        dragFramesRef.current = { [selectedNode.id]: { ...selectedNode.frame, w: width, h: textHeight(lines.length, clamped) } }
+        setLiveStyleSize(clamped)
+        draw()
+        drawInteraction()
         return
       }
-      setNodeSize(selectedNode.id, size)
+      if (selectedNode.kind === 'marker') {
+        const clamped = clampAnnotationSize('marker', size)
+        const cx = selectedNode.frame.x + selectedNode.frame.w / 2
+        const cy = selectedNode.frame.y + selectedNode.frame.h / 2
+        styleSizeRef.current = { id: selectedNode.id, size: clamped }
+        dragFramesRef.current = { [selectedNode.id]: markerFrame({ x: cx, y: cy }, clamped) }
+        setLiveStyleSize(clamped)
+        draw()
+        drawInteraction()
+        return
+      }
+      const clamped = clampAnnotationSize(selectedNode.kind, size)
+      styleSizeRef.current = { id: selectedNode.id, size: clamped }
+      setLiveStyleSize(clamped)
+      draw()
+      drawInteraction()
     },
-    [selectedNode, commitText, setNodeSize],
+    [selectedNode, draw, drawInteraction],
   )
+
+  // Commits the previewed size exactly once, when the drag/keyboard-nudge
+  // gesture ends - paired with `beginAdjustment` (still called directly as
+  // `onStyleAdjustStart`) so the whole gesture still collapses into one undo
+  // step, same as before, but now also the *only* store write of the whole
+  // gesture instead of one per tick.
+  const onStyleAdjustEnd = useCallback(() => {
+    const override = styleSizeRef.current
+    if (selectedNode && override && override.id === selectedNode.id) {
+      if (selectedNode.kind === 'text') {
+        const frame = dragFramesRef.current?.[selectedNode.id] ?? selectedNode.frame
+        commitText(selectedNode.id, frame, selectedNode.text, override.size)
+      } else {
+        setNodeSize(selectedNode.id, override.size)
+      }
+    }
+    styleSizeRef.current = null
+    dragFramesRef.current = null
+    setLiveStyleSize(null)
+    endAdjustment()
+  }, [selectedNode, commitText, setNodeSize, endAdjustment])
 
   return (
     <div className="board-stage">
@@ -1462,7 +1569,7 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
             onStyleSizeChange={onStyleSizeChange}
             onStyleStraightChange={onStyleStraightChange}
             onStyleAdjustStart={beginAdjustment}
-            onStyleAdjustEnd={endAdjustment}
+            onStyleAdjustEnd={onStyleAdjustEnd}
           />
           {contextMenu && (
             <ContextMenu
