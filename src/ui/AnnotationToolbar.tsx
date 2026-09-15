@@ -3,6 +3,7 @@ import { ANNOTATION_SIZE_RANGE, type AnnotationTool, type SizableAnnotationTool,
 import type { ToolSettings } from '@/board/store/boardStore'
 import { AnnotationColorPopover } from '@/ui/AnnotationColorPopover'
 import { AnnotationSizeSlider } from '@/ui/AnnotationSizeSlider'
+import { AnnotationSizeStepper } from '@/ui/AnnotationSizeStepper'
 import { modKey, t } from '@/i18n/t'
 
 interface Props {
@@ -179,13 +180,21 @@ export function AnnotationToolbar({
       >
         <span className="annotation-toolbar__swatch" style={settingsTool ? { background: toolSettings[settingsTool].color } : undefined} />
       </button>
-      {settingsTool && settingsTool !== 'redact' && (
-        <AnnotationSizeSlider
-          size={toolSettings[settingsTool].size}
-          sizeRange={ANNOTATION_SIZE_RANGE[settingsTool]}
-          onChange={(s) => onSizeChange(settingsTool, s)}
-        />
-      )}
+      {settingsTool &&
+        settingsTool !== 'redact' &&
+        (settingsTool === 'text' ? (
+          <AnnotationSizeStepper
+            size={toolSettings.text.size}
+            sizeRange={ANNOTATION_SIZE_RANGE.text}
+            onChange={(s) => onSizeChange('text', s)}
+          />
+        ) : (
+          <AnnotationSizeSlider
+            size={toolSettings[settingsTool].size}
+            sizeRange={ANNOTATION_SIZE_RANGE[settingsTool]}
+            onChange={(s) => onSizeChange(settingsTool, s)}
+          />
+        ))}
       {colorOpen && settingsTool && (
         <AnnotationColorPopover
           color={toolSettings[settingsTool].color}

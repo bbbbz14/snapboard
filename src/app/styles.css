@@ -475,6 +475,46 @@ body {
   accent-color: var(--accent);
 }
 
+/* Text's discrete -/+ size control (AnnotationSizeStepper) - same
+   `.zoom-btn`/`.zoom-pct` shape (button/readout/button), just sized and
+   colored to match the toolbar it's inline in rather than its own floating
+   bar. */
+.size-stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.size-stepper__btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  width: var(--control-h);
+  height: var(--control-h);
+  color: var(--text-dim);
+  transition: background 100ms ease, color 100ms ease, transform 80ms ease;
+}
+
+.size-stepper__btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover-tint);
+}
+
+.size-stepper__btn:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.size-stepper__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* Background/Layout/Style/Gap, folded into one popover on mobile instead of
    shown inline (see the note above and MobileSettingsMenu.tsx) - same fixed-
    position/anchored-from-getBoundingClientRect pattern as .export-menu/
@@ -1250,7 +1290,8 @@ body {
   }
 
   .annotation-toolbar__btn,
-  .selection-toolbar__btn {
+  .selection-toolbar__btn,
+  .size-stepper__btn {
     width: 40px;
     height: 40px;
     font-size: 17px;

@@ -94,6 +94,8 @@ export const en = {
   'annotate.settingsTitle': 'Color — the size slider next to this button always shows when a tool is armed',
   'annotate.color': 'Color',
   'annotate.size': 'Size',
+  'annotate.sizeDecrease': 'Decrease size',
+  'annotate.sizeIncrease': 'Increase size',
   'annotate.lineStyle': 'Line style',
   'annotate.straight': 'Straight',
   'annotate.curved': 'Curved',

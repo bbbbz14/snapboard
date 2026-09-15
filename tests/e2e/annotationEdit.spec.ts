@@ -141,7 +141,7 @@ test('the size slider in "Edit style" thickens an already-placed box in place', 
   await expect.poll(async () => (await pixelScan(page, stripe, 'red')).count).toBeGreaterThan(before)
 })
 
-test('the size slider in "Edit style" grows an already-typed text node without deleting and retyping it', async ({
+test('the size stepper in "Edit style" grows an already-typed text node without deleting and retyping it', async ({
   page,
   images,
   addViaPicker,
@@ -160,20 +160,64 @@ test('the size slider in "Edit style" grows an already-typed text node without d
   const before = await pixelScan(page, region, 'red')
   expect(before.count).toBeGreaterThan(0)
 
-  // See the sibling box-resize test's comment above - the slider is inline
-  // and doesn't need the color popover opened to reach it.
-  const slider = page.getByRole('slider', { name: 'Size' })
-  await slider.focus()
-  await page.keyboard.press('End')
+  // Text uses a discrete -/+ stepper, not the slider every other sizable
+  // annotation uses (see AnnotationSizeStepper's own note on why) - each
+  // click is one complete, immediately-committed size change, so there's
+  // nothing to poll/race here the way the sibling box-resize test above
+  // has to: by the time `click()` resolves, the resize (and its repaint)
+  // has already happened.
+  const increase = page.getByRole('button', { name: 'Increase size' })
+  for (let i = 0; i < 10; i++) await increase.click()
 
-  // Poll rather than read once - see the sibling box-resize test's comment
-  // above for why a single read here can race the canvas repaint.
-  await expect.poll(async () => (await pixelScan(page, region, 'red')).height).toBeGreaterThan(before.height)
+  expect((await pixelScan(page, region, 'red')).height).toBeGreaterThan(before.height)
 
   // The content itself is untouched - re-opening for edit shows the same text.
   await page.mouse.dblclick(at.x + 5, at.y + 5)
   await expect(page.locator('.text-edit')).toHaveValue('resize me')
   await page.keyboard.press('Escape')
+})
+
+test('the size stepper in "Edit style" never flickers between line counts - each click is one complete, correctly-fitted resize', async ({
+  page,
+  images,
+  addViaPicker,
+}) => {
+  // Regression test for the bug this stepper replaced a slider to fix: a
+  // long-enough single line sits near the `TEXT_MAX_WIDTH` wrap boundary at
+  // some font size, and `wrapText`'s line count jumps by a whole line right
+  // at that boundary rather than growing smoothly - dragging a slider
+  // through it made the box visibly bounce between the two line counts.
+  // A stepper has no drag gesture to jitter mid-way through, so every
+  // click - including the exact one that crosses the wrap boundary - must
+  // land on a single, correctly-fitted frame with no intermediate state.
+  await addViaPicker(page, images([[400, 300]]))
+  const rect = await pageRect(page)
+
+  await toolButton(page, 'Text').click()
+  const at = { x: rect.x + 20, y: rect.y + rect.h + 20 }
+  await page.mouse.click(at.x, at.y)
+  await page.locator('.text-edit').fill('This is a fairly long sentence used to test wrapping')
+  await page.keyboard.press('ControlOrMeta+Enter')
+  await expect(page.locator('.selection-status')).toHaveText('1 selected')
+
+  const increase = page.getByRole('button', { name: 'Increase size' })
+  const region = { x: at.x - 10, y: at.y - 10, w: 500, h: 220 }
+
+  let previousHeight = (await pixelScan(page, region, 'red')).height
+  // Steps through the rest of the range once, one click at a time (default
+  // size is 22px, max is 40px - 18 clicks reaches the max exactly, so the
+  // button never goes disabled mid-loop). Somewhere in there this crosses
+  // the exact font size where the sentence wraps onto a third line
+  // (confirmed via a throwaway repro to sit around 33-34px for this
+  // sentence). Every single click's *result*, read right after that one
+  // click resolves, must already be the final, settled height - not an
+  // in-between value from a still-catching-up preview.
+  for (let i = 0; i < 18; i++) {
+    await increase.click()
+    const height = (await pixelScan(page, region, 'red')).height
+    expect(height).toBeGreaterThanOrEqual(previousHeight)
+    previousHeight = height
+  }
 })
 
 test('the "Edit style" popover opens attached to the button that opened it, not far away', async ({ page, images, addViaPicker }) => {

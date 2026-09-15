@@ -106,10 +106,14 @@ interface Props {
  * `MarkerNode`'s note); its diameter is read straight off `frame.w`. */
 function styleTargetFor(node: Board['nodes'][number] | undefined): StyleTarget | undefined {
   if (!node || node.kind === 'image') return undefined
-  if (node.kind === 'redact') return { color: node.color, size: null, sizeRange: null, straight: null }
-  if (node.kind === 'marker') return { color: node.color, size: node.frame.w, sizeRange: ANNOTATION_SIZE_RANGE.marker, straight: null }
-  if (node.kind === 'arrow') return { color: node.color, size: node.size, sizeRange: ANNOTATION_SIZE_RANGE.arrow, straight: node.straight ?? false }
-  return { color: node.color, size: node.size, sizeRange: ANNOTATION_SIZE_RANGE[node.kind], straight: null }
+  if (node.kind === 'redact') return { color: node.color, size: null, sizeRange: null, straight: null, stepped: false }
+  if (node.kind === 'marker')
+    return { color: node.color, size: node.frame.w, sizeRange: ANNOTATION_SIZE_RANGE.marker, straight: null, stepped: false }
+  if (node.kind === 'arrow')
+    return { color: node.color, size: node.size, sizeRange: ANNOTATION_SIZE_RANGE.arrow, straight: node.straight ?? false, stepped: false }
+  if (node.kind === 'text')
+    return { color: node.color, size: node.size, sizeRange: ANNOTATION_SIZE_RANGE.text, straight: null, stepped: true }
+  return { color: node.color, size: node.size, sizeRange: ANNOTATION_SIZE_RANGE[node.kind], straight: null, stepped: false }
 }
 
 /**
@@ -1441,24 +1445,33 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
     [selectedNode, setNodeStraight],
   )
 
-  // Text is the one kind resized here rather than through `setNodeSize` -
-  // a font-size change also changes the wrapped line count, which needs a
-  // real `measureText` only this component has (same reasoning `commitText`'s
-  // own note gives for why the store stays free of canvas/DOM dependencies).
+  // Every kind but text previews its new size via `styleSizeRef`/
+  // `dragFramesRef` and a direct `draw()`/`drawInteraction()` call
+  // (bypassing the store) on every tick, with the real commit deferred to
+  // `onStyleAdjustEnd`, once, at the end of the drag gesture - see that
+  // callback for the actual commit. This exists because committing to the
+  // store on every 'input' tick of a slider drag re-runs this component's
+  // full `draw()` effect (a full board redraw plus the synchronous
+  // `getImageData` rasterisation flush) on every single tick; at ~300% zoom,
+  // where each image's cached tile is up to 9x the pixel area of 100% zoom,
+  // that's expensive enough for a fast drag to outrun it and visibly
+  // flicker between stale/in-progress frames.
   //
-  // This used to call `commitText`/`setNodeSize` directly on every 'input'
-  // tick of the slider drag - each one replaced `board` in the store, which
-  // re-ran this component's full `draw()` effect (a full board redraw plus
-  // the synchronous `getImageData` rasterisation flush) on every single
-  // tick. At normal zoom that's merely wasteful; at ~300% zoom, where each
-  // image's cached tile is up to 9x the pixel area of 100% zoom, each of
-  // those redraws is expensive enough that a fast slider drag outruns them
-  // and the canvas visibly flickers between stale/in-progress frames.
-  // Fixed with the same ref-first pattern image move/resize already use:
-  // preview via `styleSizeRef`/`dragFramesRef` and a direct `draw()`/
-  // `drawInteraction()` call (bypassing the store) on every tick, with the
-  // real commit deferred to `onStyleAdjustEnd`, once, at the end of the
-  // gesture - see that callback for the actual commit.
+  // Text does not use any of that - it has no slider to drag at all
+  // (`AnnotationSizeStepper`, not `AnnotationSizeSlider` - see that
+  // component's own note on why). A font-size change also changes the
+  // wrapped line count, which needs a real `measureText` only this
+  // component has (same reasoning `commitText`'s own note gives for why the
+  // store stays free of canvas/DOM dependencies) - and unlike every other
+  // sizable kind, that line count is not a continuous function of `size`:
+  // it jumps by a whole line at certain font sizes instead of growing
+  // smoothly. Previewing that jump mid-drag (the same ref/defer scheme
+  // every other kind uses) was tried first and made the box visibly bounce
+  // between line counts whenever the pointer's own sub-pixel jitter crossed
+  // back and forth over one of those thresholds - confirmed live, not
+  // guessed. A discrete stepper click is never mid-gesture, so there's
+  // nothing to preview and nothing to jitter between: just commit the
+  // fully-recomputed frame directly, every time.
   const onStyleSizeChange = useCallback(
     (size: number) => {
       if (!selectedNode || selectedNode.kind === 'image' || selectedNode.kind === 'redact') return
@@ -1473,11 +1486,8 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
         const width = textAutoWidth((s) => ctx.measureText(s).width, selectedNode.text)
         const maxWidth = Math.max(1, width - TEXT_PADDING * 2)
         const lines = wrapText((s) => ctx.measureText(s).width, selectedNode.text, maxWidth)
-        styleSizeRef.current = { id: selectedNode.id, size: clamped }
-        dragFramesRef.current = { [selectedNode.id]: { ...selectedNode.frame, w: width, h: textHeight(lines.length, clamped) } }
-        setLiveStyleSize(clamped)
-        draw()
-        drawInteraction()
+        const frame = { ...selectedNode.frame, w: width, h: textHeight(lines.length, clamped) }
+        commitText(selectedNode.id, frame, selectedNode.text, clamped)
         return
       }
       if (selectedNode.kind === 'marker') {
@@ -1497,29 +1507,26 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
       draw()
       drawInteraction()
     },
-    [selectedNode, draw, drawInteraction],
+    [selectedNode, draw, drawInteraction, commitText],
   )
 
   // Commits the previewed size exactly once, when the drag/keyboard-nudge
   // gesture ends - paired with `beginAdjustment` (still called directly as
   // `onStyleAdjustStart`) so the whole gesture still collapses into one undo
   // step, same as before, but now also the *only* store write of the whole
-  // gesture instead of one per tick.
+  // gesture instead of one per tick. Text never reaches here at all - it has
+  // no slider drag to end (see `onStyleSizeChange`'s own note), so
+  // `styleSizeRef` is never populated with a text id.
   const onStyleAdjustEnd = useCallback(() => {
     const override = styleSizeRef.current
     if (selectedNode && override && override.id === selectedNode.id) {
-      if (selectedNode.kind === 'text') {
-        const frame = dragFramesRef.current?.[selectedNode.id] ?? selectedNode.frame
-        commitText(selectedNode.id, frame, selectedNode.text, override.size)
-      } else {
-        setNodeSize(selectedNode.id, override.size)
-      }
+      setNodeSize(selectedNode.id, override.size)
     }
     styleSizeRef.current = null
     dragFramesRef.current = null
     setLiveStyleSize(null)
     endAdjustment()
-  }, [selectedNode, commitText, setNodeSize, endAdjustment])
+  }, [selectedNode, setNodeSize, endAdjustment])
 
   return (
     <div className="board-stage">

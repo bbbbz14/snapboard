@@ -2,6 +2,7 @@ import { useRef, useState, forwardRef } from 'react'
 import { t } from '@/i18n/t'
 import { AnnotationColorPopover } from '@/ui/AnnotationColorPopover'
 import { AnnotationSizeSlider } from '@/ui/AnnotationSizeSlider'
+import { AnnotationSizeStepper } from '@/ui/AnnotationSizeStepper'
 import { TrashIcon } from '@/ui/TrashIcon'
 
 export interface StyleTarget {
@@ -13,6 +14,10 @@ export interface StyleTarget {
   /** Non-null only for a single selected arrow node - see
    * `AnnotationColorPopover`'s own note on straight-vs-curved. */
   straight: boolean | null
+  /** True only for a selected text node - see `AnnotationSizeStepper`'s own
+   * note on why text gets a discrete -/+ control instead of the slider
+   * every other sizable kind uses. */
+  stepped: boolean
 }
 
 interface Props {
@@ -80,15 +85,21 @@ export const SelectionToolbar = forwardRef<HTMLDivElement, Props>(function Selec
       <button className="selection-toolbar__btn" title={t('selection.bringToFrontTitle')} aria-label={t('selection.bringToFront')} onClick={onBringToFront}>
         ⤒
       </button>
-      {style && style.size != null && style.sizeRange && onStyleSizeChange && (
-        <AnnotationSizeSlider
-          size={style.size}
-          sizeRange={style.sizeRange}
-          onChange={onStyleSizeChange}
-          onAdjustStart={onStyleAdjustStart}
-          onAdjustEnd={onStyleAdjustEnd}
-        />
-      )}
+      {style &&
+        style.size != null &&
+        style.sizeRange &&
+        onStyleSizeChange &&
+        (style.stepped ? (
+          <AnnotationSizeStepper size={style.size} sizeRange={style.sizeRange} onChange={onStyleSizeChange} />
+        ) : (
+          <AnnotationSizeSlider
+            size={style.size}
+            sizeRange={style.sizeRange}
+            onChange={onStyleSizeChange}
+            onAdjustStart={onStyleAdjustStart}
+            onAdjustEnd={onStyleAdjustEnd}
+          />
+        ))}
       {style && (
         <button
           ref={colorBtnRef}

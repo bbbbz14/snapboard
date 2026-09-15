@@ -21,6 +21,11 @@ interface Props {
  * never discovered it existed at all, since nothing about the color button
  * hinted a size control was behind it too ("ต้องกดปุ่มเลือกสีก่อนถึงจะเจอแถบ
  * Size") - pulling it out into its own always-visible control is the fix.
+ *
+ * Used for arrow/line/box (stroke width) and marker (diameter) - all four
+ * are a continuous, smoothly-draggable function of `size`. Text uses
+ * `AnnotationSizeStepper` instead, not this component - see that
+ * component's own note on why a drag gesture doesn't work for it.
  */
 export function AnnotationSizeSlider({ size, sizeRange, onChange, onAdjustStart, onAdjustEnd }: Props) {
   const id = useId()
