@@ -56,6 +56,7 @@ function sections(): Section[] {
       title: 'help.sectionTools',
       rows: [
         { keys: 'A', label: t('help.arrow') },
+        { keys: 'L', label: t('help.line') },
         { keys: 'R', label: t('help.box') },
         { keys: 'T', label: t('help.text') },
         { keys: 'N', label: t('help.marker') },

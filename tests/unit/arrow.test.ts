@@ -29,6 +29,22 @@ describe('arrowGeometry', () => {
     expect(Math.abs(ctrl.y)).toBeGreaterThanOrEqual(4)
     expect(Math.abs(ctrl.y)).toBeLessThanOrEqual(40)
   })
+
+  it('straight=true zeroes the bow, so the control point sits exactly on the line', () => {
+    const { ctrl } = arrowGeometry({ x: 0, y: 0 }, { x: 100, y: 0 }, true)
+    expect(ctrl).toEqual({ x: 50, y: 0 })
+  })
+
+  it('straight=true still points the arrowhead along the start-to-end line, unchanged from the curved case', () => {
+    const { headLeft, headRight } = arrowGeometry({ x: 0, y: 0 }, { x: 100, y: 0 }, true)
+    // With ctrl exactly on the line, the tangent direction (end - ctrl)
+    // coincides with the naive start-to-end direction, so the head should
+    // flare symmetrically below the line, same shape as a curved arrow's
+    // head, just with a zero-bow shaft.
+    expect(headLeft.y).toBeCloseTo(-headRight.y, 5)
+    expect(headLeft.x).toBeLessThan(100)
+    expect(headRight.x).toBeLessThan(100)
+  })
 })
 
 describe('arrowFrame', () => {

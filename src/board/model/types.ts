@@ -38,11 +38,17 @@ export interface ImageNode {
   crop?: Rect
 }
 
-/** A gently curved connector, per the product plan's Phase 4 annotations.
- * `frame` is a derived, padded bounding box - kept only so the generic
- * hitTest/marquee/zorder code (which knows nothing about node kinds) works
- * for arrows exactly like it does for images; `start`/`end` are the source
- * of truth for where it's actually drawn. */
+/** A connector, per the product plan's Phase 4 annotations - gently curved by
+ * default, or a plain straight line (real-usage feedback: a curve "looks
+ * unprofessional" for some uses, e.g. pointing at UI precisely) if `straight`
+ * is true. `frame` is a derived, padded bounding box - kept only so the
+ * generic hitTest/marquee/zorder code (which knows nothing about node kinds)
+ * works for arrows exactly like it does for images; `start`/`end` are the
+ * source of truth for where it's actually drawn. Optional and absent means
+ * curved - older boards saved before this field existed must keep rendering
+ * exactly as they did (see `toRenderInput`'s `?? false`), even though a
+ * brand-new arrow's tool default is now straight (see boardStore's
+ * `DEFAULT_TOOL_SETTINGS`). */
 export interface ArrowNode {
   kind: 'arrow'
   id: NodeId
@@ -53,6 +59,26 @@ export interface ArrowNode {
   color: string
   /** Board-space stroke width, chosen at creation from the arrow tool's
    * current setting - see `ANNOTATION_SIZE_RANGE.arrow`. */
+  size: number
+  straight?: boolean
+}
+
+/** A plain straight line with no arrowhead - for underlining text or
+ * connecting two points without implying direction, unlike `ArrowNode` (which
+ * always has a head, whether curved or straight). Mirrors `ArrowNode`'s shape
+ * for the same reason: `frame` is a derived, padded bounding box so the
+ * generic hitTest/marquee/zorder code needs no per-kind branch, `start`/`end`
+ * are the source of truth for where it's actually drawn. */
+export interface LineNode {
+  kind: 'line'
+  id: NodeId
+  frame: Rect
+  order: number
+  start: Point
+  end: Point
+  color: string
+  /** Board-space stroke width, chosen at creation from the line tool's
+   * current setting - see `ANNOTATION_SIZE_RANGE.line`. */
   size: number
 }
 
@@ -135,7 +161,7 @@ export interface RedactNode {
   color: string
 }
 
-export type BoardNode = ImageNode | ArrowNode | BoxNode | TextNode | MarkerNode | RedactNode
+export type BoardNode = ImageNode | ArrowNode | LineNode | BoxNode | TextNode | MarkerNode | RedactNode
 
 export interface Board {
   version: 1

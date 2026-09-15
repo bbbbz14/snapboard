@@ -122,11 +122,14 @@ test('the size slider in "Edit style" thickens an already-placed box in place', 
   const stripe = { x: rect.x + 90, y: y - 10, w: 1, h: 20 }
   const before = (await pixelScan(page, stripe, 'red')).count
 
-  await editStyleButton(page).click()
+  // The slider is inline next to "Edit style", visible the instant a single
+  // sizable annotation is selected - no need to open that popover to reach
+  // it. Opening it anyway would race `useFocusTrap`'s own auto-focus (moving
+  // focus into the color popover) against this slider's manual `.focus()`
+  // call, since size moved out into its own DOM subtree once split from color.
   const slider = page.getByRole('slider', { name: 'Size' })
   await slider.focus()
   await page.keyboard.press('End')
-  await editStyleButton(page).click()
 
   // Poll rather than read once: the slider's 'End' keypress commits the new
   // size to the store synchronously, but the canvas repaint it triggers is a
@@ -157,11 +160,11 @@ test('the size slider in "Edit style" grows an already-typed text node without d
   const before = await pixelScan(page, region, 'red')
   expect(before.count).toBeGreaterThan(0)
 
-  await editStyleButton(page).click()
+  // See the sibling box-resize test's comment above - the slider is inline
+  // and doesn't need the color popover opened to reach it.
   const slider = page.getByRole('slider', { name: 'Size' })
   await slider.focus()
   await page.keyboard.press('End')
-  await editStyleButton(page).click()
 
   // Poll rather than read once - see the sibling box-resize test's comment
   // above for why a single read here can race the canvas repaint.
@@ -226,7 +229,9 @@ test('dragging the size slider in "Edit style" is one undo step, not one per tic
   await page.mouse.move(rect.x + 160, y + 40, { steps: 5 })
   await page.mouse.up()
 
-  await editStyleButton(page).click()
+  // Inline, visible without opening "Edit style" - see the sibling tests'
+  // comments above for why opening it anyway would be actively harmful here
+  // (a focus-trap race against this test's own slider interaction below).
   const value = page.locator('.annotation-settings__value')
   const before = await value.innerText()
 

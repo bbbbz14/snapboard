@@ -285,6 +285,77 @@ describe('addArrow', () => {
   })
 })
 
+describe('addLine', () => {
+  beforeEach(() => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', nodes: [node('img', { x: 0, y: 0, w: 10, h: 10 })] },
+      selectedIds: [],
+      tool: 'line',
+    })
+  })
+
+  it('adds a line node, selects it, leaves layout untouched, and returns to the select tool', () => {
+    useBoardStore.getState().addLine({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const board = useBoardStore.getState().board
+    const line = board.nodes.find((n) => n.kind === 'line')
+    expect(line).toBeDefined()
+    expect(line).toMatchObject({ start: { x: 0, y: 0 }, end: { x: 40, y: 0 } })
+    expect(board.layout).toBe('auto')
+    expect(useBoardStore.getState().selectedIds).toEqual([line!.id])
+    expect(useBoardStore.getState().tool).toBe('select')
+  })
+
+  it('does not disturb the existing image node', () => {
+    useBoardStore.getState().addLine({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const board = useBoardStore.getState().board
+    expect(board.nodes.find((n) => n.id === 'img')?.frame).toEqual({ x: 0, y: 0, w: 10, h: 10 })
+  })
+
+  it('moving a line (setFrames) translates its start/end, not just the bounding frame', () => {
+    useBoardStore.getState().addLine({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const line = useBoardStore.getState().board.nodes.find((n) => n.kind === 'line')!
+    useBoardStore.getState().setFrames([{ id: line.id, frame: { ...line.frame, x: line.frame.x + 100, y: line.frame.y + 5 } }])
+    const board = useBoardStore.getState().board
+    const moved = board.nodes.find((n) => n.id === line.id)
+    const img = board.nodes.find((n) => n.id === 'img')!
+    expect(moved).toMatchObject({
+      start: { x: 100 + img.frame.x, y: 5 + img.frame.y },
+      end: { x: 140 + img.frame.x, y: 5 + img.frame.y },
+    })
+  })
+
+  it('duplicating a line offsets its start/end along with the frame', () => {
+    useBoardStore.getState().addLine({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const line = useBoardStore.getState().board.nodes.find((n) => n.kind === 'line')!
+    useBoardStore.setState({ selectedIds: [line.id] })
+    useBoardStore.getState().duplicateSelected()
+    const copyId = useBoardStore.getState().selectedIds[0]!
+    const copy = useBoardStore.getState().board.nodes.find((n) => n.id === copyId)
+    expect(copy).toMatchObject({ start: { x: 16, y: 16 }, end: { x: 56, y: 16 } })
+  })
+
+  it('is excluded from toRenderInput.items and step badge numbering, and appears in .lines', () => {
+    useBoardStore.setState({ board: { ...useBoardStore.getState().board, layout: 'steps', resolvedLayout: 'steps' } })
+    useBoardStore.getState().addLine({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const input = toRenderInput(useBoardStore.getState().board)
+    expect(input.items.map((i) => i.id)).toEqual(['img'])
+    expect(input.items[0]?.badge).toBe(1)
+    expect(input.lines).toHaveLength(1)
+    expect(input.lines![0]).toMatchObject({ start: { x: 0, y: 0 }, end: { x: 40, y: 0 } })
+  })
+
+  it('can be deleted and undone like any other node', () => {
+    useBoardStore.getState().addLine({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const lineId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'line')!.id
+    useBoardStore.setState({ selectedIds: [lineId] })
+    useBoardStore.getState().deleteSelected()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === lineId)).toBeUndefined()
+
+    useBoardStore.getState().undo()
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === lineId)).toBeDefined()
+  })
+})
+
 describe('addBox', () => {
   beforeEach(() => {
     useBoardStore.setState({
@@ -826,7 +897,8 @@ describe('toolSettings', () => {
       selectedIds: [],
       tool: 'select',
       toolSettings: {
-        arrow: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.arrow.default },
+        arrow: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.arrow.default, straight: true },
+        line: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.line.default },
         box: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.box.default },
         text: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.text.default },
         marker: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.marker.default },
@@ -838,10 +910,23 @@ describe('toolSettings', () => {
   it('starts every tool at the shared default color, and redact at pure black instead', () => {
     const s = useBoardStore.getState().toolSettings
     expect(s.arrow.color).toBe(DEFAULT_ANNOTATION_COLOR)
+    expect(s.line.color).toBe(DEFAULT_ANNOTATION_COLOR)
     expect(s.box.color).toBe(DEFAULT_ANNOTATION_COLOR)
     expect(s.text.color).toBe(DEFAULT_ANNOTATION_COLOR)
     expect(s.marker.color).toBe(DEFAULT_ANNOTATION_COLOR)
     expect(s.redact.color).toBe('#000000')
+  })
+
+  it('starts the arrow tool straight by default, per real-usage feedback that a curve alone "looks unprofessional"', () => {
+    expect(useBoardStore.getState().toolSettings.arrow.straight).toBe(true)
+  })
+
+  it('setArrowStraight toggles the arrow tool default without touching color/size', () => {
+    useBoardStore.getState().setArrowStraight(false)
+    const s = useBoardStore.getState().toolSettings.arrow
+    expect(s.straight).toBe(false)
+    expect(s.color).toBe(DEFAULT_ANNOTATION_COLOR)
+    expect(s.size).toBe(ANNOTATION_SIZE_RANGE.arrow.default)
   })
 
   it('setToolColor changes only the given tool', () => {
@@ -879,6 +964,19 @@ describe('toolSettings', () => {
     useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
     const redact = useBoardStore.getState().board.nodes.find((n) => n.kind === 'redact')
     expect(redact).toMatchObject({ color: '#111827' })
+  })
+
+  it('a newly created arrow picks up the currently armed straight/curved setting', () => {
+    useBoardStore.getState().setArrowStraight(false)
+    useBoardStore.setState({ tool: 'arrow' })
+    useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const curved = useBoardStore.getState().board.nodes.find((n) => n.kind === 'arrow')
+    expect(curved).toMatchObject({ straight: false })
+
+    useBoardStore.getState().setArrowStraight(true)
+    useBoardStore.getState().addArrow({ x: 0, y: 50 }, { x: 40, y: 50 })
+    const arrows = useBoardStore.getState().board.nodes.filter((n) => n.kind === 'arrow')
+    expect(arrows[1]).toMatchObject({ straight: true })
   })
 
   it('a newly created marker uses the armed diameter as its frame size', () => {
@@ -924,6 +1022,25 @@ describe('setNodeColor / setNodeSize (editing an already-placed annotation, not 
     expect(useBoardStore.getState().board.nodes.find((n) => n.id === 'img')?.frame).toEqual({ x: 0, y: 0, w: 10, h: 10 })
     useBoardStore.getState().setNodeColor('does-not-exist', '#16a34a')
     expect(useBoardStore.getState().board.nodes).toHaveLength(1)
+  })
+
+  it('setNodeStraight toggles an already-placed arrow in place, unlike setArrowStraight which only affects the next one drawn', () => {
+    useBoardStore.setState({ tool: 'arrow' })
+    useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
+    const arrowId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'arrow')!.id
+
+    useBoardStore.getState().setNodeStraight(arrowId, false)
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === arrowId)).toMatchObject({ straight: false })
+    // toolSettings (the default for the *next* arrow) is untouched.
+    expect(useBoardStore.getState().toolSettings.arrow.straight).toBe(true)
+  })
+
+  it('setNodeStraight is a no-op for a non-arrow node', () => {
+    useBoardStore.setState({ tool: 'box' })
+    useBoardStore.getState().addBox({ x: 0, y: 0 }, { x: 40, y: 30 })
+    const boxId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'box')!.id
+    useBoardStore.getState().setNodeStraight(boxId, false)
+    expect(useBoardStore.getState().board.nodes.find((n) => n.id === boxId)).not.toHaveProperty('straight')
   })
 
   it('resizes an existing arrow/box by its size field, clamped to the tool range', () => {

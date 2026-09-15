@@ -1,6 +1,7 @@
 import { useRef, useState, forwardRef } from 'react'
 import { t } from '@/i18n/t'
-import { AnnotationSettingsPopover } from '@/ui/AnnotationSettingsPopover'
+import { AnnotationColorPopover } from '@/ui/AnnotationColorPopover'
+import { AnnotationSizeSlider } from '@/ui/AnnotationSizeSlider'
 import { TrashIcon } from '@/ui/TrashIcon'
 
 export interface StyleTarget {
@@ -9,11 +10,14 @@ export interface StyleTarget {
    * own note on why the slider row doesn't render for it. */
   size: number | null
   sizeRange: { min: number; max: number } | null
+  /** Non-null only for a single selected arrow node - see
+   * `AnnotationColorPopover`'s own note on straight-vs-curved. */
+  straight: boolean | null
 }
 
 interface Props {
   /** Only passed when the selection is exactly one image node - Crop makes
-   * no sense for a multi-selection or for an annotation kind (arrow/box/
+   * no sense for a multi-selection or for an annotation kind (arrow/line/box/
    * text/marker/redact), so the button itself only renders when there's
    * somewhere for it to go. */
   onCrop?: (() => void) | undefined
@@ -21,15 +25,16 @@ interface Props {
   onBringToFront: () => void
   onDelete: () => void
   /** Only passed when the selection is exactly one annotation node (not an
-   * image, not a multi-selection) - lets that node's own color/size be
-   * edited in place, the same popover `AnnotationToolbar` opens for
+   * image, not a multi-selection) - lets that node's own color/size/line-style
+   * be edited in place, the same popover `AnnotationToolbar` opens for
    * whichever tool is armed, just targeting the selected node instead of
    * the tool's own default for the next one drawn. */
   style?: StyleTarget | undefined
   onStyleColorChange?: ((color: string) => void) | undefined
   onStyleSizeChange?: ((size: number) => void) | undefined
+  onStyleStraightChange?: ((straight: boolean) => void) | undefined
   /** Batches a whole size-slider drag into one undo step - see
-   * `AnnotationSettingsPopover`'s own note on why this popover (unlike
+   * `AnnotationSizeSlider`'s own note on why this popover (unlike
    * `AnnotationToolbar`'s) needs it at all. */
   onStyleAdjustStart?: (() => void) | undefined
   onStyleAdjustEnd?: (() => void) | undefined
@@ -53,13 +58,14 @@ export const SelectionToolbar = forwardRef<HTMLDivElement, Props>(function Selec
     style,
     onStyleColorChange,
     onStyleSizeChange,
+    onStyleStraightChange,
     onStyleAdjustStart,
     onStyleAdjustEnd,
   },
   ref,
 ) {
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const settingsBtnRef = useRef<HTMLButtonElement>(null)
+  const [colorOpen, setColorOpen] = useState(false)
+  const colorBtnRef = useRef<HTMLButtonElement>(null)
 
   return (
     <div ref={ref} className="selection-toolbar" style={{ display: 'none' }}>
@@ -74,14 +80,23 @@ export const SelectionToolbar = forwardRef<HTMLDivElement, Props>(function Selec
       <button className="selection-toolbar__btn" title={t('selection.bringToFrontTitle')} aria-label={t('selection.bringToFront')} onClick={onBringToFront}>
         ⤒
       </button>
+      {style && style.size != null && style.sizeRange && onStyleSizeChange && (
+        <AnnotationSizeSlider
+          size={style.size}
+          sizeRange={style.sizeRange}
+          onChange={onStyleSizeChange}
+          onAdjustStart={onStyleAdjustStart}
+          onAdjustEnd={onStyleAdjustEnd}
+        />
+      )}
       {style && (
         <button
-          ref={settingsBtnRef}
+          ref={colorBtnRef}
           className="selection-toolbar__btn"
-          onClick={() => setSettingsOpen((v) => !v)}
+          onClick={() => setColorOpen((v) => !v)}
           title={t('selection.styleTitle')}
           aria-label={t('selection.style')}
-          aria-expanded={settingsOpen}
+          aria-expanded={colorOpen}
         >
           <span className="annotation-toolbar__swatch" style={{ background: style.color }} />
         </button>
@@ -89,17 +104,14 @@ export const SelectionToolbar = forwardRef<HTMLDivElement, Props>(function Selec
       <button className="selection-toolbar__btn selection-toolbar__btn--danger" title={t('selection.delete')} aria-label={t('selection.delete')} onClick={onDelete}>
         <TrashIcon />
       </button>
-      {settingsOpen && style && onStyleColorChange && onStyleSizeChange && (
-        <AnnotationSettingsPopover
+      {colorOpen && style && onStyleColorChange && (
+        <AnnotationColorPopover
           color={style.color}
           onColorChange={onStyleColorChange}
-          size={style.size}
-          sizeRange={style.sizeRange}
-          onSizeChange={onStyleSizeChange}
-          onAdjustStart={onStyleAdjustStart}
-          onAdjustEnd={onStyleAdjustEnd}
-          onClose={() => setSettingsOpen(false)}
-          anchorRef={settingsBtnRef}
+          straight={style.straight}
+          onStraightChange={onStyleStraightChange}
+          onClose={() => setColorOpen(false)}
+          anchorRef={colorBtnRef}
         />
       )}
     </div>

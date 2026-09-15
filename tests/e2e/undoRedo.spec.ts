@@ -118,3 +118,62 @@ test('dragging the gap slider is one undo step, not one per tick', async ({ page
   await page.keyboard.press('Control+z')
   await expect(slider).toHaveValue(before)
 })
+
+/** Real-usage feedback: users draw something, don't like it, and reach for
+ * an undo they can click right next to the tool they just used - Lightshot-
+ * style - rather than only via Ctrl/Cmd+Z, which many never discover. These
+ * two buttons live in `AnnotationToolbar` (bottom-left, next to the drawing
+ * tools) and mirror the store's own `past`/`future` length exactly - no new
+ * store logic, just a second UI surface over `undo`/`redo`. */
+function undoButton(page: import('@playwright/test').Page) {
+  return page.getByRole('button', { name: 'Undo', exact: true })
+}
+function redoButton(page: import('@playwright/test').Page) {
+  return page.getByRole('button', { name: 'Redo', exact: true })
+}
+
+test('the toolbar Undo/Redo buttons mirror Ctrl/Cmd+Z, and disable themselves when there is nothing to undo/redo', async ({
+  page,
+  images,
+  addViaPicker,
+}) => {
+  await addViaPicker(page, images([[400, 300]]))
+  const rect = await pageRect(page)
+
+  // Nothing to undo yet from this fresh board's perspective? Actually
+  // addFiles itself is one committed action, so Undo starts enabled and Redo
+  // starts disabled - the same asymmetry Ctrl/Cmd+Z/Shift+Z already have.
+  await expect(undoButton(page)).toBeEnabled()
+  await expect(redoButton(page)).toBeDisabled()
+
+  await page.getByRole('button', { name: 'Arrow', exact: true }).click()
+  const y = rect.y + rect.h + 40
+  const start = { x: rect.x + 20, y }
+  const end = { x: rect.x + 160, y }
+  await page.mouse.move(start.x, start.y)
+  await page.mouse.down()
+  await page.mouse.move(end.x, end.y, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.locator('.selection-status')).toHaveText('1 selected')
+  // The arrow tool's own new default (straight, see boardStore's
+  // DEFAULT_TOOL_SETTINGS) means the stroke sits exactly on the midpoint of
+  // the drag - a reliable single pixel to check undo/redo against.
+  const mid = { x: (start.x + end.x) / 2, y }
+  const [r, g, b] = await pixelAt(page, mid.x, mid.y)
+  expect(r).toBeGreaterThan(150)
+  expect(g).toBeLessThan(100)
+  expect(b).toBeLessThan(100)
+
+  await undoButton(page).click()
+  await expect(page.locator('.selection-status')).toHaveText('')
+  await expect(redoButton(page)).toBeEnabled()
+  const afterUndo = await pixelAt(page, mid.x, mid.y)
+  expect(afterUndo).not.toEqual([r, g, b])
+
+  // Redo doesn't restore the selection (undo already cleared it, and redo
+  // only ever filters whatever's *currently* selected against the redone
+  // board - there's nothing left to filter) - but the arrow itself is back.
+  await redoButton(page).click()
+  await expect(redoButton(page)).toBeDisabled()
+  await expect.poll(() => pixelAt(page, mid.x, mid.y)).toEqual([r, g, b])
+})

@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { ANNOTATION_COLORS } from '@/board/model/annotationDefaults'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
@@ -7,56 +7,32 @@ import { t } from '@/i18n/t'
 interface Props {
   color: string
   onColorChange: (color: string) => void
-  /** `null` for redact - it has no size dimension (see `RedactNode`'s own
-   * note), so the slider row doesn't render at all rather than being shown
-   * disabled. */
-  size: number | null
-  sizeRange: { min: number; max: number } | null
-  onSizeChange: (size: number) => void
-  /** Opens/closes a `boardStore.beginAdjustment`/`endAdjustment` window
-   * around the whole slider drag, same as `TopBar`'s gap slider - only
-   * passed by `SelectionToolbar`, whose `onSizeChange` mutates an
-   * already-placed node's `Board` state (`setNodeSize`/`commitText`) and so,
-   * without this, would push one full undo-history entry (and one full
-   * board re-commit) per 'input' event of the drag, the exact "50+ entries
-   * for one gesture" problem Phase 2 item 7 already fixed once for the gap
-   * slider - just never applied here when this edit-in-place feature was
-   * added later. `AnnotationToolbar`'s own use of this popover only ever
-   * changes `toolSettings` (not `Board`), which was never routed through
-   * undo history in the first place, so it has nothing to batch and leaves
-   * these undefined. */
-  onAdjustStart?: (() => void) | undefined
-  onAdjustEnd?: (() => void) | undefined
+  /** Non-null only for the arrow tool/node - every other annotation kind has
+   * no line-style dimension to toggle. `true` = straight (the tool's own
+   * default, see `boardStore`'s `DEFAULT_TOOL_SETTINGS`), `false` = the
+   * original gently curved connector. */
+  straight: boolean | null
+  onStraightChange?: ((straight: boolean) => void) | undefined
   onClose: () => void
-  /** The toolbar's settings button - measured once on mount to position
-   * this (fixed-position, see styles.css) popover above it, mirroring
+  /** The toolbar's color button - measured once on mount to position this
+   * (fixed-position, see styles.css) popover above it, mirroring
    * `ExportMenu`'s own anchor pattern but anchored upward since the
    * annotation toolbar lives at the bottom of the viewport. */
   anchorRef: RefObject<HTMLButtonElement | null>
 }
 
 /**
- * Color (and, except for redact, size) controls for whichever annotation
- * tool is currently armed - opened from `AnnotationToolbar`'s settings
- * button, same popover pattern `ExportMenu` already established for
- * Download's scale/format/quality controls. Scrolling the mouse wheel while
- * a tool is armed adjusts the same underlying store value (see
- * BoardCanvas's wheel handler) - this popover is the explicit, discoverable
- * way to do the same thing, not a separate setting.
+ * Color (and, for arrow only, straight-vs-curved line style) controls for
+ * whichever annotation tool is currently armed or node is selected - opened
+ * from a small color-swatch button, same popover pattern `ExportMenu`
+ * already established for Download's scale/format/quality controls. Size no
+ * longer lives here - see `AnnotationSizeSlider`, shown inline in the
+ * toolbar itself instead: real-usage feedback found that gating the size
+ * control behind this popover's own button meant most users never
+ * discovered it existed at all ("ต้องกดปุ่มเลือกสีก่อนถึงจะเจอแถบ Size").
  */
-export function AnnotationSettingsPopover({
-  color,
-  onColorChange,
-  size,
-  sizeRange,
-  onSizeChange,
-  onAdjustStart,
-  onAdjustEnd,
-  onClose,
-  anchorRef,
-}: Props) {
+export function AnnotationColorPopover({ color, onColorChange, straight, onStraightChange, onClose, anchorRef }: Props) {
   const ref = useRef<HTMLDivElement>(null)
-  const sizeId = useId()
   const [pos, setPos] = useState<{ bottom: number; left: number } | null>(null)
 
   useFocusTrap(ref, anchorRef)
@@ -68,7 +44,18 @@ export function AnnotationSettingsPopover({
 
   useEffect(() => {
     const onPointerDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node) && e.target !== anchorRef.current) onClose()
+      const target = e.target as Node
+      // `contains`, not `!==` - the anchor button has its own child (the
+      // swatch `<span>`), and a click there reports `e.target` as that span,
+      // not the button. An exact-identity check misclassified that as an
+      // outside click, which closed the popover via this listener and then,
+      // in the same gesture, the button's own onClick fired against the
+      // now-stale `colorOpen` closure and reopened it - net effect: clicking
+      // the anchor button a second time to close the popover silently did
+      // nothing (found via a throwaway repro script when this button's
+      // position shifted enough for Playwright's click point to land
+      // squarely on the span instead of the button's own padding).
+      if (ref.current && !ref.current.contains(target) && !anchorRef.current?.contains(target)) onClose()
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -121,25 +108,18 @@ export function AnnotationSettingsPopover({
         </div>
       </div>
 
-      {size != null && sizeRange && (
-        <label className="slider" htmlFor={sizeId}>
-          {t('annotate.size')}
-          <input
-            id={sizeId}
-            type="range"
-            min={sizeRange.min}
-            max={sizeRange.max}
-            step={1}
-            value={size}
-            onChange={(e) => onSizeChange(Number(e.target.value))}
-            onPointerDown={onAdjustStart}
-            onPointerUp={onAdjustEnd}
-            onKeyDown={onAdjustStart}
-            onKeyUp={onAdjustEnd}
-            aria-label={t('annotate.size')}
-          />
-          <span className="annotation-settings__value">{size}px</span>
-        </label>
+      {straight != null && onStraightChange && (
+        <div className="annotation-settings__row">
+          <span className="annotation-settings__label">{t('annotate.lineStyle')}</span>
+          <div className="group" role="group" aria-label={t('annotate.lineStyle')}>
+            <button type="button" className="chip" aria-pressed={straight} onClick={() => onStraightChange(true)}>
+              {t('annotate.straight')}
+            </button>
+            <button type="button" className="chip" aria-pressed={!straight} onClick={() => onStraightChange(false)}>
+              {t('annotate.curved')}
+            </button>
+          </div>
+        </div>
       )}
     </div>,
     document.body,

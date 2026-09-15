@@ -8,6 +8,7 @@ import { resizeKeepingAspect, type Corner } from '@/board/interact/resize'
 import { FULL_CROP, fullImageRect, resizeCropWindow, windowToCrop } from '@/board/interact/crop'
 import { snapMove, type SnapGuide } from '@/board/interact/snap'
 import { strokeArrow } from '@/board/render/arrow'
+import { strokeLine } from '@/board/render/line'
 import { strokeBox } from '@/board/render/box'
 import { fillRedact } from '@/board/render/redact'
 import { TEXT_MIN_WIDTH, TEXT_PADDING, ensureAnnotationFont, textAutoWidth, textFont, textHeight, textLineHeight, wrapText } from '@/board/render/text'
@@ -26,6 +27,8 @@ import { t } from '@/i18n/t'
 /** Screen-px drag distance below which an arrow-tool drag is treated as a
  * stray click, not a deliberate zero-length arrow. */
 const ARROW_MIN_DRAG = 4
+/** Same threshold, for the line tool. */
+const LINE_MIN_DRAG = 4
 /** Same threshold, for the box tool. */
 const BOX_MIN_DRAG = 4
 /** Same threshold, for the redact tool. */
@@ -102,9 +105,10 @@ interface Props {
  * `MarkerNode`'s note); its diameter is read straight off `frame.w`. */
 function styleTargetFor(node: Board['nodes'][number] | undefined): StyleTarget | undefined {
   if (!node || node.kind === 'image') return undefined
-  if (node.kind === 'redact') return { color: node.color, size: null, sizeRange: null }
-  if (node.kind === 'marker') return { color: node.color, size: node.frame.w, sizeRange: ANNOTATION_SIZE_RANGE.marker }
-  return { color: node.color, size: node.size, sizeRange: ANNOTATION_SIZE_RANGE[node.kind] }
+  if (node.kind === 'redact') return { color: node.color, size: null, sizeRange: null, straight: null }
+  if (node.kind === 'marker') return { color: node.color, size: node.frame.w, sizeRange: ANNOTATION_SIZE_RANGE.marker, straight: null }
+  if (node.kind === 'arrow') return { color: node.color, size: node.size, sizeRange: ANNOTATION_SIZE_RANGE.arrow, straight: node.straight ?? false }
+  return { color: node.color, size: node.size, sizeRange: ANNOTATION_SIZE_RANGE[node.kind], straight: null }
 }
 
 /**
@@ -147,6 +151,9 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
   // Arrow-tool drag in progress: board-space start/current end point, drawn
   // as a live preview on the interaction canvas until pointer-up commits it.
   const arrowDraftRef = useRef<{ start: Point; current: Point; screenStart: { x: number; y: number } } | null>(null)
+  // Line-tool drag in progress - same shape as `arrowDraftRef`, just for the
+  // plain-straight-stroke-no-arrowhead annotation tool.
+  const lineDraftRef = useRef<{ start: Point; current: Point; screenStart: { x: number; y: number } } | null>(null)
   // Box-tool drag in progress - same shape as `arrowDraftRef`, just for the
   // other one-shot annotation tool.
   const boxDraftRef = useRef<{ start: Point; current: Point; screenStart: { x: number; y: number } } | null>(null)
@@ -209,13 +216,17 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
   const bringToFront = useBoardStore((s) => s.bringToFront)
   const setNodeColor = useBoardStore((s) => s.setNodeColor)
   const setNodeSize = useBoardStore((s) => s.setNodeSize)
+  const setNodeStraight = useBoardStore((s) => s.setNodeStraight)
   const beginAdjustment = useBoardStore((s) => s.beginAdjustment)
   const endAdjustment = useBoardStore((s) => s.endAdjustment)
   const undo = useBoardStore((s) => s.undo)
   const redo = useBoardStore((s) => s.redo)
+  const canUndo = useBoardStore((s) => s.past.length > 0)
+  const canRedo = useBoardStore((s) => s.future.length > 0)
   const tool = useBoardStore((s) => s.tool)
   const setTool = useBoardStore((s) => s.setTool)
   const addArrow = useBoardStore((s) => s.addArrow)
+  const addLine = useBoardStore((s) => s.addLine)
   const addBox = useBoardStore((s) => s.addBox)
   const commitText = useBoardStore((s) => s.commitText)
   const addMarker = useBoardStore((s) => s.addMarker)
@@ -224,6 +235,7 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
   const toolSettings = useBoardStore((s) => s.toolSettings)
   const setToolColor = useBoardStore((s) => s.setToolColor)
   const setToolSize = useBoardStore((s) => s.setToolSize)
+  const setArrowStraight = useBoardStore((s) => s.setArrowStraight)
   const adjustToolSize = useBoardStore((s) => s.adjustToolSize)
 
   // Scrolling the wheel to adjust a tool's size (below) has no other on-screen
@@ -428,7 +440,14 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
     if (arrowDraft) {
       const a = boardToScreen(camera, viewport, arrowDraft.start)
       const b = boardToScreen(camera, viewport, arrowDraft.current)
-      strokeArrow(ctx, a, b, toolSettings.arrow.color, toolSettings.arrow.size * camera.zoom)
+      strokeArrow(ctx, a, b, toolSettings.arrow.color, toolSettings.arrow.size * camera.zoom, toolSettings.arrow.straight)
+    }
+
+    const lineDraft = lineDraftRef.current
+    if (lineDraft) {
+      const a = boardToScreen(camera, viewport, lineDraft.start)
+      const b = boardToScreen(camera, viewport, lineDraft.current)
+      strokeLine(ctx, a, b, toolSettings.line.color, toolSettings.line.size * camera.zoom)
     }
 
     const boxDraft = boxDraftRef.current
@@ -463,11 +482,17 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
     // Positions the floating selection toolbar imperatively, same ref-first
     // reasoning as `pageRef` above - it must track the selection at 60fps
     // during a drag without going through React state. Hidden mid-gesture so
-    // it doesn't float over a move/resize/marquee in progress.
+    // it doesn't float over a move/resize/marquee in progress, and hidden
+    // while any tool is armed - re-arming a tool (e.g. clicking "Box" again
+    // right after drawing one, without deselecting first) would otherwise
+    // leave the previous selection's own inline size slider on screen at the
+    // same time as `AnnotationToolbar`'s, two identically-labeled "Size"
+    // controls editing two different things (this tool's next-shape default
+    // vs. the still-selected node's own size).
     const toolbar = toolbarRef.current
     if (toolbar) {
       const dragging = !!(moveRef.current || resizeRef.current || reorderRef.current || marqueeRef.current)
-      if (selectedIds.length === 0 || dragging || cropSession) {
+      if (selectedIds.length === 0 || dragging || cropSession || tool !== 'select') {
         toolbar.style.display = 'none'
       } else {
         const frames = board.nodes.filter((n) => selectedIds.includes(n.id)).map((n) => overrides?.[n.id] ?? n.frame)
@@ -585,7 +610,7 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
         cropToolbar.style.display = 'none'
       }
     }
-  }, [board.nodes, selectedIds, viewport, editingText, cropSession, toolSettings])
+  }, [board.nodes, selectedIds, viewport, editingText, cropSession, toolSettings, tool])
 
   useEffect(() => {
     if (autoFitRef.current) {
@@ -770,6 +795,13 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
         return
       }
 
+      if (tool === 'line') {
+        const point = toBoardPoint(e)
+        lineDraftRef.current = { start: point, current: point, screenStart: { x: e.clientX, y: e.clientY } }
+        canvas.setPointerCapture(e.pointerId)
+        return
+      }
+
       if (tool === 'box') {
         const point = toBoardPoint(e)
         boxDraftRef.current = { start: point, current: point, screenStart: { x: e.clientX, y: e.clientY } }
@@ -890,6 +922,13 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
         return
       }
 
+      const lineDraft = lineDraftRef.current
+      if (lineDraft) {
+        lineDraftRef.current = { ...lineDraft, current: toBoardPoint(e) }
+        drawInteraction()
+        return
+      }
+
       const boxDraft = boxDraftRef.current
       if (boxDraft) {
         boxDraftRef.current = { ...boxDraft, current: toBoardPoint(e) }
@@ -963,6 +1002,16 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
         arrowDraftRef.current = null
         const dragged = Math.hypot(e.clientX - arrowDraft.screenStart.x, e.clientY - arrowDraft.screenStart.y) > ARROW_MIN_DRAG
         if (dragged) addArrow(arrowDraft.start, arrowDraft.current)
+        else setTool('select')
+        drawInteraction()
+        return
+      }
+
+      const lineDraft = lineDraftRef.current
+      if (lineDraft) {
+        lineDraftRef.current = null
+        const dragged = Math.hypot(e.clientX - lineDraft.screenStart.x, e.clientY - lineDraft.screenStart.y) > LINE_MIN_DRAG
+        if (dragged) addLine(lineDraft.start, lineDraft.current)
         else setTool('select')
         drawInteraction()
         return
@@ -1075,6 +1124,7 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
     drawInteraction,
     tool,
     addArrow,
+    addLine,
     addBox,
     addMarker,
     addRedact,
@@ -1181,6 +1231,9 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
       } else if (e.key.toLowerCase() === 'a') {
         e.preventDefault()
         setTool(tool === 'arrow' ? 'select' : 'arrow')
+      } else if (e.key.toLowerCase() === 'l') {
+        e.preventDefault()
+        setTool(tool === 'line' ? 'select' : 'line')
       } else if (e.key.toLowerCase() === 'r') {
         e.preventDefault()
         setTool(tool === 'box' ? 'select' : 'box')
@@ -1328,6 +1381,13 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
     [selectedNode, setNodeColor],
   )
 
+  const onStyleStraightChange = useCallback(
+    (straight: boolean) => {
+      if (selectedNode && selectedNode.kind === 'arrow') setNodeStraight(selectedNode.id, straight)
+    },
+    [selectedNode, setNodeStraight],
+  )
+
   // Text is the one kind resized here rather than through `setNodeSize` -
   // a font-size change also changes the wrapped line count, which needs a
   // real `measureText` only this component has (same reasoning `commitText`'s
@@ -1400,6 +1460,7 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
             style={styleTarget}
             onStyleColorChange={onStyleColorChange}
             onStyleSizeChange={onStyleSizeChange}
+            onStyleStraightChange={onStyleStraightChange}
             onStyleAdjustStart={beginAdjustment}
             onStyleAdjustEnd={endAdjustment}
           />
@@ -1417,6 +1478,7 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
           <AnnotationToolbar
             tool={tool}
             onToggleArrow={() => setTool(tool === 'arrow' ? 'select' : 'arrow')}
+            onToggleLine={() => setTool(tool === 'line' ? 'select' : 'line')}
             onToggleBox={() => setTool(tool === 'box' ? 'select' : 'box')}
             onToggleText={() => setTool(tool === 'text' ? 'select' : 'text')}
             onToggleMarker={() => setTool(tool === 'marker' ? 'select' : 'marker')}
@@ -1424,6 +1486,11 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
             toolSettings={toolSettings}
             onColorChange={setToolColor}
             onSizeChange={setToolSize}
+            onStraightChange={setArrowStraight}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={undo}
+            onRedo={redo}
           />
         </>
       )}

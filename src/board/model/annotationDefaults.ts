@@ -10,7 +10,7 @@ export const ANNOTATION_COLORS = ['#dc2626', '#f97316', '#eab308', '#16a34a', '#
 export type AnnotationColor = (typeof ANNOTATION_COLORS)[number]
 export const DEFAULT_ANNOTATION_COLOR: AnnotationColor = ANNOTATION_COLORS[0]
 
-export type Tool = 'select' | 'arrow' | 'box' | 'text' | 'marker' | 'redact'
+export type Tool = 'select' | 'arrow' | 'line' | 'box' | 'text' | 'marker' | 'redact'
 export type AnnotationTool = Exclude<Tool, 'select'>
 /** Every annotation kind except redact - a redaction's size is already the
  * dragged rectangle, so it has no separate stroke/diameter/font dimension to
@@ -27,6 +27,7 @@ export type SizableAnnotationTool = Exclude<AnnotationTool, 'redact'>
  */
 export const ANNOTATION_SIZE_RANGE: Record<SizableAnnotationTool, { min: number; max: number; default: number }> = {
   arrow: { min: 2, max: 12, default: 4 },
+  line: { min: 2, max: 12, default: 4 },
   box: { min: 2, max: 12, default: 3 },
   marker: { min: 24, max: 64, default: 36 },
   text: { min: 14, max: 40, default: 22 },

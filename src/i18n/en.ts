@@ -71,7 +71,7 @@ export const en = {
   'selection.bringToFrontTitle': 'Bring to front (F)',
   'selection.delete': 'Delete',
   'selection.style': 'Edit style',
-  'selection.styleTitle': 'Color & size',
+  'selection.styleTitle': 'Color',
 
   'contextMenu.label': 'Selection actions',
 
@@ -80,6 +80,8 @@ export const en = {
 
   'annotate.arrow': 'Arrow',
   'annotate.arrowTitle': 'Arrow (A)',
+  'annotate.line': 'Line',
+  'annotate.lineTitle': 'Line (L)',
   'annotate.box': 'Box',
   'annotate.boxTitle': 'Box (R)',
   'annotate.text': 'Text',
@@ -89,9 +91,16 @@ export const en = {
   'annotate.redact': 'Redact',
   'annotate.redactTitle': 'Redact (C)',
   'annotate.settings': 'Style',
-  'annotate.settingsTitle': 'Color & size — or scroll while a tool is armed',
+  'annotate.settingsTitle': 'Color — the size slider next to this button always shows when a tool is armed',
   'annotate.color': 'Color',
   'annotate.size': 'Size',
+  'annotate.lineStyle': 'Line style',
+  'annotate.straight': 'Straight',
+  'annotate.curved': 'Curved',
+  'annotate.undo': 'Undo',
+  'annotate.undoTitle': 'Undo ({{mod}}+Z)',
+  'annotate.redo': 'Redo',
+  'annotate.redoTitle': 'Redo ({{mod}}+Shift+Z)',
 
   'zoom.out': 'Zoom out',
   'zoom.in': 'Zoom in',
@@ -141,6 +150,7 @@ export const en = {
   'help.bringToFront': 'Bring to front',
   'help.delete': 'Delete selection',
   'help.arrow': 'Arrow tool',
+  'help.line': 'Line tool',
   'help.box': 'Box tool',
   'help.text': 'Text tool',
   'help.marker': 'Number marker tool',

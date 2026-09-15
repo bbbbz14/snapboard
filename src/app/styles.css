@@ -1256,6 +1256,28 @@ body {
     font-size: 17px;
   }
 
+  /* Undo/redo plus the new inline size slider (real-usage feedback: both
+     were added to these two floating toolbars after they were already sized
+     for a narrow viewport) push their total width past what a 390px phone
+     comfortably fits - same "float the overflow, don't squish controls
+     illegibly" reasoning `.topbar` already applies (item 3), rather than a
+     bespoke mobile layout for either toolbar. */
+  .annotation-toolbar,
+  .selection-toolbar {
+    max-width: calc(100vw - 32px);
+    overflow-x: auto;
+  }
+
+  .annotation-toolbar .slider,
+  .selection-toolbar .slider {
+    padding: 0 4px;
+  }
+
+  .annotation-toolbar .slider input,
+  .selection-toolbar .slider input {
+    width: 56px;
+  }
+
   /* The app name costs ~90px for no functional value once the bar is
      actually in use - dropping it (plus moving Clear into the settings
      popover, see MobileSettingsMenu.tsx) is what gets the bar under this

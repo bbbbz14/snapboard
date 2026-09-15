@@ -1,6 +1,7 @@
 import type { Point, Rect, Size } from '@/lib/geometry'
 import { STYLE_PRESETS, type Background, type StylePreset } from '@/board/model/types'
 import { strokeArrow } from './arrow'
+import { strokeLine } from './line'
 import { strokeBox } from './box'
 import { drawMarker } from './marker'
 import { fillRedact } from './redact'
@@ -18,6 +19,18 @@ export interface RenderItem {
 }
 
 export interface RenderArrow {
+  id: string
+  start: Point
+  end: Point
+  color: string
+  size: number
+  /** Absent (and old boards) means the original gently curved connector -
+   * see `ArrowNode`'s own note on why this defaults to curved rather than
+   * the tool's own new default of straight. */
+  straight?: boolean
+}
+
+export interface RenderLine {
   id: string
   start: Point
   end: Point
@@ -62,6 +75,8 @@ export interface RenderInput {
   /** Optional so `tests/render/harness.ts`'s scenes (image-only) don't need
    * to know arrows exist. */
   arrows?: RenderArrow[]
+  /** Optional for the same reason `arrows` is. */
+  lines?: RenderLine[]
   /** Optional for the same reason `arrows` is. */
   boxes?: RenderBox[]
   /** Optional for the same reason `arrows` is. Excludes whichever text node
@@ -148,15 +163,18 @@ export function renderScene(ctx: Ctx2D, input: RenderInput, { scale, tiles, offs
     fillRedact(ctx, redact.frame, redact.color)
   }
 
-  // Boxes and arrows are drawn on top of every image - they exist to point
-  // at or frame something already on the board, so they must never end up
-  // underneath it. Boxes first so an arrow can still point across a box's
-  // outline without being interrupted by it.
+  // Boxes, lines, and arrows are drawn on top of every image - they exist to
+  // point at or frame something already on the board, so they must never end
+  // up underneath it. Boxes first so an arrow/line can still point across a
+  // box's outline without being interrupted by it.
   for (const box of input.boxes ?? []) {
     strokeBox(ctx, box.frame, box.color, box.size)
   }
+  for (const line of input.lines ?? []) {
+    strokeLine(ctx, line.start, line.end, line.color, line.size)
+  }
   for (const arrow of input.arrows ?? []) {
-    strokeArrow(ctx, arrow.start, arrow.end, arrow.color, arrow.size)
+    strokeArrow(ctx, arrow.start, arrow.end, arrow.color, arrow.size, arrow.straight ?? false)
   }
   // Text last of the three annotation kinds - it often labels an arrow or a
   // box, so it must stay on top of both to stay legible.

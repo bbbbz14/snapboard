@@ -11,6 +11,7 @@ import {
   type BoxNode,
   type ImageNode,
   type LayoutMode,
+  type LineNode,
   type MarkerNode,
   type NodeId,
   type RedactNode,
@@ -30,6 +31,7 @@ import { AssetStore, type Asset } from '@/assets/assetStore'
 import type { Rejection } from '@/assets/validate'
 import { t } from '@/i18n/t'
 import { arrowFrame } from '@/board/render/arrow'
+import { lineFrame } from '@/board/render/line'
 import { markerFrame } from '@/board/render/marker'
 import { REDACT_DEFAULT_COLOR } from '@/board/render/redact'
 import type { RenderInput } from '@/board/render/renderScene'
@@ -58,7 +60,14 @@ const MAX_HISTORY = 50
  * to draw next, not arranged content, so it's untouched by undo/redo and
  * never autosaved. */
 export interface ToolSettings {
-  arrow: { color: string; size: number }
+  /** `straight` defaults to `true` (see `DEFAULT_TOOL_SETTINGS` below) - real-
+   * usage feedback on the live site found the original gently-curved-only
+   * arrow "looks unprofessional" for precisely pointing at something, so a
+   * plain straight line is now the default and the curve is the opt-in
+   * alternative (`AnnotationColorPopover`'s line-style toggle). Session-only,
+   * same as `color`/`size` - not persisted across a reload. */
+  arrow: { color: string; size: number; straight: boolean }
+  line: { color: string; size: number }
   box: { color: string; size: number }
   text: { color: string; size: number }
   marker: { color: string; size: number }
@@ -66,7 +75,8 @@ export interface ToolSettings {
 }
 
 const DEFAULT_TOOL_SETTINGS: ToolSettings = {
-  arrow: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.arrow.default },
+  arrow: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.arrow.default, straight: true },
+  line: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.line.default },
   box: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.box.default },
   text: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.text.default },
   marker: { color: DEFAULT_ANNOTATION_COLOR, size: ANNOTATION_SIZE_RANGE.marker.default },
@@ -177,6 +187,9 @@ interface BoardState {
   toolSettings: ToolSettings
   setToolColor: (tool: AnnotationTool, color: string) => void
   setToolSize: (tool: SizableAnnotationTool, size: number) => void
+  /** Sets the arrow tool's line-style default for the *next* arrow drawn -
+   * see `ToolSettings.arrow`'s own note on why straight is now the default. */
+  setArrowStraight: (straight: boolean) => void
   /** Relative nudge, clamped to the tool's range - what the mouse wheel
    * calls while a tool is armed, one step per wheel event rather than per
    * `deltaY` unit (a fast trackbackpad flick still just means "more wheel
@@ -189,6 +202,10 @@ interface BoardState {
    * `kind === 'image'` frames, see below) stays free to keep auto-arranging
    * images on an `'auto'`/`'rows'`/etc. board with arrows already on it. */
   addArrow: (start: Point, end: Point) => void
+  /** Commits a new plain straight line (no arrowhead) from `start` to `end`
+   * and switches back to the select tool - same one-shot pattern and same
+   * layout-preserving reasoning as `addArrow`. */
+  addLine: (start: Point, end: Point) => void
   /** Commits a new box from `start` to `end` (board-space, opposite drag
    * corners) and switches back to the select tool - same one-shot pattern
    * and same layout-preserving reasoning as `addArrow`. */
@@ -243,6 +260,10 @@ interface BoardState {
    * `measureText` only the caller has, so BoardCanvas routes that through
    * `commitText` instead. Redact has no size dimension at all. */
   setNodeSize: (id: NodeId, size: number) => void
+  /** Toggles an already-placed arrow node between straight and curved
+   * in place - the same "edit the node, not the tool default" distinction
+   * `setNodeColor`/`setNodeSize` already make. A no-op for any other kind. */
+  setNodeStraight: (id: NodeId, straight: boolean) => void
   undo: () => void
   redo: () => void
   /** Opens a coalescing window: board updates until `endAdjustment` collapse
@@ -321,7 +342,7 @@ function fitBoardToContent(board: Board): Board {
     size,
     nodes: board.nodes.map((n) => {
       const frame = translate(n.frame, dx, dy)
-      return n.kind === 'arrow'
+      return n.kind === 'arrow' || n.kind === 'line'
         ? { ...n, frame, start: translatePoint(n.start, dx, dy), end: translatePoint(n.end, dx, dy) }
         : { ...n, frame }
     }),
@@ -533,11 +554,11 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           nodes: s.board.nodes.map((n) => {
             const frame = byId.get(n.id)
             if (!frame) return n
-            // An arrow's frame is only ever moved wholesale (see handles.ts -
-            // arrows never expose a resize handle), so the delta between old
-            // and new frame origin is the same translation to apply to its
-            // actual start/end points.
-            if (n.kind === 'arrow') {
+            // An arrow/line's frame is only ever moved wholesale (see
+            // handles.ts - neither exposes a resize handle), so the delta
+            // between old and new frame origin is the same translation to
+            // apply to its actual start/end points.
+            if (n.kind === 'arrow' || n.kind === 'line') {
               const dx = frame.x - n.frame.x
               const dy = frame.y - n.frame.y
               return { ...n, frame, start: translatePoint(n.start, dx, dy), end: translatePoint(n.end, dx, dy) }
@@ -590,7 +611,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         if (ids.has(n.id)) {
           const frame = translate(n.frame, DUPLICATE_OFFSET, DUPLICATE_OFFSET)
           const copy: BoardNode =
-            n.kind === 'arrow'
+            n.kind === 'arrow' || n.kind === 'line'
               ? {
                   ...n,
                   id: `n${nodeSeq++}`,
@@ -627,6 +648,9 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       },
     })),
 
+  setArrowStraight: (straight) =>
+    set((s) => ({ toolSettings: { ...s.toolSettings, arrow: { ...s.toolSettings.arrow, straight } } })),
+
   addArrow: (start, end) =>
     set((s) => {
       const arrow: ArrowNode = {
@@ -638,10 +662,30 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         end,
         color: s.toolSettings.arrow.color,
         size: s.toolSettings.arrow.size,
+        straight: s.toolSettings.arrow.straight,
       }
       return {
         ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, arrow] }),
         selectedIds: [arrow.id],
+        tool: 'select',
+      }
+    }),
+
+  addLine: (start, end) =>
+    set((s) => {
+      const line: LineNode = {
+        kind: 'line',
+        id: `n${nodeSeq++}`,
+        frame: lineFrame(start, end),
+        order: s.board.nodes.length,
+        start,
+        end,
+        color: s.toolSettings.line.color,
+        size: s.toolSettings.line.size,
+      }
+      return {
+        ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, line] }),
+        selectedIds: [line.id],
         tool: 'select',
       }
     }),
@@ -757,11 +801,22 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           const cy = n.frame.y + n.frame.h / 2
           return { ...n, frame: markerFrame({ x: cx, y: cy }, clampAnnotationSize('marker', size)) }
         }
-        if (n.kind === 'arrow' || n.kind === 'box') {
+        if (n.kind === 'arrow' || n.kind === 'box' || n.kind === 'line') {
           changed = true
           return { ...n, size: clampAnnotationSize(n.kind, size) }
         }
         return n
+      })
+      return changed ? commitBoard(s, { ...s.board, nodes }) : {}
+    }),
+
+  setNodeStraight: (id, straight) =>
+    set((s) => {
+      let changed = false
+      const nodes = s.board.nodes.map((n) => {
+        if (n.id !== id || n.kind !== 'arrow') return n
+        changed = true
+        return { ...n, straight }
       })
       return changed ? commitBoard(s, { ...s.board, nodes }) : {}
     }),
@@ -855,6 +910,12 @@ export function toRenderInput(board: Board): RenderInput {
       })),
     arrows: sorted
       .filter((n): n is ArrowNode => n.kind === 'arrow')
+      // `?? false` covers a board saved before `straight` existed - it must
+      // keep rendering exactly as it did (curved), even though a brand-new
+      // arrow's tool default is now straight (see `DEFAULT_TOOL_SETTINGS`).
+      .map((n) => ({ id: n.id, start: n.start, end: n.end, color: n.color, size: n.size, straight: n.straight ?? false })),
+    lines: sorted
+      .filter((n): n is LineNode => n.kind === 'line')
       .map((n) => ({ id: n.id, start: n.start, end: n.end, color: n.color, size: n.size })),
     boxes: sorted
       .filter((n): n is BoxNode => n.kind === 'box')

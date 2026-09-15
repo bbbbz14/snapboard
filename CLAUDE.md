@@ -435,6 +435,198 @@ reachable; confirmed this test genuinely fails against the pre-fix code
 first (the board's on-screen rect landed ~79,000px off-screen), then passes
 with the fix, on all 3 engines - not just written and assumed correct).
 
+**A second annotation-tooling revision, driven by a fresh round of real-usage
+feedback (2026-09-15), is now built, verified, and committed - not yet
+pushed to `main` or deployed to the live site, pending the user's go-ahead.**
+Four things, all approved up front before any code: (1) the
+arrow tool now defaults to a plain straight line, with the original curve
+kept as an opt-in ("โค้ง" looked "ไม่จริงจัง" - unprofessional - for
+precisely pointing at something); (2) Undo/Redo are now also buttons, in
+`AnnotationToolbar` right next to the drawing tools (Lightshot-style), not
+only reachable via Ctrl/Cmd+Z, which the user's own testing found many
+people never discover; (3) the size slider for whatever tool is armed (or
+node is selected) is now always inline in the toolbar itself - previously it
+lived inside the same popover as the color swatches, one extra click away,
+which the user found actively confusing ("ต้องกดปุ่มเลือกสีก่อนถึงจะเจอแถบ
+Size"); and (4) a brand-new **Line** tool - a plain straight stroke with no
+arrowhead, for underlining or connecting two points without implying
+direction, distinct from Arrow (which always has a head, whether curved or
+straight). See "Annotation tooling revision 2" below for the full writeup,
+including a real pre-existing bug this work's own new tests surfaced (not
+caused by this session, but made far more likely to trigger by the toolbar's
+new width) and fixed at the source. `npm run verify` green (typecheck + 262
+unit + 33 renderer parity on 3 engines + 340/345 e2e passed, 5 skipped by
+design, same 5 as always - this revision added 15 unit cases and 8 new e2e
+cases × 3 engines = 24, all green on the first full run after the fixes
+described below).
+
+### Annotation tooling revision 2 — done: straight-by-default arrow, toolbar Undo/Redo, inline size slider, new Line tool
+
+Built this session (2026-09-15). `npm run verify` green (typecheck + 262
+unit + 33 renderer parity on 3 engines + 340/345 e2e passed, 5 skipped by
+design, same 5 as always). Not yet pushed to `main` or deployed - committed
+and held for the user's go-ahead, per this session's own instruction.
+
+- **Arrow now defaults to a plain straight line; curved is the opt-in.**
+  `ArrowNode` gained an optional `straight?: boolean` (`types.ts`) -
+  optional, and defaulting to curved (`?? false`) wherever it's read, so a
+  board saved before this field existed keeps rendering exactly as it did.
+  New arrows pick up `toolSettings.arrow.straight`, which itself now
+  defaults to `true` (`boardStore.ts`'s `DEFAULT_TOOL_SETTINGS`) - the
+  reverse of the old "always curved" behavior. The actual rendering change
+  is one line: `arrowGeometry` (`render/arrow.ts`) zeroes its perpendicular
+  `bow` offset when `straight` is true, which is enough on its own - a
+  quadratic Bezier whose control point sits at the *exact midpoint* of its
+  two endpoints degenerates to the straight line between them, so no
+  separate straight-line drawing path was needed anywhere (`strokeArrow`'s
+  existing `quadraticCurveTo` call already produces a straight segment for
+  free once `ctrl` lands on the line). A new "Straight"/"Curved" toggle
+  lives in `AnnotationColorPopover` (only rendered when `straight` is
+  non-null, i.e. only for the arrow tool/node), and `setArrowStraight`
+  (tool default) / `setNodeStraight` (an already-placed arrow, via
+  `SelectionToolbar`'s "Edit style") mirror the existing color/size actions'
+  own split between "next one drawn" and "this one, in place."
+- **Undo/Redo are now also toolbar buttons** (↶/↷, `AnnotationToolbar`,
+  bottom-left, right before the drawing tools) - no new store logic at all,
+  just `canUndo`/`canRedo` read directly off `past.length > 0` /
+  `future.length > 0` and wired to the existing `undo`/`redo` actions.
+  Placed next to the drawing tools rather than in `TopBar`, per the user's
+  own explicit ask for something reachable immediately after a bad
+  draw, Lightshot-style, not a trip to the top of the screen.
+- **The size slider is no longer inside the color popover - it's now always
+  inline in the toolbar itself**, visible the instant a sizable tool is
+  armed or a sizable annotation node is selected, no click needed. The old
+  combined `AnnotationSettingsPopover` is gone, split into two: a new
+  color-only `AnnotationColorPopover.tsx` (color swatches, plus the arrow-only
+  straight/curved toggle above) and a new `AnnotationSizeSlider.tsx` (a plain
+  `<label className="slider">`, the same markup pattern the top bar's own gap
+  slider already established), rendered directly in the toolbar's own flow
+  rather than behind a button. `AnnotationToolbar`'s color/size controls
+  also **stopped remembering the last-armed tool** (`lastArmedTool`, added
+  in part 2 of the *first* annotation revision) - now they reflect only the
+  tool that's *currently* armed. That earlier fix existed to keep a
+  just-drawn shape's settings reachable before `SelectionToolbar` had its
+  own style controls; now that it does (since "real-usage feedback round
+  2"), the freshly auto-selected node's own inline slider takes over the
+  instant the tool reverts to `'select'`, and keeping both mechanisms alive
+  at once would put two identically-labeled "Size" sliders on screen
+  simultaneously - found by exactly that: this session's own e2e run hit a
+  Playwright strict-mode violation ("resolved to 2 elements") the first
+  time a drawn shape stayed selected while its tool was still considered
+  "last armed." A second, narrower version of the same overlap - re-arming
+  a tool (e.g. clicking "Box" again) while the *previous* shape was still
+  selected - is closed by hiding `SelectionToolbar` outright whenever a
+  tool other than `'select'` is armed (`BoardCanvas.tsx`'s
+  `drawInteraction`), which is also the more correct behavior on its own
+  merits: a floating toolbar for a stale selection has no business
+  competing with the tool the user is actively about to draw with.
+- **Removing `lastArmedTool` also meant `AnnotationToolbar` needed a small
+  new guard it didn't before:** drawing a shape naturally closes the color
+  popover on its own (starting the drag/click is itself a `mousedown`
+  outside it, which the popover's own outside-click listener already
+  catches before the shape commits), but cancelling the armed tool via
+  Escape reverts `tool` to `'select'` with no mousedown at all - without
+  resetting the popover's own `colorOpen` state when nothing is armed
+  anymore, it would stay stuck `true` and silently reopen, unprompted, the
+  next time the same tool was re-armed. A one-line `useEffect` (reset
+  `colorOpen` when `settingsTool` goes `null`) closes it; new regression
+  case in `annotationSettings.spec.ts`.
+- **New `Line` annotation kind** - a plain straight stroke with no
+  arrowhead (`src/board/render/line.ts`: `strokeLine`/`lineFrame`, the same
+  minimal shape `box.ts`/`redact.ts` already established), for underlining
+  text or connecting two points without implying direction - deliberately a
+  separate tool/kind from Arrow (which always has a head, curved or
+  straight), not an Arrow variant, per the user's own framing of the
+  request. `LineNode` (`types.ts`) mirrors `ArrowNode`'s shape (`frame` is a
+  derived padded bbox, `start`/`end` are the real geometry) for the same
+  reason: every generic frame-based helper (`setFrames`'s move,
+  `duplicateSelected`, `fitBoardToContent`) already had an `n.kind ===
+  'arrow'` branch to translate `start`/`end` alongside `frame` - generalized
+  to `n.kind === 'arrow' || n.kind === 'line'` rather than duplicated.
+  Bound to a plain `L` key (checked against every existing shortcut - free).
+  No color/size decision to make - it shares the same 7-color palette and a
+  new `ANNOTATION_SIZE_RANGE.line` entry (same 2–12px range as arrow/box).
+- **A real, pre-existing bug found and fixed at the source, not worked
+  around in a test:** `AnnotationColorPopover`'s (and the original
+  `AnnotationSettingsPopover`'s, before it) outside-click-closes listener
+  compared `e.target !== anchorRef.current` to decide whether a click landed
+  "outside" the popover. The anchor is a `<button>` containing its own
+  child `<span className="annotation-toolbar__swatch">` (the color-dot
+  icon) - a click that lands on that span (not unlikely, since Playwright
+  clicks the center of an element's bounding box, and the swatch is
+  centered inside the button) reports `e.target` as the *span*, which fails
+  the exact-identity check and gets treated as an outside click. That
+  closes the popover via this listener - and then, in the same click
+  gesture, the button's own `onClick` fires against the now-stale
+  `colorOpen` closure and reopens it, netting out to "clicking the button a
+  second time to close the popover does nothing." This bug already existed
+  in the original combined popover (confirmed via `git show HEAD:` on the
+  now-deleted file) but apparently never landed on the swatch span at the
+  exact pixel Playwright's default click point chose for the old, narrower
+  toolbar layout - adding Undo/Redo and the Line tool shifted the color
+  button far enough right that its position (and therefore Playwright's
+  click point relative to the swatch span inside it) changed enough to
+  trigger it reliably. Root-caused with a throwaway Playwright reproduction
+  script (not committed) that logged the outside-click listener's own
+  target/isOutside computation and the button's `aria-expanded` state
+  around the click - confirmed the popover was still open (not reopened
+  later) at the moment of test failure. **Fixed** by changing the check to
+  `anchorRef.current?.contains(target)` instead of exact identity, so any
+  click on the button or its descendants is correctly recognized as "on the
+  anchor." Worth remembering for `ExportMenu`/`BackgroundMenu`/
+  `MobileSettingsMenu`, which were not audited this session but share the
+  identical anchor-button-with-a-child-icon shape and therefore, plausibly,
+  the identical latent bug - out of scope here since none of them showed a
+  failure, but worth a look if one of their own toggle buttons ever seems
+  to "not close on a second click."
+- **A second, unrelated timing bug the same investigation surfaced:**
+  several e2e tests opened the (now color-only, and now irrelevant to size)
+  popover before focusing the always-visible inline size slider to drive it
+  via the keyboard. Since the slider now lives in a completely separate DOM
+  subtree from the popover, `useFocusTrap`'s own mount-time
+  `requestAnimationFrame` (which force-focuses the popover's first
+  focusable child unless something *inside the popover* already has focus -
+  see Phase 5 item 9's note on why that guard exists) doesn't recognize a
+  manually-focused external slider as "already handled," and can steal
+  focus back to the popover's first color swatch a moment after the test
+  focuses the slider - so a subsequent `press('End')` lands on the swatch
+  button instead, a no-op. **Fixed by removing the now-unnecessary
+  popover-open/close calls from these tests** - the size slider was never
+  gated behind that popover in the first place once split from it, so there
+  was nothing to open. Not a product bug (a real user's own click into the
+  slider never opens the color popover at all), purely a test artifact of
+  updating call sites mechanically before reconsidering whether each step
+  was still needed.
+- `tests/unit/arrow.test.ts` gained 2 cases for `straight=true`'s geometry
+  (zeroed bow, arrowhead still points correctly). `tests/unit/line.test.ts`
+  (new) covers `lineFrame`'s padding/order-independence, mirroring
+  `arrowFrame`'s own tests. `tests/unit/boardStore.test.ts` gained a full
+  `addLine` block (mirroring `addArrow`'s), `setArrowStraight`/
+  `setNodeStraight` cases, and a default-is-straight assertion - 15 new
+  unit cases total. `tests/e2e/line.spec.ts` (new, 5 cases) mirrors
+  `arrow.spec.ts`'s structure. `tests/e2e/undoRedo.spec.ts` gained a case
+  for the new buttons - including confirming, correctly, that **redo does
+  not restore the selection** (a pre-existing, intentional store behavior:
+  `redo`'s `selectedIds` is a filter over whatever was *already* selected
+  before it ran, and `undo` already cleared that to empty - nothing to
+  filter back in), so the test checks the arrow's pixels reappear instead
+  of the selection count. `tests/e2e/annotationSettings.spec.ts` gained a
+  case for the straight/curved toggle (sampling the exact midpoint of a
+  drawn arrow's own start/end line - present for straight, absent for
+  curved, since a curved arrow's bow clears that exact point by design) and
+  a regression case for the `colorOpen`-staleness fix below (arm a tool,
+  open the color popover, Escape to cancel, re-arm the same tool, confirm
+  the popover doesn't silently reopen).
+- **Deliberately not done, scoped to exactly the 4 approved items:** no
+  color/size choice beyond what Line shares with every other tool; no
+  curve option for Line itself (always straight, that's the entire point of
+  a separate tool from Arrow); no persistence of `toolSettings.arrow.straight`
+  across a reload (session-only, same as every other `toolSettings` field,
+  per the user's own explicit "จำแค่ใน session ก็พอ"); no audit/fix of the
+  same latent outside-click bug in `ExportMenu`/`BackgroundMenu`/
+  `MobileSettingsMenu` (see the note above - real, but unreported and out of
+  scope here).
+
 ### Phase 5 item 11 — done: mobile lite mode
 
 Built this session. `npm run verify` green (typecheck + 243 unit + 33
