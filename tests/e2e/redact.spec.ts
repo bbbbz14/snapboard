@@ -98,8 +98,8 @@ test('the redact tool covers real image content with an opaque black fill, in th
   await page.mouse.move(end.x, end.y, { steps: 8 })
   await page.mouse.up()
 
-  // Drawing one redaction is a one-shot gesture - the tool reverts to select.
-  await expect(redactToolButton(page)).toHaveAttribute('aria-pressed', 'false')
+  // Tools are sticky: the tool stays armed so the next one can be drawn at once.
+  await expect(redactToolButton(page)).toHaveAttribute('aria-pressed', 'true')
   expect(await hasBlackPixel(page, region)).toBe(true)
 
   // One renderer for preview and export (invariant 1) - the redaction must
@@ -158,10 +158,9 @@ test('a stray click with the redact tool armed does not create a redaction', asy
   await redactToolButton(page).click()
   await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2)
 
-  // A committed redaction would auto-select itself ("1 selected") - seeing
-  // nothing selected is how this test knows nothing was created.
-  await expect(status).toHaveText('')
-  await expect(redactToolButton(page)).toHaveAttribute('aria-pressed', 'false')
+  // A committed shape would leave a visible mark under the click. The tool also stays armed.
+  expect(await hasBlackPixel(page, { x: rect.x + rect.w / 2 - 40, y: rect.y + rect.h / 2 - 40, w: 80, h: 80 })).toBe(false)
+  await expect(redactToolButton(page)).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('a redaction can be selected, deleted, and the delete undone', async ({ page, images, addViaPicker }) => {
@@ -179,7 +178,10 @@ test('a redaction can be selected, deleted, and the delete undone', async ({ pag
   await page.mouse.move(end.x, end.y, { steps: 8 })
   await page.mouse.up()
 
-  // `addRedact` leaves the new redaction selected.
+  // Drawn shapes are not auto-selected (the tool stays armed). Disarm,
+  // then click it to select.
+  await page.keyboard.press('Escape')
+  await page.mouse.click((start.x + end.x) / 2, (start.y + end.y) / 2)
   await expect(status).toHaveText('1 selected')
   expect(await hasBlackPixel(page, region)).toBe(true)
 
@@ -206,6 +208,9 @@ test('a redaction exposes no resize handle - dragging its selection outline move
 
   const before = { x: start.x, y: start.y, w: end.x - start.x, h: end.y - start.y }
   expect(await hasBlackPixel(page, before)).toBe(true)
+
+  // Disarm the (sticky) tool first, or the drag would draw another redaction.
+  await page.keyboard.press('Escape')
 
   // Drag from inside the redaction (its interior hit-tests as a plain AABB,
   // same generic rule every node uses) rather than a corner - a corner drag

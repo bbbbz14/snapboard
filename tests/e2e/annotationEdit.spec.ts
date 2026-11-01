@@ -18,6 +18,13 @@ function toolButton(page: Page, name: string) {
   return page.getByRole('button', { name, exact: true })
 }
 
+/** Annotation tools are sticky and a freshly drawn shape is not selected, so
+ * to edit one, disarm the tool (Escape) and click on the shape. */
+async function selectDrawn(page: Page, x: number, y: number) {
+  await page.keyboard.press('Escape')
+  await page.mouse.click(x, y)
+}
+
 /** The new button `SelectionToolbar` shows for a single selected annotation
  * node - deliberately a different accessible name from `AnnotationToolbar`'s
  * own "Style" button (see SelectionToolbar.tsx's note) so the two are never
@@ -80,6 +87,7 @@ test('changing color in "Edit style" recolors the already-placed box in place, a
   await page.mouse.down()
   await page.mouse.move(rect.x + 160, y1 + 40, { steps: 5 })
   await page.mouse.up()
+  await selectDrawn(page, rect.x + 90, y1 + 20)
   const region1 = { x: rect.x, y: y1 - 20, w: 200, h: 100 }
   expect((await pixelScan(page, region1, 'red')).count).toBeGreaterThan(0)
   expect((await pixelScan(page, region1, 'green')).count).toBe(0)
@@ -118,6 +126,7 @@ test('the size slider in "Edit style" thickens an already-placed box in place', 
   await page.mouse.down()
   await page.mouse.move(rect.x + 160, y + 40, { steps: 5 })
   await page.mouse.up()
+  await selectDrawn(page, rect.x + 90, y + 20)
 
   const stripe = { x: rect.x + 90, y: y - 10, w: 1, h: 20 }
   const before = (await pixelScan(page, stripe, 'red')).count
@@ -154,6 +163,7 @@ test('the size stepper in "Edit style" grows an already-typed text node without 
   await page.mouse.click(at.x, at.y)
   await page.locator('.text-edit').fill('resize me')
   await page.keyboard.press('ControlOrMeta+Enter')
+  await selectDrawn(page, at.x + 5, at.y + 5)
   await expect(page.locator('.selection-status')).toHaveText('1 selected')
 
   const region = { x: at.x - 10, y: at.y - 10, w: 280, h: 140 }
@@ -198,6 +208,7 @@ test('the size stepper in "Edit style" never flickers between line counts - each
   await page.mouse.click(at.x, at.y)
   await page.locator('.text-edit').fill('This is a fairly long sentence used to test wrapping')
   await page.keyboard.press('ControlOrMeta+Enter')
+  await selectDrawn(page, at.x + 5, at.y + 5)
   await expect(page.locator('.selection-status')).toHaveText('1 selected')
 
   const increase = page.getByRole('button', { name: 'Increase size' })
@@ -237,6 +248,7 @@ test('the "Edit style" popover opens attached to the button that opened it, not 
   await page.mouse.down()
   await page.mouse.move(rect.x + 160, y + 40, { steps: 5 })
   await page.mouse.up()
+  await selectDrawn(page, rect.x + 90, y + 20)
 
   const button = editStyleButton(page)
   await button.click()
@@ -272,6 +284,7 @@ test('dragging the size slider in "Edit style" is one undo step, not one per tic
   await page.mouse.down()
   await page.mouse.move(rect.x + 160, y + 40, { steps: 5 })
   await page.mouse.up()
+  await selectDrawn(page, rect.x + 90, y + 20)
 
   // Inline, visible without opening "Edit style" - see the sibling tests'
   // comments above for why opening it anyway would be actively harmful here

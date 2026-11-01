@@ -331,6 +331,20 @@ body {
   pointer-events: none;
 }
 
+.background-menu__margin {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.background-menu__label {
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  margin-right: auto;
+}
+
 .background-menu {
   /* Fixed, same reasoning as .export-menu below - anchored from the toggle
      button's own screen position instead (see BackgroundMenu.tsx). */

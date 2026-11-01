@@ -1,6 +1,5 @@
 import { test as base, type Page } from '@playwright/test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { makePng } from './png'
 
@@ -27,7 +26,11 @@ export const test = base.extend<Fixtures>({
   // journald, builds and scratch writes would all have failed together.
   // A fixture that runs thousands of times has to clean up after itself.
   images: async ({}, use) => {
-    const dir = mkdtempSync(join(tmpdir(), 'snapboard-'))
+    // Under the repo (on the big /data volume, and inside the gitignored
+    // test-results/) rather than the OS temp dir, which is on the small `/`.
+    const root = join(process.cwd(), 'test-results', 'fixtures')
+    mkdirSync(root, { recursive: true })
+    const dir = mkdtempSync(join(root, 'snapboard-'))
     let n = 0
     try {
       await use((specs) =>

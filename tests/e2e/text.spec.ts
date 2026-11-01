@@ -63,9 +63,8 @@ test('the text tool places an editable box, types in Thai and English, and survi
   expect(await hasReddishPixel(page, region)).toBe(false)
 
   await page.mouse.click(at.x, at.y)
-  // Placing a text box is a one-shot gesture, same as arrow/box - the tool
-  // reverts to select immediately, before the user has typed anything.
-  await expect(textToolButton(page)).toHaveAttribute('aria-pressed', 'false')
+  // Tools are sticky - placing a text box leaves the tool armed.
+  await expect(textToolButton(page)).toHaveAttribute('aria-pressed', 'true')
 
   const editor = page.locator('.text-edit')
   await expect(editor).toBeFocused()
@@ -73,7 +72,7 @@ test('the text tool places an editable box, types in Thai and English, and survi
   await page.keyboard.press('ControlOrMeta+Enter')
 
   await expect(page.locator('.text-edit')).toHaveCount(0)
-  await expect(page.locator('.selection-status')).toHaveText('1 selected')
+  await expect(page.locator('.selection-status')).toHaveText('')
   expect(await hasReddishPixel(page, region)).toBe(true)
 
   // One renderer for preview and export (invariant 1) - the text must reach
@@ -133,6 +132,9 @@ test('a text node can be selected, deleted, and the delete undone', async ({ pag
   await page.locator('.text-edit').fill('delete me')
   await page.keyboard.press('ControlOrMeta+Enter')
 
+  // Not auto-selected (the tool stays armed): disarm, then click to select.
+  await page.keyboard.press('Escape')
+  await page.mouse.click(at.x + 5, at.y + 5)
   await expect(status).toHaveText('1 selected')
   expect(await hasReddishPixel(page, region)).toBe(true)
 
@@ -160,6 +162,8 @@ test('double-clicking a text node re-opens it for editing and lets you fix its c
   await page.keyboard.press('ControlOrMeta+Enter')
   await expect(page.locator('.text-edit')).toHaveCount(0)
 
+  // Disarm the (sticky) text tool, or the double-click would place a new box.
+  await page.keyboard.press('Escape')
   await page.mouse.dblclick(at.x + 5, at.y + 5)
   const editor = page.locator('.text-edit')
   await expect(editor).toBeVisible()
@@ -213,4 +217,30 @@ test('typing a growing single line does not wrap early, before the box reaches T
     expect(info.scrollHeight).toBe(baseline)
   }
   await page.keyboard.press('Escape')
+})
+
+test('with the text tool armed, a click while a box is open only commits it - no second box, tool stays on', async ({
+  page,
+  images,
+  addViaPicker,
+}) => {
+  await addViaPicker(page, images([[400, 300]]))
+  const rect = await pageRect(page)
+
+  await textToolButton(page).click()
+  await page.mouse.click(rect.x + 20, rect.y + rect.h + 20)
+  await page.locator('.text-edit').fill('first')
+
+  // Clicking elsewhere on the canvas blurs (commits) the open box...
+  await page.mouse.click(rect.x + 300, rect.y + rect.h + 20)
+  await expect(page.locator('.text-edit')).toHaveCount(0)
+  await expect(textToolButton(page)).toHaveAttribute('aria-pressed', 'true')
+
+  // ...and the next click places a fresh one, without re-arming.
+  await page.mouse.click(rect.x + 300, rect.y + rect.h + 20)
+  await expect(page.locator('.text-edit')).toBeVisible()
+  await page.locator('.text-edit').fill('second')
+  await page.keyboard.press('ControlOrMeta+Enter')
+  expect(await hasReddishPixel(page, { x: rect.x + 10, y: rect.y + rect.h + 10, w: 120, h: 60 })).toBe(true)
+  expect(await hasReddishPixel(page, { x: rect.x + 290, y: rect.y + rect.h + 10, w: 100, h: 60 })).toBe(true)
 })

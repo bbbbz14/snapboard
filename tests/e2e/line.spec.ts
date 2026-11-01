@@ -70,8 +70,8 @@ test('the line tool draws a plain straight stroke (no arrowhead) that shows in t
   await page.mouse.move(end.x, end.y, { steps: 8 })
   await page.mouse.up()
 
-  // Drawing one line is a one-shot gesture - the tool reverts to select.
-  await expect(lineToolButton(page)).toHaveAttribute('aria-pressed', 'false')
+  // Tools are sticky: the tool stays armed so the next one can be drawn at once.
+  await expect(lineToolButton(page)).toHaveAttribute('aria-pressed', 'true')
   expect(await hasReddishPixel(page, region)).toBe(true)
 
   // A plain line has no curve, so its stroke sits exactly on the straight
@@ -106,10 +106,9 @@ test('a stray click with the line tool armed does not create a line', async ({ p
   await lineToolButton(page).click()
   await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2)
 
-  // A committed line would auto-select itself ("1 selected") - seeing
-  // nothing selected is how this test knows nothing was created.
-  await expect(status).toHaveText('')
-  await expect(lineToolButton(page)).toHaveAttribute('aria-pressed', 'false')
+  // A committed shape would leave a visible mark under the click. The tool also stays armed.
+  expect(await hasReddishPixel(page, { x: rect.x + rect.w / 2 - 40, y: rect.y + rect.h / 2 - 40, w: 80, h: 80 })).toBe(false)
+  await expect(lineToolButton(page)).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('a line can be selected, deleted, and the delete undone', async ({ page, images, addViaPicker }) => {
@@ -128,7 +127,10 @@ test('a line can be selected, deleted, and the delete undone', async ({ page, im
   await page.mouse.move(end.x, end.y, { steps: 8 })
   await page.mouse.up()
 
-  // `addLine` leaves the new line selected.
+  // Drawn shapes are not auto-selected (the tool stays armed). Disarm,
+  // then click it to select.
+  await page.keyboard.press('Escape')
+  await page.mouse.click((start.x + end.x) / 2, y)
   await expect(status).toHaveText('1 selected')
   expect(await hasReddishPixel(page, region)).toBe(true)
 
@@ -171,7 +173,7 @@ test('the size slider changes the stroke width of newly drawn lines', async ({ p
     stripe,
   )
 
-  await lineToolButton(page).click()
+  // The tool is still armed from the first line (sticky).
   const slider = page.getByRole('slider', { name: 'Size' })
   await slider.focus()
   await page.keyboard.press('End')

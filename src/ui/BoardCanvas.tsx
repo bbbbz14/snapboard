@@ -868,8 +868,7 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
       if (tool === 'text') {
         // No drag to track - a single click is enough to place a box that
         // starts at TEXT_MIN_WIDTH (empty text has nothing to fit yet) and
-        // grows with what's typed (see textAutoWidth); the tool reverts to
-        // 'select' immediately, same one-shot pattern as arrow/box, but the
+        // grows with what's typed (see textAutoWidth); the
         // actual store commit waits until editing finishes (see
         // finishEditingText).
         // `preventDefault` matters here in a way it doesn't for arrow/box:
@@ -881,16 +880,22 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
         // land), so the browser immediately blurs it again - the textarea
         // would exist for a single frame and then vanish, having "committed"
         // itself with whatever (empty) text it had at that instant.
+        // The tool stays armed (sticky, like every annotation tool). If a
+        // box is already open this click only dismisses it: skipping
+        // preventDefault lets the browser's own focus change blur the
+        // textarea, which commits it (finishEditingText) - without that,
+        // the open draft would be replaced and its text silently lost, and
+        // one click would also open a second box.
+        if (document.activeElement instanceof HTMLTextAreaElement) return
         e.preventDefault()
         setEditingText({ id: null, point: toBoardPoint(e), width: TEXT_MIN_WIDTH, text: '', fontSize: toolSettings.text.size })
-        setTool('select')
         return
       }
 
       if (tool === 'marker') {
         // No drag to track and nothing to type - a marker's whole
         // interaction is a single click, so it commits directly on
-        // pointerdown, same one-shot-then-select pattern as arrow/box/text.
+        // pointerdown; the tool stays armed so more can be placed in a row.
         addMarker(toBoardPoint(e))
         return
       }
@@ -1050,8 +1055,9 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
       if (arrowDraft) {
         arrowDraftRef.current = null
         const dragged = Math.hypot(e.clientX - arrowDraft.screenStart.x, e.clientY - arrowDraft.screenStart.y) > ARROW_MIN_DRAG
+        // Tools stay armed after drawing (and after a stray click) until
+        // toggled off, Escape, or another tool - see AnnotationToolbar.
         if (dragged) addArrow(arrowDraft.start, arrowDraft.current)
-        else setTool('select')
         drawInteraction()
         return
       }
@@ -1061,7 +1067,6 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
         lineDraftRef.current = null
         const dragged = Math.hypot(e.clientX - lineDraft.screenStart.x, e.clientY - lineDraft.screenStart.y) > LINE_MIN_DRAG
         if (dragged) addLine(lineDraft.start, lineDraft.current)
-        else setTool('select')
         drawInteraction()
         return
       }
@@ -1071,7 +1076,6 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
         boxDraftRef.current = null
         const dragged = Math.hypot(e.clientX - boxDraft.screenStart.x, e.clientY - boxDraft.screenStart.y) > BOX_MIN_DRAG
         if (dragged) addBox(boxDraft.start, boxDraft.current)
-        else setTool('select')
         drawInteraction()
         return
       }
@@ -1081,7 +1085,6 @@ export function BoardCanvas({ board, viewport, onCopy, interactive = true, annot
         redactDraftRef.current = null
         const dragged = Math.hypot(e.clientX - redactDraft.screenStart.x, e.clientY - redactDraft.screenStart.y) > REDACT_MIN_DRAG
         if (dragged) addRedact(redactDraft.start, redactDraft.current)
-        else setTool('select')
         drawInteraction()
         return
       }

@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { BACKGROUNDS, type Background, type BackgroundName, type Board } from '@/board/model/types'
 import { backgroundSwatchStyle, isBackground } from '@/ui/BackgroundMenu'
-import { LAYOUTS, STYLES, GAP_MAX } from '@/ui/topbarOptions'
+import { LAYOUTS, STYLES, PADDINGS, GAP_MAX } from '@/ui/topbarOptions'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
 import { t } from '@/i18n/t'
 
@@ -13,6 +13,7 @@ interface Props {
   onTurnAutoOn: () => void
   onSetStyle: (key: Board['style']) => void
   onSetGap: (gap: number) => void
+  onSetPadding: (padding: number) => void
   onGapAdjustStart: () => void
   onGapAdjustEnd: () => void
   onSetBackground: (name: BackgroundName) => void
@@ -51,6 +52,7 @@ export function MobileSettingsMenu({
   onTurnAutoOn,
   onSetStyle,
   onSetGap,
+  onSetPadding,
   onGapAdjustStart,
   onGapAdjustEnd,
   onSetBackground,
@@ -144,6 +146,17 @@ export function MobileSettingsMenu({
           {STYLES.map((s) => (
             <button key={s.key} className="chip" aria-pressed={board.style === s.key} onClick={() => onSetStyle(s.key)}>
               {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mobile-settings-menu__section">
+        <span className="mobile-settings-menu__label">{t('spacing.padding')}</span>
+        <div className="group" role="group" aria-label={t('spacing.padding')}>
+          {PADDINGS.map((p) => (
+            <button key={p.px} className="chip" aria-pressed={board.padding === p.px} onClick={() => onSetPadding(p.px)}>
+              {p.label}
             </button>
           ))}
         </div>

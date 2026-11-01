@@ -69,8 +69,8 @@ test('the arrow tool draws a curved arrow that shows in the preview and survives
   await page.mouse.move(end.x, end.y, { steps: 8 })
   await page.mouse.up()
 
-  // Drawing one arrow is a one-shot gesture - the tool reverts to select.
-  await expect(arrowToolButton(page)).toHaveAttribute('aria-pressed', 'false')
+  // Tools are sticky: the tool stays armed so the next one can be drawn at once.
+  await expect(arrowToolButton(page)).toHaveAttribute('aria-pressed', 'true')
   expect(await hasReddishPixel(page, region)).toBe(true)
 
   // One renderer for preview and export (invariant 1) - the arrow must
@@ -99,10 +99,9 @@ test('a stray click with the arrow tool armed does not create an arrow', async (
   await arrowToolButton(page).click()
   await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2)
 
-  // A committed arrow would auto-select itself ("1 selected") - seeing
-  // nothing selected is how this test knows nothing was created.
-  await expect(status).toHaveText('')
-  await expect(arrowToolButton(page)).toHaveAttribute('aria-pressed', 'false')
+  // A committed shape would leave a visible mark under the click. The tool also stays armed.
+  expect(await hasReddishPixel(page, { x: rect.x + rect.w / 2 - 40, y: rect.y + rect.h / 2 - 40, w: 80, h: 80 })).toBe(false)
+  await expect(arrowToolButton(page)).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('an arrow can be selected, deleted, and the delete undone', async ({ page, images, addViaPicker }) => {
@@ -121,7 +120,10 @@ test('an arrow can be selected, deleted, and the delete undone', async ({ page, 
   await page.mouse.move(end.x, end.y, { steps: 8 })
   await page.mouse.up()
 
-  // `addArrow` leaves the new arrow selected.
+  // Drawn shapes are not auto-selected (the tool stays armed). Disarm,
+  // then click it to select.
+  await page.keyboard.press('Escape')
+  await page.mouse.click((start.x + end.x) / 2, y)
   await expect(status).toHaveText('1 selected')
   expect(await hasReddishPixel(page, region)).toBe(true)
 
@@ -131,4 +133,29 @@ test('an arrow can be selected, deleted, and the delete undone', async ({ page, 
 
   await page.keyboard.press('ControlOrMeta+Z')
   expect(await hasReddishPixel(page, region)).toBe(true)
+})
+
+test('the arrow tool stays armed, so a second arrow can be drawn without re-selecting it', async ({ page, images, addViaPicker }) => {
+  await addViaPicker(page, images([[400, 300]]))
+  const rect = await pageRect(page)
+
+  await arrowToolButton(page).click()
+  const draw = async (y: number) => {
+    await page.mouse.move(rect.x + 20, y)
+    await page.mouse.down()
+    await page.mouse.move(rect.x + 160, y, { steps: 8 })
+    await page.mouse.up()
+  }
+  const y1 = rect.y + rect.h + 30
+  const y2 = rect.y + rect.h + 90
+  await draw(y1)
+  await draw(y2)
+
+  expect(await hasReddishPixel(page, { x: rect.x + 10, y: y1 - 20, w: 160, h: 40 })).toBe(true)
+  expect(await hasReddishPixel(page, { x: rect.x + 10, y: y2 - 20, w: 160, h: 40 })).toBe(true)
+  await expect(arrowToolButton(page)).toHaveAttribute('aria-pressed', 'true')
+
+  // Toggling the button again ends it.
+  await arrowToolButton(page).click()
+  await expect(arrowToolButton(page)).toHaveAttribute('aria-pressed', 'false')
 })

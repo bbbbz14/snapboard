@@ -208,7 +208,10 @@ export const DEFAULT_BOARD: Board = {
   layout: 'auto',
   resolvedLayout: 'rows',
   gap: 6,
-  padding: 32,
+  // Edge-to-edge by default: a margin around a pasted screenshot is wasted
+  // pixels for the recipient. The shadow of a card/soft style simply clips
+  // at the board edge; a user who wants it room picks Tight/Normal.
+  padding: 0,
   columns: null,
   targetWidth: 1200,
   background: BACKGROUNDS.white,

@@ -195,19 +195,18 @@ interface BoardState {
    * `deltaY` unit (a fast trackbackpad flick still just means "more wheel
    * events", which already reads as faster). */
   adjustToolSize: (tool: SizableAnnotationTool, delta: number) => void
-  /** Commits a new arrow from `start` to `end` (board-space) and switches
-   * back to the select tool - same one-shot pattern a stamp tool would use.
+  /** Commits a new arrow from `start` to `end` (board-space) and leaves the tool armed (sticky - Escape or its toggle ends it) and the new node unselected; - same sticky-tool pattern a stamp tool would use.
    * Deliberately does *not* touch `layout` - unlike `setFrames`, an arrow
    * never moves an image's frame, so `relayout()` (which only ever rewrites
    * `kind === 'image'` frames, see below) stays free to keep auto-arranging
    * images on an `'auto'`/`'rows'`/etc. board with arrows already on it. */
   addArrow: (start: Point, end: Point) => void
   /** Commits a new plain straight line (no arrowhead) from `start` to `end`
-   * and switches back to the select tool - same one-shot pattern and same
+   * and leaves the tool armed (sticky - Escape or its toggle ends it) and the new node unselected; - same sticky-tool pattern and same
    * layout-preserving reasoning as `addArrow`. */
   addLine: (start: Point, end: Point) => void
   /** Commits a new box from `start` to `end` (board-space, opposite drag
-   * corners) and switches back to the select tool - same one-shot pattern
+   * corners) and leaves the tool armed (sticky - Escape or its toggle ends it) and the new node unselected; - same sticky-tool pattern
    * and same layout-preserving reasoning as `addArrow`. */
   addBox: (start: Point, end: Point) => void
   /** Creates a new text node (`id: null`) or re-commits an existing one after
@@ -220,9 +219,8 @@ interface BoardState {
    * Trimmed-empty text creates nothing (`id: null`) or deletes the node
    * (`id` given) - same "a stray click creates nothing" rule arrow/box use,
    * extended to "an emptied-out text box doesn't linger as a blank
-   * annotation." Does not switch `tool` - unlike `addArrow`/`addBox`,
-   * BoardCanvas already reverts to `'select'` the instant the text draft is
-   * placed, before the user has typed anything. */
+   * annotation." Does not switch `tool` - the text tool stays armed like
+   * every other annotation tool. */
   /** `size` is only ever passed when a re-edit is also changing the font
    * size (see `setNodeSize` below, which routes text through here instead
    * of mutating it directly) - BoardCanvas has already recomputed `frame`'s
@@ -230,7 +228,7 @@ interface BoardState {
    * reasoning as the note above. Omitted, the node's existing size is kept. */
   commitText: (id: NodeId | null, frame: Rect, text: string, size?: number) => void
   /** Commits a new marker at `point` (board-space) and switches back to the
-   * select tool - same one-shot pattern as `addArrow`/`addBox`, but for a
+   * select tool - same sticky-tool pattern as `addArrow`/`addBox`, but for a
    * plain click instead of a drag: a marker has no meaningful "size" the
    * user draws, just a place to point. Its visible number is derived at
    * render time (see `toRenderInput`), not stored here - so deleting one
@@ -238,7 +236,7 @@ interface BoardState {
    * Same layout-preserving reasoning as `addArrow` - does not touch `layout`. */
   addMarker: (point: Point) => void
   /** Commits a new redaction from `start` to `end` (board-space, opposite
-   * drag corners) and switches back to the select tool - same one-shot
+   * drag corners) and leaves the tool armed (sticky - Escape or its toggle ends it) and the new node unselected; - same one-shot
    * pattern as `addBox`, and same layout-preserving reasoning as `addArrow`. */
   addRedact: (start: Point, end: Point) => void
   /** Moves the selected nodes to the top of z-order (drawn last). Also
@@ -514,7 +512,14 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     set((s) => commitBoard(s, { ...s.board, background: BACKGROUNDS[name] as Background })),
   setStyle: (style) => set((s) => commitBoard(s, { ...s.board, style })),
   setGap: (gap) => set((s) => commitBoard(s, relayout({ ...s.board, gap }))),
-  setPadding: (padding) => set((s) => commitBoard(s, relayout({ ...s.board, padding }))),
+  // A 'free' board is never relaid out (invariant 4), so relayout() would
+  // silently ignore a new padding there - re-fit the canvas around the
+  // untouched arrangement instead, the same way a manual move does.
+  setPadding: (padding) =>
+    set((s) => {
+      const next = { ...s.board, padding }
+      return commitBoard(s, next.layout === 'free' ? fitBoardToContent(next) : relayout(next))
+    }),
 
   clear: () =>
     set((s) => {
@@ -666,8 +671,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }
       return {
         ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, arrow] }),
-        selectedIds: [arrow.id],
-        tool: 'select',
+        selectedIds: [],
       }
     }),
 
@@ -685,8 +689,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }
       return {
         ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, line] }),
-        selectedIds: [line.id],
-        tool: 'select',
+        selectedIds: [],
       }
     }),
 
@@ -702,8 +705,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }
       return {
         ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, box] }),
-        selectedIds: [box.id],
-        tool: 'select',
+        selectedIds: [],
       }
     }),
 
@@ -723,7 +725,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         }
         return {
           ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, node] }),
-          selectedIds: [node.id],
+          selectedIds: [],
         }
       }
       if (trimmed === '') {
@@ -750,8 +752,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }
       return {
         ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, marker] }),
-        selectedIds: [marker.id],
-        tool: 'select',
+        selectedIds: [],
       }
     }),
 
@@ -766,8 +767,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       }
       return {
         ...commitBoard(s, { ...s.board, nodes: [...s.board.nodes, redact] }),
-        selectedIds: [redact.id],
-        tool: 'select',
+        selectedIds: [],
       }
     }),
 

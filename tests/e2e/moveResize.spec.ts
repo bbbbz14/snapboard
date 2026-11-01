@@ -62,7 +62,7 @@ function selectionScreenRect(page: import('@playwright/test').Page) {
   })
 }
 
-test('dragging a node moves it, and the move survives export (invariant 1)', async ({ page, images, addViaPicker }) => {
+test('dragging a node moves it, and the move survives export (invariant 1)', async ({ page, images, addViaPicker, browserName }) => {
   await addViaPicker(page, images([[400, 300], [400, 300]]))
   await page.getByRole('button', { name: 'Stacked' }).click()
   const rect = await pageRect(page)
@@ -76,9 +76,16 @@ test('dragging a node moves it, and the move survives export (invariant 1)', asy
   await page.mouse.move(topCenter.x, rect.y + rect.h - 10, { steps: 8 })
   await page.mouse.up()
 
-  const after = await pixelAt(page, topCenter.x, topCenter.y)
-  const diff = Math.abs(before[0]! - after[0]!) + Math.abs(before[1]! - after[1]!) + Math.abs(before[2]! - after[2]!)
-  expect(diff).toBeGreaterThan(20)
+  // A drag on an auto-layout board is a reorder (swap two same-size tiles),
+  // which headless WebKit leaves painted stale for an unbounded stretch - the
+  // same gap reorder.spec.ts already skips its pixel check for (see
+  // CLAUDE.md's rasterisation gotcha). The committed board is still checked
+  // through export below on every engine.
+  if (browserName !== 'webkit') {
+    const after = await pixelAt(page, topCenter.x, topCenter.y)
+    const diff = Math.abs(before[0]! - after[0]!) + Math.abs(before[1]! - after[1]!) + Math.abs(before[2]! - after[2]!)
+    expect(diff).toBeGreaterThan(20)
+  }
 
   // The commit went through the store, so it renders on export too.
   const [download] = await Promise.all([

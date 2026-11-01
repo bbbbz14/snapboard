@@ -20,6 +20,13 @@ export const STYLES: { key: StylePreset; label: string }[] = [
   { key: 'soft', label: t('style.soft') },
 ]
 
+/** Board edge margin presets (board px). 0 is the default - see DEFAULT_BOARD. */
+export const PADDINGS: { px: number; label: string }[] = [
+  { px: 0, label: t('padding.none') },
+  { px: 12, label: t('padding.tight') },
+  { px: 32, label: t('padding.normal') },
+]
+
 /** The gap slider's own range (px) - also the denominator for the %
  * shown next to it, so the two never drift apart. */
 export const GAP_MAX = 80

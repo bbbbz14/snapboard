@@ -220,15 +220,15 @@ describe('addArrow', () => {
     })
   })
 
-  it('adds an arrow node, selects it, leaves layout untouched, and returns to the select tool', () => {
+  it('adds an arrow node, leaves it unselected, leaves layout untouched, and keeps the tool armed', () => {
     useBoardStore.getState().addArrow({ x: 0, y: 0 }, { x: 40, y: 0 })
     const board = useBoardStore.getState().board
     const arrow = board.nodes.find((n) => n.kind === 'arrow')
     expect(arrow).toBeDefined()
     expect(arrow).toMatchObject({ start: { x: 0, y: 0 }, end: { x: 40, y: 0 } })
     expect(board.layout).toBe('auto')
-    expect(useBoardStore.getState().selectedIds).toEqual([arrow!.id])
-    expect(useBoardStore.getState().tool).toBe('select')
+    expect(useBoardStore.getState().selectedIds).toEqual([])
+    expect(useBoardStore.getState().tool).toBe('arrow')
   })
 
   it('does not disturb the existing image node', () => {
@@ -294,15 +294,15 @@ describe('addLine', () => {
     })
   })
 
-  it('adds a line node, selects it, leaves layout untouched, and returns to the select tool', () => {
+  it('adds a line node, leaves it unselected, leaves layout untouched, and keeps the tool armed', () => {
     useBoardStore.getState().addLine({ x: 0, y: 0 }, { x: 40, y: 0 })
     const board = useBoardStore.getState().board
     const line = board.nodes.find((n) => n.kind === 'line')
     expect(line).toBeDefined()
     expect(line).toMatchObject({ start: { x: 0, y: 0 }, end: { x: 40, y: 0 } })
     expect(board.layout).toBe('auto')
-    expect(useBoardStore.getState().selectedIds).toEqual([line!.id])
-    expect(useBoardStore.getState().tool).toBe('select')
+    expect(useBoardStore.getState().selectedIds).toEqual([])
+    expect(useBoardStore.getState().tool).toBe('line')
   })
 
   it('does not disturb the existing image node', () => {
@@ -365,15 +365,15 @@ describe('addBox', () => {
     })
   })
 
-  it('adds a box node from the two drag corners, selects it, leaves layout untouched, and returns to the select tool', () => {
+  it('adds a box node from the two drag corners, leaves it unselected, leaves layout untouched, and keeps the tool armed', () => {
     useBoardStore.getState().addBox({ x: 0, y: 0 }, { x: 40, y: 30 })
     const board = useBoardStore.getState().board
     const box = board.nodes.find((n) => n.kind === 'box')
     expect(box).toBeDefined()
     expect(box!.frame).toEqual({ x: 0, y: 0, w: 40, h: 30 })
     expect(board.layout).toBe('auto')
-    expect(useBoardStore.getState().selectedIds).toEqual([box!.id])
-    expect(useBoardStore.getState().tool).toBe('select')
+    expect(useBoardStore.getState().selectedIds).toEqual([])
+    expect(useBoardStore.getState().tool).toBe('box')
   })
 
   it('normalizes the frame regardless of which corner was dragged from', () => {
@@ -439,14 +439,14 @@ describe('commitText', () => {
     })
   })
 
-  it('creates a new text node, selects it, and leaves layout untouched', () => {
+  it('creates a new text node, leaves it unselected, and leaves layout untouched', () => {
     useBoardStore.getState().commitText(null, { x: 0, y: 0, w: 240, h: 40 }, 'hello')
     const board = useBoardStore.getState().board
     const text = board.nodes.find((n) => n.kind === 'text')
     expect(text).toBeDefined()
     expect(text).toMatchObject({ text: 'hello', frame: { x: 0, y: 0, w: 240, h: 40 } })
     expect(board.layout).toBe('auto')
-    expect(useBoardStore.getState().selectedIds).toEqual([text!.id])
+    expect(useBoardStore.getState().selectedIds).toEqual([])
   })
 
   it('creates nothing for trimmed-empty text (a stray click)', () => {
@@ -522,7 +522,7 @@ describe('addMarker', () => {
     })
   })
 
-  it('adds a marker centered on the click point, selects it, leaves layout untouched, and returns to the select tool', () => {
+  it('adds a marker centered on the click point, leaves it unselected, leaves layout untouched, and keeps the tool armed', () => {
     useBoardStore.getState().addMarker({ x: 20, y: 20 })
     const board = useBoardStore.getState().board
     const marker = board.nodes.find((n) => n.kind === 'marker')
@@ -530,8 +530,8 @@ describe('addMarker', () => {
     expect(marker!.frame.x + marker!.frame.w / 2).toBeCloseTo(20, 5)
     expect(marker!.frame.y + marker!.frame.h / 2).toBeCloseTo(20, 5)
     expect(board.layout).toBe('auto')
-    expect(useBoardStore.getState().selectedIds).toEqual([marker!.id])
-    expect(useBoardStore.getState().tool).toBe('select')
+    expect(useBoardStore.getState().selectedIds).toEqual([])
+    expect(useBoardStore.getState().tool).toBe('marker')
   })
 
   it('does not disturb the existing image node', () => {
@@ -607,15 +607,15 @@ describe('addRedact', () => {
     })
   })
 
-  it('adds a redact node from the two drag corners, selects it, leaves layout untouched, and returns to the select tool', () => {
+  it('adds a redact node from the two drag corners, leaves it unselected, leaves layout untouched, and keeps the tool armed', () => {
     useBoardStore.getState().addRedact({ x: 0, y: 0 }, { x: 40, y: 30 })
     const board = useBoardStore.getState().board
     const redact = board.nodes.find((n) => n.kind === 'redact')
     expect(redact).toBeDefined()
     expect(redact!.frame).toEqual({ x: 0, y: 0, w: 40, h: 30 })
     expect(board.layout).toBe('auto')
-    expect(useBoardStore.getState().selectedIds).toEqual([redact!.id])
-    expect(useBoardStore.getState().tool).toBe('select')
+    expect(useBoardStore.getState().selectedIds).toEqual([])
+    expect(useBoardStore.getState().tool).toBe('redact')
   })
 
   it('normalizes the frame regardless of which corner was dragged from', () => {
@@ -1080,5 +1080,41 @@ describe('setNodeColor / setNodeSize (editing an already-placed annotation, not 
     const redactId = useBoardStore.getState().board.nodes.find((n) => n.kind === 'redact')!.id
     useBoardStore.getState().setNodeSize(redactId, 30)
     expect(useBoardStore.getState().board.nodes.find((n) => n.id === redactId)?.frame).toEqual({ x: 0, y: 0, w: 40, h: 30 })
+  })
+})
+
+describe('setPadding', () => {
+  it('defaults to no margin: content sits flush against the board edge', () => {
+    expect(DEFAULT_BOARD.padding).toBe(0)
+  })
+
+  it('refits an auto board around its content', () => {
+    useBoardStore.setState({
+      board: { ...DEFAULT_BOARD, layout: 'auto', nodes: [stepNode('a', 0)] },
+    })
+    useBoardStore.getState().setPadding(12)
+    const b = useBoardStore.getState().board
+    expect(b.padding).toBe(12)
+    const f = b.nodes[0]!.frame
+    expect(f.x).toBe(12)
+    expect(b.size.w).toBe(f.w + 24)
+  })
+
+  it('also takes effect on a free board without moving the arrangement', () => {
+    useBoardStore.setState({
+      board: {
+        ...DEFAULT_BOARD,
+        layout: 'free',
+        padding: 0,
+        size: { w: 30, h: 10 },
+        nodes: [node('a', { x: 0, y: 0, w: 10, h: 10 }), node('b', { x: 20, y: 0, w: 10, h: 10 })],
+      },
+    })
+    useBoardStore.getState().setPadding(12)
+    const b = useBoardStore.getState().board
+    expect(b.layout).toBe('free')
+    expect(b.size).toEqual({ w: 30 + 24, h: 10 + 24 })
+    const [a, c] = b.nodes
+    expect(c!.frame.x - a!.frame.x).toBe(20)
   })
 })

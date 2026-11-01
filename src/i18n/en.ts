@@ -61,7 +61,10 @@ export const en = {
 
   'spacing.gap': 'Gap',
   'spacing.gapWithPercent': 'Gap · {{percent}}%',
-  'spacing.padding': 'Padding',
+  'spacing.padding': 'Margin',
+  'padding.none': 'None',
+  'padding.tight': 'Tight',
+  'padding.normal': 'Normal',
 
   'selection.count': '{{count}} selected',
   'selection.crop': 'Crop',

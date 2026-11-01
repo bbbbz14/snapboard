@@ -154,7 +154,6 @@ test('the toolbar Undo/Redo buttons mirror Ctrl/Cmd+Z, and disable themselves wh
   await page.mouse.down()
   await page.mouse.move(end.x, end.y, { steps: 8 })
   await page.mouse.up()
-  await expect(page.locator('.selection-status')).toHaveText('1 selected')
   // The arrow tool's own new default (straight, see boardStore's
   // DEFAULT_TOOL_SETTINGS) means the stroke sits exactly on the midpoint of
   // the drag - a reliable single pixel to check undo/redo against.

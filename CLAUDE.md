@@ -8,6 +8,72 @@ sendable result; manual arrangement is the escape hatch, not the main path.
 
 # START HERE — what this session should do next
 
+**LATEST (2026-11-01) - three changes, one commit; read this before the older
+notes below, which it supersedes where they conflict.**
+
+1. **Board margin now defaults to 0 and is user-adjustable.** `DEFAULT_BOARD.padding`
+   is `0` (was 32): pasted images sit edge-to-edge, since a margin is wasted
+   pixels for the recipient. Choice of **None / Tight (12) / Normal (32)** lives
+   as a "Margin" row *inside the Background popover* on desktop
+   (`BackgroundMenu.tsx`, stays open after a pick) and as its own section in
+   `MobileSettingsMenu`; both read the shared `PADDINGS` list in
+   `topbarOptions.ts` and call the pre-existing `setPadding`. **Why not a
+   top-bar control:** the bar already sits at ~1280px of content at the default
+   Playwright/common-laptop viewport - a 3-chip group, and even a single cycling
+   chip, pushed `scrollWidth` to 1436 and made the bar scroll, which closes the
+   Export popover (the `TopBar` scroll-closes-popovers rule) and broke
+   `exportOptions.spec.ts`. Any new top-bar control must be checked against
+   that. `setPadding` now calls `fitBoardToContent` for a `'free'` board
+   (`relayout` is a no-op there by invariant 4, so a new margin would otherwise
+   silently do nothing). A card/soft shadow simply clips at the board edge when
+   margin is 0 (canvas == board size; no renderer change) - Tight/Normal give it
+   room. Old autosaved boards keep the padding they were saved with; not
+   migrated. The choice is per-board state, not remembered across sessions.
+2. **Annotation tools are now sticky** (Arrow, Line, Box, Text, Number, Redact):
+   after drawing, the tool stays armed until its button/key is pressed again, or
+   Escape - no more re-picking the tool for every line. A drawn shape is **not**
+   auto-selected (the old "select the new node + show Edit style" flow is gone
+   because the selection toolbar is hidden while a tool is armed anyway); to
+   restyle one, disarm (Escape) and click it, or use the inline size/color
+   controls before drawing. A stray click (no drag) no longer disarms. Store:
+   `addArrow/addLine/addBox/addMarker/addRedact` no longer set `tool: 'select'`
+   and set `selectedIds: []`; `commitText` likewise. **Text edge case:** with the
+   text tool armed, a canvas click while a textarea is open must only commit it
+   (skip `preventDefault` so the browser blur fires `finishEditingText`) - the
+   old `preventDefault` would have replaced the draft and lost its text, and one
+   click would have opened a second box. Guarded by `document.activeElement
+   instanceof HTMLTextAreaElement` in `BoardCanvas`'s text branch, tested in
+   `text.spec.ts`. Roughly 14 e2e specs asserted the old one-shot behavior and
+   were rewritten (disarm with Escape, then click the shape to select it; a
+   stray-click test now checks for no mark under the click, not selection
+   count, since a *drawn* shape is unselected too). New e2e: arrow draws twice
+   without re-arming; text click-while-open; margin chips.
+3. **Disk hygiene:** e2e fixture images now go to `test-results/fixtures/` (inside
+   the repo, on the 10 TB `/data` volume, gitignored) instead of the OS temp dir
+   on the small `/`. The project itself, `node_modules` and `.git` were already on
+   `/data` - what is on `/` is shared tooling: `~/.npm` (2.1G), Playwright browsers
+   in `~/.cache/ms-playwright` (1.3G), VS Code server, and other projects' builds
+   in `/tmp` (StaffLauncher, not ours). Those were deliberately left alone since
+   other projects use them.
+
+`npm run verify` green: typecheck + 265 unit + 33 renderer parity on 3 engines +
+357 e2e (352 passed, 5 skipped by design, same 5 as always).
+
+Also: one `moveResize.spec.ts` assertion ("dragging a node moves it") now skips
+its pixel check on WebKit - on an auto layout that drag is a reorder, i.e. the
+same-size-tile-swap stale-repaint gap `reorder.spec.ts` already skips for (see
+the rasterisation gotcha). It passed before only by luck of geometry; confirmed
+the pixel genuinely never updates there (polling 5s stayed at 0), and the export
+check still runs on every engine. Deleted `scratch-text-treatment-comparison.html`.
+
+**Audit findings carried forward, not done (ask the user first):** this file is
+very long and mixes per-session history with the rules a session actually needs
+- consider moving history to `docs/phases/` and keeping invariants/commands/
+gotchas/current state here; `BoardCanvas.tsx` is ~1,630 lines (no known bug, but
+refactor only with a reason - its gesture/focus code was hard-won); `public/_headers`
+is ignored by GitHub Pages (invariant 6 is enforced only by `privacy.spec.ts`).
+
+
 **Current state:** Phase 1 complete, manual test checklist gate cleared (see
 below). Phase 2 is complete — all 9 items done, shipped (`69cc234`), pushed
 to `main`, and deployed to the live site — see
@@ -3696,6 +3762,8 @@ tests/render/         renderer parity harness (imports src directly, dev server 
 - **A test fixture that runs thousands of times has to clean up after itself —
   this repo is not alone on its disk.** Fixed 2026-09-14. `tests/e2e/fixtures.ts`'s
   `images` fixture made a `mkdtempSync(join(tmpdir(), 'snapboard-'))` directory
+  (since 2026-11-01 it writes under the repo's `test-results/fixtures/` on `/data`
+  instead, and still cleans up)
   per test and never removed it, so every `pnpm e2e` run (321 tests) left
   hundreds of directories in `/tmp` permanently. By the time anyone looked there
   were **16,487 of them, 11 GB**, and `/` was at **97% with 1.8 GB free** —

@@ -79,8 +79,8 @@ test('a tiny screenshot is not blown up to fill the board', async ({ page, image
   const cssWidth = await page
     .locator('.board-page')
     .evaluate((el: HTMLElement) => el.getBoundingClientRect().width)
-  // 300px of image plus 32px padding either side, and not a pixel more.
-  expect(cssWidth).toBeCloseTo(300 + 64, 0)
+  // 300px of image and no margin (the default is edge-to-edge), not a pixel more.
+  expect(cssWidth).toBeCloseTo(300, 0)
 })
 
 test('export produces a real PNG file', async ({ page, images, addViaPicker }) => {
@@ -103,4 +103,22 @@ test('no console errors during a normal session', async ({ page, images, addViaP
   await page.getByRole('button', { name: 'Clear board' }).click()
   const errors = (page as unknown as { _errors: string[] })._errors
   expect(errors).toEqual([])
+})
+
+test('the Margin chips in the Background popover resize the board by exactly that much', async ({ page, images, addViaPicker }) => {
+  await addViaPicker(page, images([[300, 120]]))
+  const width = () => page.locator('.board-page').evaluate((el: HTMLElement) => el.getBoundingClientRect().width)
+  expect(await width()).toBeCloseTo(300, 0)
+
+  await page.getByRole('button', { name: 'Background' }).click()
+  const margin = page.getByRole('group', { name: 'Margin' })
+  await margin.getByRole('button', { name: 'Tight' }).click()
+  expect(await width()).toBeCloseTo(300 + 24, 0)
+
+  // The popover stays open after a margin pick.
+  await margin.getByRole('button', { name: 'Normal' }).click()
+  expect(await width()).toBeCloseTo(300 + 64, 0)
+
+  await margin.getByRole('button', { name: 'None' }).click()
+  expect(await width()).toBeCloseTo(300, 0)
 })

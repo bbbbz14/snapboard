@@ -185,11 +185,13 @@ test('the arrow tool can be armed and drawn on a narrow viewport, and the result
   await page.mouse.move(end.x, end.y, { steps: 8 })
   await page.mouse.up()
 
-  // One-shot, same as desktop - drawing one arrow reverts to 'select' and
-  // leaves the new node selected.
-  await expect(arrowBtn).toHaveAttribute('aria-pressed', 'false')
-  await expect(status).toHaveText('1 selected')
+  // Sticky, same as desktop - the tool stays armed and the new node is not
+  // selected; disarm and tap it to select.
+  await expect(arrowBtn).toHaveAttribute('aria-pressed', 'true')
   expect(await hasReddishPixel(page, region)).toBe(true)
+  await page.keyboard.press('Escape')
+  await page.mouse.click((start.x + end.x) / 2, y)
+  await expect(status).toHaveText('1 selected')
 
   // Deleting/restoring an already-placed annotation - the part that isn't
   // just "place it" - goes through the same SelectionToolbar/Delete-key path

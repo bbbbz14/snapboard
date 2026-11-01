@@ -66,10 +66,10 @@ test('the marker tool places a numbered circle on a single click and survives ex
 
   await page.mouse.click(at.x, at.y)
 
-  // A single click commits it - a marker has no drag/size to draw, unlike
-  // arrow/box - so the tool reverts to select immediately.
-  await expect(markerToolButton(page)).toHaveAttribute('aria-pressed', 'false')
-  await expect(page.locator('.selection-status')).toHaveText('1 selected')
+  // A single click commits it; the tool stays armed (sticky) and the new
+  // marker is not auto-selected.
+  await expect(markerToolButton(page)).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.selection-status')).toHaveText('')
   expect(await hasReddishPixel(page, region)).toBe(true)
 
   // One renderer for preview and export (invariant 1) - the marker must
@@ -101,13 +101,14 @@ test('placing two markers and deleting one leaves only the other', async ({ page
 
   await markerToolButton(page).click()
   await page.mouse.click(first.x, first.y)
-  await markerToolButton(page).click()
+  // No re-arming needed between markers - the tool stays on.
   await page.mouse.click(second.x, second.y)
 
   expect(await hasReddishPixel(page, regionAround(first))).toBe(true)
   expect(await hasReddishPixel(page, regionAround(second))).toBe(true)
 
-  // Select and delete the first marker (it's the only one at that point).
+  // Disarm, then select and delete the first marker.
+  await page.keyboard.press('Escape')
   await page.mouse.click(first.x, first.y)
   await expect(page.locator('.selection-status')).toHaveText('1 selected')
   await page.keyboard.press('Delete')
@@ -126,6 +127,8 @@ test('a marker can be selected, deleted, and the delete undone', async ({ page, 
   await markerToolButton(page).click()
   await page.mouse.click(at.x, at.y)
 
+  await page.keyboard.press('Escape')
+  await page.mouse.click(at.x, at.y)
   await expect(status).toHaveText('1 selected')
   expect(await hasReddishPixel(page, region)).toBe(true)
 
@@ -153,6 +156,7 @@ test('a marker exposes no resize handle - dragging it moves it instead', async (
   const before = regionAround(at)
   expect(await hasReddishPixel(page, before)).toBe(true)
 
+  await page.keyboard.press('Escape')
   await page.mouse.move(at.x, at.y)
   await page.mouse.down()
   await page.mouse.move(at.x + 150, at.y, { steps: 8 })

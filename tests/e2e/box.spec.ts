@@ -69,8 +69,8 @@ test('the box tool draws a rectangle outline that shows in the preview and survi
   await page.mouse.move(end.x, end.y, { steps: 8 })
   await page.mouse.up()
 
-  // Drawing one box is a one-shot gesture - the tool reverts to select.
-  await expect(boxToolButton(page)).toHaveAttribute('aria-pressed', 'false')
+  // Tools are sticky: the tool stays armed so the next one can be drawn at once.
+  await expect(boxToolButton(page)).toHaveAttribute('aria-pressed', 'true')
   expect(await hasReddishPixel(page, region)).toBe(true)
 
   // One renderer for preview and export (invariant 1) - the box must reach
@@ -99,10 +99,9 @@ test('a stray click with the box tool armed does not create a box', async ({ pag
   await boxToolButton(page).click()
   await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h / 2)
 
-  // A committed box would auto-select itself ("1 selected") - seeing
-  // nothing selected is how this test knows nothing was created.
-  await expect(status).toHaveText('')
-  await expect(boxToolButton(page)).toHaveAttribute('aria-pressed', 'false')
+  // A committed shape would leave a visible mark under the click. The tool also stays armed.
+  expect(await hasReddishPixel(page, { x: rect.x + rect.w / 2 - 40, y: rect.y + rect.h / 2 - 40, w: 80, h: 80 })).toBe(false)
+  await expect(boxToolButton(page)).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('a box can be selected, deleted, and the delete undone', async ({ page, images, addViaPicker }) => {
@@ -121,7 +120,10 @@ test('a box can be selected, deleted, and the delete undone', async ({ page, ima
   await page.mouse.move(end.x, end.y, { steps: 8 })
   await page.mouse.up()
 
-  // `addBox` leaves the new box selected.
+  // Drawn shapes are not auto-selected (the tool stays armed). Disarm,
+  // then click it to select.
+  await page.keyboard.press('Escape')
+  await page.mouse.click((start.x + end.x) / 2, (start.y + end.y) / 2)
   await expect(status).toHaveText('1 selected')
   expect(await hasReddishPixel(page, region)).toBe(true)
 
@@ -149,6 +151,9 @@ test('a box exposes no resize handle - dragging its selection outline moves it i
 
   const before = { x: start.x - 10, y: y - 10, w: end.x - start.x + 20, h: end.y - y + 20 }
   expect(await hasReddishPixel(page, before)).toBe(true)
+
+  // Disarm the (sticky) tool first, or the drag would draw another box.
+  await page.keyboard.press('Escape')
 
   // Drag from inside the box (its outline/interior both hit-test to the box,
   // same generic AABB rule every node uses) rather than a corner - a corner

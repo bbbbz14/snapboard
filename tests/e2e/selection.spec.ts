@@ -25,8 +25,9 @@ test('click selects a single node, and clicking empty space deselects', async ({
   await page.mouse.click(rect.x + rect.w / 2, rect.y + rect.h * 0.25)
   await expect(status).toHaveText('1 selected')
 
-  // The padding around the stacked images is guaranteed empty.
-  await page.mouse.click(rect.x + 3, rect.y + 3)
+  // Outside the board entirely (the default margin is 0, so there's no
+  // empty strip inside it) is guaranteed empty.
+  await page.mouse.click(rect.x - 20, rect.y - 20)
   await expect(status).toHaveText('')
 })
 
@@ -56,9 +57,9 @@ test('dragging from empty space marquee-selects everything it crosses', async ({
   const status = page.locator('.selection-status')
   const rect = await pageRect(page)
 
-  await page.mouse.move(rect.x + 3, rect.y + 3)
+  await page.mouse.move(rect.x - 20, rect.y - 20)
   await page.mouse.down()
-  await page.mouse.move(rect.x + rect.w - 3, rect.y + rect.h - 3, { steps: 5 })
+  await page.mouse.move(rect.x + rect.w + 20, rect.y + rect.h + 20, { steps: 5 })
   await page.mouse.up()
   await expect(status).toHaveText('2 selected')
 })

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { BACKGROUNDS, type Background, type BackgroundName } from '@/board/model/types'
 import { useFocusTrap } from '@/hooks/useFocusTrap'
+import { PADDINGS } from '@/ui/topbarOptions'
 import { t } from '@/i18n/t'
 
 const NAMES = Object.keys(BACKGROUNDS) as BackgroundName[]
@@ -25,6 +26,10 @@ export function isBackground(current: Background, name: BackgroundName): boolean
 interface Props {
   current: Background
   onChange: (name: BackgroundName) => void
+  /** The board's edge margin - lives in this popover (not as its own top-bar
+   * control) because the bar has no spare width at common desktop sizes. */
+  padding: number
+  onPaddingChange: (padding: number) => void
   onClose: () => void
   /** The toggle button that opened this menu - measured once on mount to
    * position the (fixed-position, see styles.css) popover under it, same
@@ -38,7 +43,7 @@ interface Props {
  * which would make the standing mobile-overflow finding worse (item 3's
  * own note). Reuses the `.swatch` styling the inline version already had.
  */
-export function BackgroundMenu({ current, onChange, onClose, anchorRef }: Props) {
+export function BackgroundMenu({ current, onChange, padding, onPaddingChange, onClose, anchorRef }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
@@ -92,6 +97,16 @@ export function BackgroundMenu({ current, onChange, onClose, anchorRef }: Props)
           }}
         />
       ))}
+      {/* Unlike a swatch, a margin pick leaves the popover open - it is
+          often tried a couple of times to see the result. */}
+      <div className="background-menu__margin" role="group" aria-label={t('spacing.padding')}>
+        <span className="background-menu__label">{t('spacing.padding')}</span>
+        {PADDINGS.map((p) => (
+          <button key={p.px} className="chip" aria-pressed={padding === p.px} onClick={() => onPaddingChange(p.px)}>
+            {p.label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

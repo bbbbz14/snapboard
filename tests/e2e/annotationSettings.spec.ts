@@ -163,7 +163,7 @@ test('the line-style toggle only appears for the arrow tool, and switches a newl
   const mid1 = { x: (start1.x + end1.x) / 2, y: y1 }
   expect(await hasReddishPixel(page, { x: mid1.x - 2, y: mid1.y - 2, w: 4, h: 4 })).toBe(true)
 
-  await toolButton(page, 'Arrow').click()
+  // The arrow tool is still armed from the first draw (sticky).
   await settingsButton(page).click()
   await page.getByRole('button', { name: 'Curved' }).click()
   await settingsButton(page).click() // close
@@ -271,8 +271,7 @@ test('the size slider changes the stroke width of newly drawn boxes', async ({ p
   await page.mouse.up()
   const thin = await verticalReddishRun(page, rect.x + 70, y1 - 10, y1 + 10)
 
-  await boxTool.click()
-  // The slider is inline in the toolbar, visible the instant the tool is
+  // The tool is still armed (sticky). The slider is inline in the toolbar, visible the instant the tool is
   // armed - no need to open the color popover to reach it (and doing so
   // anyway would race `useFocusTrap`'s own auto-focus against this slider's
   // manual `.focus()` call below, since the two now live in separate DOM

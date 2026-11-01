@@ -105,6 +105,7 @@ export function TopBar({ copied, onCopy, onHelp }: Props) {
                 onTurnAutoOn={() => store.setLayout('auto')}
                 onSetStyle={store.setStyle}
                 onSetGap={store.setGap}
+                onSetPadding={store.setPadding}
                 onGapAdjustStart={store.beginAdjustment}
                 onGapAdjustEnd={store.endAdjustment}
                 onSetBackground={store.setBackground}
@@ -134,6 +135,8 @@ export function TopBar({ copied, onCopy, onHelp }: Props) {
                 <BackgroundMenu
                   current={board.background}
                   onChange={(name) => store.setBackground(name)}
+                  padding={board.padding}
+                  onPaddingChange={store.setPadding}
                   onClose={() => setBackgroundMenuOpen(false)}
                   anchorRef={backgroundBtnRef}
                 />
